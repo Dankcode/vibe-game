@@ -1,0 +1,62 @@
+{
+    "id": "starting-village",
+    "width": 256,
+    "height": 256,
+    "tileset": "village",
+    "chunks": [
+        {
+            "x": 0,
+            "y": 0,
+            "tiles": [
+                1,
+                1,
+                1,
+                1,
+                2,
+                2,
+                1,
+                1
+            ],
+            "elevation": [
+                0,
+                0,
+                0,
+                1,
+                1,
+                0,
+                0,
+                0
+            ],
+            "objects": [
+                {
+                    "x": 5,
+                    "y": 5,
+                    "type": "tree",
+                    "elevation": 0
+                },
+                {
+                    "x": 10,
+                    "y": 8,
+                    "type": "house",
+                    "elevation": 1
+                }
+            ]
+        }
+    ],
+    "spawnPoints": [
+        {
+            "x": 128,
+            "y": 128,
+            "type": "newbie"
+        }
+    ],
+    "combatZones": [
+        {
+            "x1": 0,
+            "y1": 0,
+            "x2": 50,
+            "y2": 50,
+            "encounterRate": 0.1
+        }
+    ]
+}

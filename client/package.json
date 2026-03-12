@@ -1,0 +1,17 @@
+{
+    "name": "mmorpg-isometric-client",
+    "version": "1.0.0",
+    "type": "module",
+    "scripts": {
+        "dev": "vite --port 3000",
+        "build": "vite build",
+        "preview": "vite preview --port 3000"
+    },
+    "dependencies": {
+        "phaser": "^3.70.0",
+        "socket.io-client": "^4.7.2"
+    },
+    "devDependencies": {
+        "vite": "^5.0.0"
+    }
+}
