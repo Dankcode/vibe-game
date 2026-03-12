@@ -5,6 +5,10 @@ import { Player } from '../entities/Player.js';
 export default class WorldScene extends Phaser.Scene {
     constructor() {
         super({ key: 'WorldScene' });
+        this.zoom = 1.0;
+        this.minZoom = 0.5;
+        this.maxZoom = 3.0;
+        this.zoomSpeed = 0.1;
     }
 
     preload() {
@@ -38,6 +42,50 @@ export default class WorldScene extends Phaser.Scene {
 
         // Launch UI Scene
         this.scene.launch('UIScene');
+
+        // Setup Zoom Controls
+        this.setupZoomControls();
+    }
+
+    setupZoomControls() {
+        // Mouse wheel zoom
+        this.input.on('wheel', (pointer, gameObjects, deltaX, deltaY, deltaZ) => {
+            if (deltaY > 0) {
+                this.zoomOut();
+            } else {
+                this.zoomIn();
+            }
+        });
+
+        // Keyboard zoom controls
+        this.input.keyboard.on('keydown-MINUS', () => this.zoomOut());
+        this.input.keyboard.on('keydown-EQUALS', () => this.zoomIn());
+
+        // Alternative keyboard controls (Q/E keys)
+        this.input.keyboard.on('keydown-Q', () => this.zoomOut());
+        this.input.keyboard.on('keydown-E', () => this.zoomIn());
+
+        // Reset zoom (R key)
+        this.input.keyboard.on('keydown-R', () => this.resetZoom());
+    }
+
+    zoomIn() {
+        this.setZoom(this.zoom + this.zoomSpeed);
+    }
+
+    zoomOut() {
+        this.setZoom(this.zoom - this.zoomSpeed);
+    }
+
+    setZoom(newZoom) {
+        // Clamp zoom between min and max
+        this.zoom = Phaser.Math.Clamp(newZoom, this.minZoom, this.maxZoom);
+        this.cameras.main.setZoom(this.zoom);
+    }
+
+    resetZoom() {
+        this.zoom = 1.0;
+        this.cameras.main.setZoom(this.zoom);
     }
 
     update() {
