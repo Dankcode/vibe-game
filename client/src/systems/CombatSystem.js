@@ -1,7 +1,5 @@
 export class CombatSystem {
-    scene: unknown;
-
-    constructor(scene: unknown) {
+    constructor(scene) {
         this.scene = scene;
     }
 }

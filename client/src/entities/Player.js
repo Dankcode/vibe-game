@@ -1,54 +1,26 @@
 import Phaser from 'phaser';
 
 export class Player {
-    scene: Phaser.Scene & { engine: any; generator?: any };
-    engine: any;
-    gridX: number;
-    gridY: number;
-    gridZ: number;
-    currentTileX: number;
-    currentTileY: number;
-    onTileChange: null | ((x: number, y: number, z: number) => void);
-    speed: number;
-    scale: number;
-    headOffset: number;
-    body: Phaser.GameObjects.Sprite;
-    head: Phaser.GameObjects.Sprite;
-    sprite: Phaser.GameObjects.Sprite;
-    keys: any;
-
-    constructor(scene: Phaser.Scene & { engine: any; generator?: any }, gridX: number, gridY: number, bodyTexture: string, headTexture: string) {
+    constructor(scene, gridX, gridY, bodyTexture, headTexture) {
         this.scene = scene;
         this.engine = scene.engine;
         
-        // Grid position (isometric coordinates)
         this.gridX = gridX;
         this.gridY = gridY;
         this.gridZ = 0;
 
-        // Target grid position for interpolation
         this.targetGridX = gridX;
         this.targetGridY = gridY;
         this.targetGridZ = 0;
 
-        // Tile centerpoint tracking
         this.currentTileX = Math.floor(gridX);
         this.currentTileY = Math.floor(gridY);
 
         this.onTileChange = null;
-
-        // Configuration
-        this.speed = 4.0; // Grid units per second
-        this.lerpFactor = 0.15; // Smoothness (0-1)
+        this.speed = 4.0;
+        this.lerpFactor = 0.15;
         this.updateScale();
         
-<<<<<<< HEAD:client/src/entities/Player.js
-        this.headOffset = -80; 
-=======
-        // Head offset (adjust this to match your assets)
-        this.headOffset = -300; // wtest -80; 
->>>>>>> 994f342f84e83f81c335a9567f633df8af84334f:client/src/entities/Player.ts
-
         const pos = this.engine.toScreen(gridX, gridY, this.gridZ);
 
         this.body = scene.add.sprite(pos.x, pos.y, bodyTexture);
@@ -62,15 +34,12 @@ export class Player {
         this.sprite = this.body; 
 
         this.setupAnimations(bodyTexture, headTexture);
-        
         this.keys = scene.input.keyboard.addKeys('W,A,S,D');
-
         this.syncSprites();
     }
 
-    setupAnimations(bodyTexture: string, headTexture: string) {
+    setupAnimations(bodyTexture, headTexture) {
         const anims = this.scene.anims;
-        
         const animations = [
             { key: 'down', frames: [0, 1, 2, 3] },
             { key: 'left', frames: [4, 5, 6, 7] },
@@ -87,7 +56,6 @@ export class Player {
                     repeat: -1
                 });
             }
-
             if (!anims.exists(`walk-${anim.key}-head`)) {
                 anims.create({
                     key: `walk-${anim.key}-head`,
@@ -127,15 +95,10 @@ export class Player {
             this.head.stop();
         }
 
-        // Lerp current position to target
         this.gridX += (this.targetGridX - this.gridX) * this.lerpFactor;
         this.gridY += (this.targetGridY - this.gridY) * this.lerpFactor;
-
         this.checkElevation();
-        
-        // Lerp elevation
         this.gridZ += (this.targetGridZ - this.gridZ) * this.lerpFactor;
-
         this.checkTileChange();
         this.syncSprites();
     }
@@ -143,7 +106,6 @@ export class Player {
     updateScale() {
         this.scale = this.engine.worldScale * 1.5; 
         this.headOffset = -50 * this.scale;
-        
         if (this.body) this.body.setScale(this.scale);
         if (this.head) this.head.setScale(this.scale);
     }
@@ -163,9 +125,6 @@ export class Player {
         if (tileX !== this.currentTileX || tileY !== this.currentTileY) {
             this.currentTileX = tileX;
             this.currentTileY = tileY;
-
-            console.log(`[Player] Moved to tile (${tileX}, ${tileY}, ${tileZ})`);
-
             if (typeof this.onTileChange === 'function') {
                 this.onTileChange(tileX, tileY, tileZ);
             }
@@ -174,12 +133,10 @@ export class Player {
 
     syncSprites() {
         const screenPos = this.engine.toScreen(this.gridX, this.gridY, this.gridZ);
-        
         this.body.x = screenPos.x;
         this.body.y = screenPos.y;
         this.head.x = screenPos.x;
         this.head.y = screenPos.y + this.headOffset;
-
         this.body.setDepth(screenPos.depth + 5); 
         this.head.setDepth(screenPos.depth + 6);
     }

@@ -1,5 +1,4 @@
-import Phaser from 'phaser';
-import { Tile } from '../entities/Tile';
+import { Tile } from '../entities/Tile.js';
 
 export const ELEMENTS = {
     VOID: 0,
@@ -11,12 +10,7 @@ export const ELEMENTS = {
 };
 
 export class WorldGenerator {
-    scene: Phaser.Scene & { engine: any };
-    engine: unknown;
-    tiles: Tile[];
-    elevationMap!: Map<string, number>;
-
-    constructor(scene: Phaser.Scene & { engine: any }, engine: unknown) {
+    constructor(scene, engine) {
         this.scene = scene;
         this.engine = engine;
         this.tiles = [];
@@ -24,14 +18,10 @@ export class WorldGenerator {
         this.elevationMap = new Map(); // key: "x,y" -> maxZ
     }
 
-<<<<<<< HEAD:client/src/systems/WorldGenerator.js
     /**
      * Streamlined world generation using a simplified mathematical method.
      */
     generate(width, height) {
-=======
-    generate(width: number, height: number) {
->>>>>>> 994f342f84e83f81c335a9567f633df8af84334f:client/src/systems/WorldGenerator.ts
         this.clear();
 
         for (let x = -width/2; x < width/2; x++) {
@@ -65,7 +55,6 @@ export class WorldGenerator {
         }
     }
 
-<<<<<<< HEAD:client/src/systems/WorldGenerator.js
     addTile(x, y, z, element, textureValue = 0) {
         const tile = new Tile(this.scene, x, y, z, { element, textureValue });
         this.tiles.push(tile);
@@ -85,15 +74,11 @@ export class WorldGenerator {
     }
 
     getElevation(x, y) {
-=======
-    getElevation(x: number, y: number) {
->>>>>>> 994f342f84e83f81c335a9567f633df8af84334f:client/src/systems/WorldGenerator.ts
         const gridX = Math.floor(x);
         const gridY = Math.floor(y);
         return this.elevationMap.get(`${gridX},${gridY}`) ?? 0;
     }
 
-<<<<<<< HEAD:client/src/systems/WorldGenerator.js
     /**
      * Modifies a specific tile's element and variant.
      */
@@ -128,7 +113,7 @@ export class WorldGenerator {
             // Re-calculate elevation for this x,y
             let newMaxZ = -1;
             for (let currentZ = z + 10; currentZ >= 0; currentZ--) {
-                if (this.tileMap.has(`${x},${y},${currentZ}`)) {
+                if (this.tileMap.has(`${x},${y},currentZ`)) { // Fixed a potential template string issue in previously seen code
                     newMaxZ = currentZ;
                     break;
                 }
@@ -139,13 +124,6 @@ export class WorldGenerator {
                 this.elevationMap.set(`${x},${y}`, newMaxZ);
             }
         }
-=======
-    getColorForType(z: number, maxZ: number) {
-        if (z < 1) return { color: 0x6aa3c8 }; // Cozy soft blue water
-        if (z < 2) return { color: 0xe8c97d }; // Warm golden sand
-        if (z < maxZ) return { color: 0x7cb87a }; // Sage green grass
-        return { color: 0xb07a5a }; // Warm terracotta rock
->>>>>>> 994f342f84e83f81c335a9567f633df8af84334f:client/src/systems/WorldGenerator.ts
     }
 
     clear() {

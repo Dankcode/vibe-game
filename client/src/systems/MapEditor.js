@@ -1,29 +1,20 @@
 export class MapEditor {
-    scene: unknown;
-
-    constructor(scene: unknown) {
+    constructor(scene) {
         this.scene = scene;
         this.engine = scene.engine;
         this.generator = scene.generator;
         this.enabled = false;
-        
-        // Editor settings
-        this.selectedTileType = 0; // 0: ground, 1: rock, etc.
+        this.selectedTileType = 0; 
         this.currentZ = 0;
-        
-        // UI elements
         this.overlay = null;
         this.cursor = null;
-        
         this.setupInput();
     }
 
     setupInput() {
         this.scene.input.on('pointerdown', (pointer) => {
             if (!this.enabled) return;
-
             const gridPos = this.engine.toGrid(pointer.worldX, pointer.worldY);
-            
             if (pointer.leftButtonDown()) {
                 this.addTile(gridPos.x, gridPos.y);
             } else if (pointer.rightButtonDown()) {
@@ -31,16 +22,12 @@ export class MapEditor {
             }
         });
 
-        // Toggle editor with 'E'
         this.scene.input.keyboard.on('keydown-E', () => {
             this.toggle();
         });
 
-        // Elevation control with Q/E or Shift+MouseWheel
         this.scene.input.keyboard.on('keydown-Q', () => { if(this.enabled) this.currentZ = Math.max(0, this.currentZ - 1); });
         this.scene.input.keyboard.on('keydown-R', () => { if(this.enabled) this.currentZ++; });
-
-        // Save/Load
         this.scene.input.keyboard.on('keydown-S', () => { if(this.enabled) this.save(); });
         this.scene.input.keyboard.on('keydown-L', () => { if(this.enabled) this.load(); });
     }
@@ -48,27 +35,23 @@ export class MapEditor {
     toggle() {
         this.enabled = !this.enabled;
         console.log(`[MapEditor] ${this.enabled ? 'Enabled' : 'Disabled'}`);
-        
         if (this.enabled) {
             this.showUI();
-            this.scene.player.speed = 0; // Freeze player
+            this.scene.player.speed = 0; 
         } else {
             this.hideUI();
-            this.scene.player.speed = 4.0; // Restore player speed
+            this.scene.player.speed = 4.0; 
         }
     }
 
     showUI() {
-        const { width, height } = this.scene.scale;
         this.overlay = this.scene.add.container(20, 20).setScrollFactor(0).setDepth(10000);
-        
         const bg = this.scene.add.rectangle(0, 0, 240, 140, 0x000000, 0.7).setOrigin(0);
         const text = this.scene.add.text(10, 10, 'EDITOR MODE\nL-Click: Add\nR-Click: Remove\nQ/R: elevation\nS: Save Map\nL: Load Map\nE: Exit Editor', {
             fontSize: '14px',
             fill: '#fff',
             lineSpacing: 8
         });
-        
         this.overlay.add([bg, text]);
     }
 
@@ -80,10 +63,8 @@ export class MapEditor {
     }
 
     addTile(x, y) {
-        // Find highest tile at this position to stack on top? Or use currentZ
         const topZ = this.generator.getElevation(x, y);
         const targetZ = Math.max(this.currentZ, topZ + 1);
-        
         this.generator.addTile(x, y, targetZ, this.selectedTileType);
         console.log(`[MapEditor] Added tile at (${x}, ${y}, ${targetZ})`);
     }
@@ -110,6 +91,5 @@ export class MapEditor {
 
     update() {
         if (!this.enabled) return;
-        // Could add a ghost cursor here
     }
 }

@@ -1,16 +1,7 @@
 import Phaser from 'phaser';
 
 export class Tile {
-    scene: Phaser.Scene & { engine: any };
-    engine: any;
-    gridX: number;
-    gridY: number;
-    elevation: number;
-    attributes: { color?: number };
-    graphics?: Phaser.GameObjects.Graphics;
-    objects?: Phaser.GameObjects.GameObject[];
-
-    constructor(scene: Phaser.Scene & { engine: any }, gridX: number, gridY: number, elevation: number, attributes: { color?: number } = {}) {
+    constructor(scene, gridX, gridY, elevation, attributes = {}) {
         this.scene = scene;
         this.engine = scene.engine;
         
@@ -85,7 +76,6 @@ export class Tile {
         this.graphics = graphics;
     }
 
-<<<<<<< HEAD:client/src/entities/Tile.js
     getColorForType(element, textureValue) {
         switch (element) {
             case 1: // Ground / Geo
@@ -105,18 +95,14 @@ export class Tile {
     }
 
     getPhaserPoints(points) {
-=======
-    getPhaserPoints(points: number[]) {
-        const numberPoints: number[] = points;
->>>>>>> 994f342f84e83f81c335a9567f633df8af84334f:client/src/entities/Tile.ts
         const phaserPoints = [];
-        for (let i = 0; i < numberPoints.length; i += 2) {
-            phaserPoints.push(new Phaser.Geom.Point(numberPoints[i], numberPoints[i + 1]));
+        for (let i = 0; i < points.length; i += 2) {
+            phaserPoints.push(new Phaser.Geom.Point(points[i], points[i + 1]));
         }
         return phaserPoints;
     }
 
-    shadeColor(color: number, percent: number) {
+    shadeColor(color, percent) {
         const r = (color >> 16) & 0xFF;
         const g = (color >> 8) & 0xFF;
         const b = color & 0xFF;
