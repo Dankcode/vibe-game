@@ -7,13 +7,25 @@ export class Tile {
         this.gridY = gridY;
         this.elevation = elevation;
         this.attributes = attributes;
+        
+        // Elemental system: similar to Genshin Impact
+        // Blocks maintain element, but can have different texture values
+        this.element = attributes.element || 1;    // Default: Ground/Geo (1)
+        this.textureValue = attributes.textureValue || 0; // Variant/Texture offset
 
+        this.render();
+    }
+
+    setElementalType(element, textureValue) {
+        this.element = element;
+        this.textureValue = textureValue;
+        if (this.graphics) this.graphics.destroy();
         this.render();
     }
 
     render() {
         const { TILE_WIDTH, TILE_HEIGHT, TILE_DEPTH } = this.engine;
-        const color = this.attributes.color || 0x888888;
+        const color = this.getColorForType(this.element, this.textureValue);
 
         // Calculate screen position
         const pos = this.engine.toScreen(this.gridX, this.gridY, this.elevation);
@@ -51,15 +63,33 @@ export class Tile {
         graphics.lineStyle(2, 0xffffff, 0.1);
         graphics.strokePoints(this.getPhaserPoints(top), true);
 
-        // Left face (shaded more for depth on cubic tiles)
-        graphics.fillStyle(this.shadeColor(color, -30), 1);
+        // Left face
+        graphics.fillStyle(this.shadeColor(color, -20), 1);
         graphics.fillPoints(this.getPhaserPoints(left), true);
 
-        // Right face (darkest, shadow side)
-        graphics.fillStyle(this.shadeColor(color, -55), 1);
+        // Right face
+        graphics.fillStyle(this.shadeColor(color, -40), 1);
         graphics.fillPoints(this.getPhaserPoints(right), true);
 
         this.graphics = graphics;
+    }
+
+    getColorForType(element, textureValue) {
+        switch (element) {
+            case 1: // Ground / Geo
+                return 0x7cb87a;
+            case 2: // Water / Hydro
+                if (textureValue === 4) return 0x4a5d23; // Brackish water
+                return 0x6aa3c8; // Normal water
+            case 3: // Sand / Anemo? (using as terrain)
+                return 0xe8c97d;
+            case 4: // Ice / Cryo
+                return 0xdef3f6;
+            case 5: // Fire / Pyro
+                return 0xe67e22;
+            default:
+                return 0x888888;
+        }
     }
 
     getPhaserPoints(points) {
