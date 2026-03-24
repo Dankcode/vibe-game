@@ -1,0 +1,17 @@
+{
+  "name": "vibe-game-root",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run dev --workspace=client\" \"npm start --workspace=server\"",
+    "client": "npm run dev --workspace=client",
+    "server": "npm start --workspace=server"
+  },
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
