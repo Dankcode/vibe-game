@@ -23,7 +23,7 @@ export class Player {
         this.updateScale();
         
         // Head offset (adjust this to match your assets)
-        this.headOffset = -80; 
+        this.headOffset = -300; // wtest -80; 
 
         // Initial screen position
         const pos = this.engine.toScreen(gridX, gridY, this.gridZ);

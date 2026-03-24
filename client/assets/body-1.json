@@ -1,0 +1,20 @@
+{"frames": {
+
+"merchant-body.png":
+{
+	"frame": {"x":0,"y":0,"w":800,"h":894},
+	"rotated": false,
+	"trimmed": false,
+	"spriteSourceSize": {"x":0,"y":0,"w":800,"h":894},
+	"sourceSize": {"w":800,"h":894}
+}},
+"meta": {
+	"app": "https://www.codeandweb.com/texturepacker",
+	"version": "1.1",
+	"image": "body-1.png",
+	"format": "RGBA8888",
+	"size": {"w":800,"h":894},
+	"scale": "1",
+	"smartupdate": "$TexturePacker:SmartUpdate:93298a7598da94900cb0bf7ce57879bf:c362798d267b2a53e08fc7fa377f2662:9b4669ae9c9a324708eaad998ce7f384$"
+}
+}

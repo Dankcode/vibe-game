@@ -1,6 +1,7 @@
 import { IsometricEngine } from '../systems/IsometricEngine.js';
 import { WorldGenerator } from '../systems/WorldGenerator.js';
 import { Player } from '../entities/Player.js';
+import { PlayerGirl2 } from '../entities/PlayerGirl2.js';
 
 export default class WorldScene extends Phaser.Scene {
     constructor() {
@@ -15,6 +16,10 @@ export default class WorldScene extends Phaser.Scene {
         // Load character spritesheets
         this.load.spritesheet('merchant-body', 'assets/sprites/merchant-body.png', { frameWidth: 50, frameHeight: 100 });
         this.load.spritesheet('red-head', 'assets/sprites/red-head.png', { frameWidth: 50, frameHeight: 50 });
+
+        // Girl2 atlases (TexturePacker multiatlas JSON)
+        this.load.multiatlas('girl2-body', 'assets/sprites/body-2-walk.json', 'assets/sprites/');
+        this.load.multiatlas('girl2-head', 'assets/sprites/head-2-walk.json', 'assets/sprites/');
     }
 
     create() {
@@ -34,7 +39,7 @@ export default class WorldScene extends Phaser.Scene {
         this.generator.generate(30, 30);
 
         // 5. Create Player
-        this.player = new Player(this, 0, 0, 'merchant-body', 'red-head');
+        this.player = new PlayerGirl2(this, 0, 0, 'girl2-body', 'girl2-head');
 
         // 6. Camera Follow
         this.cameras.main.startFollow(this.player.sprite);
