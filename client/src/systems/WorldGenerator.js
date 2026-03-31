@@ -10,9 +10,8 @@ export const ELEMENTS = {
 };
 
 export class WorldGenerator {
-    constructor(scene, engine) {
-        this.scene = scene;
-        this.engine = engine;
+    constructor(threeManager) {
+        this.threeManager = threeManager;
         this.tiles = [];
         this.tileMap = new Map(); // key: "x,y,z" -> Tile object
         this.elevationMap = new Map(); // key: "x,y" -> maxZ
@@ -56,7 +55,7 @@ export class WorldGenerator {
     }
 
     addTile(x, y, z, element, textureValue = 0) {
-        const tile = new Tile(this.scene, x, y, z, { element, textureValue });
+        const tile = new Tile(this.threeManager, x, y, z, { element, textureValue });
         this.tiles.push(tile);
         this.tileMap.set(`${x},${y},${z}`, tile);
         
@@ -113,7 +112,7 @@ export class WorldGenerator {
             // Re-calculate elevation for this x,y
             let newMaxZ = -1;
             for (let currentZ = z + 10; currentZ >= 0; currentZ--) {
-                if (this.tileMap.has(`${x},${y},currentZ`)) { // Fixed a potential template string issue in previously seen code
+                if (this.tileMap.has(`${x},${y},${currentZ}`)) {
                     newMaxZ = currentZ;
                     break;
                 }
@@ -135,9 +134,9 @@ export class WorldGenerator {
 
     exportWorld() {
         const data = this.tiles.map(t => ({
-            x: t.gridX,
-            y: t.gridY,
-            z: t.gridZ,
+            gridX: t.gridX,
+            gridY: t.gridY,
+            elevation: t.elevation,
             element: t.element,
             variant: t.textureValue
         }));
@@ -149,7 +148,7 @@ export class WorldGenerator {
             const data = JSON.parse(json);
             this.clear();
             data.forEach(tileData => {
-                this.addTile(tileData.x, tileData.y, tileData.z, tileData.element, tileData.variant);
+                this.addTile(tileData.gridX, tileData.gridY, tileData.elevation, tileData.element, tileData.variant);
             });
             console.log(`[WorldGenerator] Loaded ${data.length} tiles.`);
         } catch (e) {

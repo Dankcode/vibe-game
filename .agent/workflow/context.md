@@ -1,60 +1,52 @@
 # Project Context
 
 ## Tech Stack
-- Frontend: Phaser game Engine using JS 
-- Database: multiple
+- Frontend: Three.js using Javascript
+- Communications: Colyseus.js (WebSockets)
+- Backend: Node.js with Colyseus
+- Database: multiple (Auth, Player stats, World state)
 - Auth: Clerk
 
-## Architecture、
-mmorpg-isometric/
-├── client/                 # Phaser 3 game
+## Architecture
+vibe-game/
+├── client/                     # Three.js Frontend
 │   ├── src/
-│   │   ├── scenes/
-│   │   │   ├── BootScene.js
-│   │   │   ├── WorldScene.js      # Main isometric world
-│   │   │   └── CombatScene.js     # Turn-based battle
-│   │   ├── systems/
-│   │   │   ├── IsometricEngine.js # Core iso projection
-│   │   │   ├── TileLoader.js      # LOD tile streaming
-│   │   │   ├── MapEditor.js       # Dynamic map building
-│   │   │   └── CombatSystem.js    # Turn-based logic
+│   │   ├── main.js             # Entry point (initializes Game)
+│   │   ├── Game.js             # Core controller (networking + main loop)
 │   │   ├── entities/
-│   │   │   ├── IsoSprite.js       # Isometric sprite base
-│   │   │   ├── Player.js
-│   │   │   ├── NPC.js
-│   │   │   └── Tile.js
-│   │   ├── data/
-│   │   │   └── TileRegistry.js    # Tile definitions
-│   │   └── main.js
-│   ├── assets/
-│   │   ├── tiles/           # Individual tile images
-│   │   ├── sprites/
-│   │   └── backgrounds/     # 3D-style backdrop layers
-│   ├── index.html
-│   └── package.json
-├── server/                  # Colyseus (recommended)
+│   │   │   ├── PlayerGirl2.js  # Character rendering (THREE.Sprite)
+│   │   │   └── Tile.js         # 3D Cube rendering (THREE.Mesh)
+│   │   ├── systems/
+│   │   │   ├── ThreeManager.js # Scene management (Camera, Renderer, Lighting)
+│   │   │   ├── InputManager.js # Keyboard input handling (WSAD)
+│   │   │   └── WorldGenerator.js # Procedural cube generation logic
+│   │   └── data/
+│   │       └── TileRegistry.js # Tile and element constants (GEO, HYDRO, etc.)
+│   ├── assets/                 # Textures, Sprites, and JSON atlases
+│   └── package.json            # Client dependencies (Three.js, Colyseus.js)
+├── server/                     # Colyseus Backend
 │   ├── src/
 │   │   ├── rooms/
-│   │   │   ├── WorldRoom.js       # Overworld sync
-│   │   │   └── CombatRoom.js      # Turn-based battles
+│   │   │   ├── WorldRoom.js    # Multiplayer sync (positions, movement)
+│   │   │   └── CombatRoom.js   # (Planned) Turn-based battle room
 │   │   ├── schemas/
-│   │   │   ├── PlayerState.js 
-│   │   │   ├── TileMapState.js 
-│   │   │   └── CombatState.js 
-│   │   └── index.js 
-│   ├── package.json
-│   └── tsconfig.json
-└── shared/                  # Shared types & map data
-    ├── maps/
-    │   ├── starting-village.json
-    │   └── dark-forest.json
-    └── types/
-        └── index.js
+│   │   │   ├── PlayerState.js  # Player sync fields (x, y, z, userId, inventory)
+│   │   │   └── TileMapState.js # Global player list and world state
+│   │   └── index.js            # Server entry and room definition
+│   └── package.json            # Server dependencies (Colyseus, Express)
+└── shared/                     # Shared Logic/Types
+    ├── maps/                   # Legacy/JSON map definitions
+    └── types/                  # Shared data structures
+
 ## Core Goal
-A Phaser 2.5 isometric game using 2d sprites and  similar to older games. This game utilizes a turnbase combat mechanic similar to the old wonderland online mmorpg previously published by IGG. This game will use 2d tiles that would make the game look 3d. The tiles will be loaded in individually when loading and moving past the LOD. The tiles system will allow me to create new maps easier. 
+A 3.5D isometric experience using Three.js with 3D cube blocks (voxels) and 2D character sprites (billboarding). The game features a procedural world generator using stacked cubes to create tiered elevation. The engine is designed to support multiplayer sessions where players can move and interact across a shared grid.
+
+## Coordinate System
+- **Grid Mapping**: Phaser's `(x, y, z)` maps to Three.js `(gridX, gridZ, gridY)` where `gridZ` is vertical elevation.
+- **Scaling**: Each cube tile is exactly 1x1x1 units in world space.
+- **Camera**: OrthographicCamera positioned at `(20, 20, 20)` with `lookAt(0,0,0)` to simulate an isometric projection.
 
 ## Elemental Tile System
-The game implements an elemental system (similar to Genshin Impact) for its world blocks.
-- **Elements**: 1: GEO (Ground), 2: HYDRO (Water), 3: ANEMO (Sand/Air), 4: CRYO (Ice), 5: PYRO (Fire).
-- **Texture Variants**: Each block maintains its element but can have different `textureValue` for visual variations (e.g., Water can be `2` for normal or `4` for brackish).
-- **Modification**: Tiles can be dynamically modified (e.g., Hydro tiles turning to Cryo when ice is applied).
+The world uses an elemental system for its blocks (GEO, HYDRO, ANEMO, CRYO, PYRO).
+- **Modification**: Individual tiles can be dynamically updated (e.g., Water blocks freezing into Ice blocks).
+- **Rendering**: Tile properties (`textureValue`, `element`) influence the material colors and textures of the cubes.

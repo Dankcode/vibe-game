@@ -12,9 +12,9 @@ class PlayerState extends Schema {
 }
 
 type("string")(PlayerState.prototype, "userId");
-type("number")(PlayerState.prototype, "x");
-type("number")(PlayerState.prototype, "y");
-type("number")(PlayerState.prototype, "z");
+type("float64")(PlayerState.prototype, "x");
+type("float64")(PlayerState.prototype, "y");
+type("float64")(PlayerState.prototype, "z");
 type({ map: "number" })(PlayerState.prototype, "inventory");
 
 module.exports = PlayerState;

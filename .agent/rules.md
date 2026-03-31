@@ -1,6 +1,6 @@
 # Project Rules
 
-- **Language**: The game uses Phaser JS to do the client rendering. It also uses JS for the backend
+- **Language**: The game uses Three.js to do the client rendering. It also uses JS for the backend
 - **Styling**: 
 Follow the following is an example of the file layout for this game 
 
