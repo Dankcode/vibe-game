@@ -5,27 +5,482 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Vibe Game</title>
     <style>
+        :root {
+            --page-bg: #101512;
+            --panel-bg: rgba(15, 23, 18, 0.72);
+            --panel-border: rgba(205, 221, 181, 0.24);
+            --text: #eef6df;
+            --muted: #aab9a4;
+            --accent: #9ad17b;
+            --warn: #f4c66d;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
         body { 
             margin: 0; 
-            background: #000; 
+            background: radial-gradient(circle at 50% 10%, #253225 0, var(--page-bg) 56%);
             overflow: hidden; 
             display: flex;
             justify-content: center;
             align-items: center;
             height: 100vh;
             width: 100vw;
+            color: var(--text);
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         }
+
+        .game-shell {
+            position: relative;
+            width: min(96vw, 1360px);
+            height: min(92vh, 820px);
+            min-height: 520px;
+            border: 1px solid rgba(230, 242, 211, 0.2);
+            border-radius: 8px;
+            overflow: hidden;
+            background: #182018;
+            box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+        }
+
         #three-game { 
             width: 100%;
             height: 100%;
+            position: absolute;
+            inset: 0;
+        }
+
+        #three-canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .hud {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+        }
+
+        .hud-cluster {
+            position: absolute;
             display: flex;
-            justify-content: center;
+            gap: 8px;
             align-items: center;
+            padding: 10px;
+            color: var(--text);
+        }
+
+        .hud-top {
+            top: 0;
+            left: 0;
+        }
+
+        .hud-bottom {
+            right: 0;
+            bottom: 0;
+            align-items: flex-end;
+        }
+
+        .hud-panel,
+        .stat-chip {
+            border: 1px solid var(--panel-border);
+            border-radius: 8px;
+            background: var(--panel-bg);
+            backdrop-filter: blur(12px);
+            box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+        }
+
+        .hud-panel {
+            min-width: 184px;
+            padding: 10px 12px;
+        }
+
+        .brand-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+        }
+
+        .brand {
+            font-size: 14px;
+            font-weight: 700;
+            letter-spacing: 0;
+        }
+
+        .status-pill {
+            min-width: 62px;
+            padding: 4px 8px;
+            border-radius: 999px;
+            background: rgba(154, 209, 123, 0.16);
+            color: var(--accent);
+            font-size: 12px;
+            font-weight: 700;
+            text-align: center;
+        }
+
+        .status-pill[data-status="solo"] {
+            background: rgba(244, 198, 109, 0.16);
+            color: var(--warn);
+        }
+
+        button {
+            border: 1px solid var(--panel-border);
+            border-radius: 8px;
+            background: rgba(238, 246, 223, 0.08);
+            color: var(--text);
+            font: inherit;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: rgba(154, 209, 123, 0.18);
+        }
+
+        .quest-line {
+            margin-top: 7px;
+            color: var(--muted);
+            font-size: 12px;
+            line-height: 1.35;
+        }
+
+        .stat-chip {
+            min-width: 92px;
+            padding: 8px 10px;
+        }
+
+        .stat-label {
+            display: block;
+            color: var(--muted);
+            font-size: 10px;
+            line-height: 1.1;
+            text-transform: uppercase;
+            letter-spacing: 0;
+        }
+
+        .stat-value {
+            display: block;
+            margin-top: 4px;
+            font-size: 13px;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .admin-toggle {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 5;
+            width: 78px;
+            height: 36px;
+            pointer-events: auto;
+            background: var(--panel-bg);
+            backdrop-filter: blur(12px);
+        }
+
+        .admin-panel {
+            position: absolute;
+            top: 54px;
+            right: 10px;
+            z-index: 6;
+            display: none;
+            width: min(380px, calc(100% - 20px));
+            max-height: calc(100% - 74px);
+            padding: 12px;
+            border: 1px solid var(--panel-border);
+            border-radius: 8px;
+            background: rgba(13, 20, 16, 0.88);
+            backdrop-filter: blur(16px);
+            pointer-events: auto;
+            overflow: auto;
+        }
+
+        .admin-panel.is-open {
+            display: block;
+        }
+
+        .admin-head,
+        .combat-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .admin-title,
+        .combat-title {
+            font-size: 14px;
+            font-weight: 800;
+        }
+
+        .icon-button {
+            width: 32px;
+            height: 32px;
+            padding: 0;
+        }
+
+        .admin-actions,
+        .combat-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .admin-actions button,
+        .combat-actions button {
+            min-height: 34px;
+            padding: 7px 10px;
+        }
+
+        .map-array-input {
+            width: 100%;
+            min-height: 210px;
+            margin-top: 10px;
+            padding: 10px;
+            border: 1px solid rgba(205, 221, 181, 0.18);
+            border-radius: 8px;
+            resize: vertical;
+            background: rgba(0, 0, 0, 0.28);
+            color: var(--text);
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 11px;
+            line-height: 1.35;
+            letter-spacing: 0;
+        }
+
+        .admin-message {
+            min-height: 18px;
+            margin-top: 8px;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .admin-message[data-tone="success"] {
+            color: var(--accent);
+        }
+
+        .admin-message[data-tone="error"] {
+            color: #fca5a5;
+        }
+
+        .combat-scene {
+            position: absolute;
+            inset: 0;
+            z-index: 8;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: rgba(8, 12, 10, 0.52);
+            pointer-events: auto;
+        }
+
+        .combat-scene.is-open {
+            display: flex;
+        }
+
+        .combat-panel {
+            width: min(720px, 100%);
+            max-height: min(620px, 92%);
+            padding: 14px;
+            border: 1px solid var(--panel-border);
+            border-radius: 8px;
+            background: rgba(13, 20, 16, 0.9);
+            backdrop-filter: blur(18px);
+            overflow: auto;
+        }
+
+        .combat-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-top: 12px;
+        }
+
+        .combat-card {
+            padding: 10px;
+            border: 1px solid rgba(205, 221, 181, 0.16);
+            border-radius: 8px;
+            background: rgba(238, 246, 223, 0.05);
+        }
+
+        .combat-card h3 {
+            margin: 0 0 8px;
+            color: var(--muted);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0;
+        }
+
+        .combat-list,
+        .combat-log {
+            display: grid;
+            gap: 8px;
+            margin: 0;
+            padding: 0;
+            list-style: none;
+        }
+
+        .combat-actor {
+            display: grid;
+            grid-template-columns: 1fr 92px 48px;
+            gap: 8px;
+            align-items: center;
+            font-size: 12px;
+        }
+
+        .combat-actor meter {
+            width: 92px;
+            height: 10px;
+        }
+
+        .combat-meta {
+            display: flex;
+            gap: 10px;
+            margin-top: 8px;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .combat-log {
+            margin-top: 12px;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .combat-log li {
+            padding: 6px 8px;
+            border-radius: 6px;
+            background: rgba(238, 246, 223, 0.05);
+        }
+
+        @media (max-width: 720px) {
+            .game-shell {
+                width: 100vw;
+                height: 100vh;
+                min-height: 0;
+                border-radius: 0;
+                border: 0;
+            }
+
+            .hud-cluster {
+                padding: 8px;
+                gap: 6px;
+            }
+
+            .hud-panel {
+                min-width: 152px;
+                padding: 8px 10px;
+            }
+
+            .stat-chip {
+                min-width: 74px;
+                padding: 7px 8px;
+            }
+
+            .stat-value {
+                font-size: 12px;
+            }
+
+            .admin-panel {
+                top: 52px;
+            }
+
+            .combat-grid {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
 <body>
-    <div id="three-game"></div>
+    <main class="game-shell" aria-label="Vibe Game">
+        <div id="three-game"></div>
+        <div class="hud" aria-live="polite">
+            <section class="hud-cluster hud-top">
+                <div class="hud-panel">
+                    <div class="brand-row">
+                        <span class="brand">Vibe Realm</span>
+                        <span id="status-pill" class="status-pill">Booting</span>
+                    </div>
+                    <div class="quest-line">Meadow hare sighted near the village edge.</div>
+                </div>
+            </section>
+
+            <section class="hud-cluster hud-bottom">
+                <div class="stat-chip">
+                    <span class="stat-label">Tile</span>
+                    <span id="position-readout" class="stat-value">0, 0, 0</span>
+                </div>
+                <div class="stat-chip">
+                    <span class="stat-label">Terrain</span>
+                    <span id="zone-readout" class="stat-value">Loading</span>
+                </div>
+                <div class="stat-chip">
+                    <span class="stat-label">Chunk</span>
+                    <span id="chunk-readout" class="stat-value">0,0</span>
+                </div>
+                <div class="stat-chip">
+                    <span class="stat-label">Wildlife</span>
+                    <span id="wildlife-readout" class="stat-value">0</span>
+                </div>
+                <div class="stat-chip">
+                    <span class="stat-label">Players</span>
+                    <span id="player-count-readout" class="stat-value">1</span>
+                </div>
+            </section>
+
+            <button id="admin-toggle" class="admin-toggle" type="button" aria-expanded="false" aria-controls="admin-panel">Admin</button>
+            <aside id="admin-panel" class="admin-panel" aria-label="Admin panel">
+                <div class="admin-head">
+                    <span class="admin-title">World Admin</span>
+                    <button id="admin-close-button" class="icon-button" type="button" aria-label="Close admin panel">X</button>
+                </div>
+                <div class="admin-actions">
+                    <button id="random-map-button" type="button">Randomize World</button>
+                    <button id="apply-map-button" type="button">Apply Array</button>
+                    <button id="start-combat-button" type="button">Start Co-op Combat</button>
+                </div>
+                <textarea id="map-array-input" class="map-array-input" spellcheck="false" aria-label="World array editor"></textarea>
+                <div id="admin-message" class="admin-message">Rows use W B S G F H M P I L R T X.</div>
+            </aside>
+        </div>
+        <section id="combat-scene" class="combat-scene" aria-label="Turn-based combat scene">
+            <div class="combat-panel">
+                <div class="combat-head">
+                    <div>
+                        <div class="combat-title">Co-op Turn Combat</div>
+                        <div id="combat-status" class="quest-line">Waiting</div>
+                    </div>
+                    <button id="combat-leave-button" class="icon-button" type="button" aria-label="Leave combat">X</button>
+                </div>
+                <div class="combat-meta">
+                    <span>Round <strong id="combat-round">1</strong></span>
+                    <span>Turn <strong id="combat-turn">Waiting</strong></span>
+                </div>
+                <div class="combat-grid">
+                    <div class="combat-card">
+                        <h3>Party</h3>
+                        <ul id="combat-party-list" class="combat-list"></ul>
+                    </div>
+                    <div class="combat-card">
+                        <h3>Enemies</h3>
+                        <ul id="combat-enemy-list" class="combat-list"></ul>
+                    </div>
+                </div>
+                <div class="combat-actions">
+                    <button id="combat-attack-button" type="button">Attack</button>
+                    <button id="combat-guard-button" type="button">Guard</button>
+                    <button id="combat-ready-button" type="button">Ready</button>
+                </div>
+                <ul id="combat-log" class="combat-log"></ul>
+            </div>
+        </section>
+    </main>
     <script type="module" src="/src/main.js"></script>
 </body>
 </html>

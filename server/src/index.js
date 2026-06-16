@@ -2,6 +2,7 @@ const Colyseus = require('colyseus');
 const http = require('http');
 const express = require('express');
 const WorldRoom = require('./rooms/WorldRoom');
+const CombatRoom = require('./rooms/CombatRoom');
 
 const os = require('os');
 const app = express();
@@ -25,6 +26,7 @@ function getLocalIp() {
 
 // Define room handlers
 gameServer.define('world', WorldRoom);
+gameServer.define('combat', CombatRoom);
 
 const PORT = 2567;
 const HOST = '0.0.0.0';

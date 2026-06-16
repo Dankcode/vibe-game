@@ -1,26 +1,68 @@
 import { ThreeManager } from './systems/ThreeManager.js';
 import { WorldGenerator } from './systems/WorldGenerator.js';
-import { PlayerGirl2 } from './entities/PlayerGirl2.js';
+import { PlayerAvatar } from './entities/PlayerAvatar.js';
 import { InputManager } from './systems/InputManager.js';
+import { Pathfinder } from './systems/Pathfinder.js';
+import { WildlifeSystem } from './systems/WildlifeSystem.js';
+import { AdminPanel } from './ui/AdminPanel.js';
+import { CombatScene } from './scenes/CombatScene.js';
+import { MAIN_MAP, MAP_CHUNK_SIZE, MAP_LEGEND, WILDLIFE_SPAWNS } from './data/MapData.js';
 import * as Colyseus from 'colyseus.js';
 
 export class Game {
     constructor() {
         this.threeManager = new ThreeManager();
         this.inputManager = new InputManager();
+        this.inputManager.setPointerTarget(this.threeManager.renderer.domElement);
         
-        this.worldGenerator = new WorldGenerator(this.threeManager);
-        this.worldGenerator.generate(30, 30);
-
-        this.player = new PlayerGirl2(this.threeManager, this.inputManager, 0, 0);
-        
+        this.worldGenerator = new WorldGenerator(this.threeManager, { chunkSize: MAP_CHUNK_SIZE });
+        this.worldGenerator.generateFromChunkedArray(MAIN_MAP, MAP_LEGEND, MAP_CHUNK_SIZE);
+        this.pathfinder = new Pathfinder(this.worldGenerator);
         this.userId = this.generateUserId();
+
+        this.player = new PlayerAvatar(this.threeManager, this.inputManager, this.worldGenerator, -8, 0, {
+            isLocal: true,
+            userId: this.userId
+        });
+        this.remotePlayers = new Map();
+        this.wildlifeSystem = new WildlifeSystem(this.threeManager, this.worldGenerator, WILDLIFE_SPAWNS);
+        this.hoveredTile = null;
+        this.activePath = [];
+        this.lastFrameTime = performance.now();
+        
         this.connectToServer();
 
         this.inputManager.onKeyDown('KeyQ', () => this.threeManager.rotateCamera(1));
         this.inputManager.onKeyDown('KeyE', () => this.threeManager.rotateCamera(-1));
 
+        this.inputManager.onLeftClick((button) => {
+            if (button !== 0) return; // Left click only
+            if (this.hoveredTile && this.player) {
+                const freshPath = this.pathfinder.findPath(
+                    this.player.gridX, this.player.gridY, 
+                    this.hoveredTile.gridX, this.hoveredTile.gridY
+                );
+                if (freshPath && freshPath.length > 0) {
+                    this.player.setPath(freshPath);
+                }
+            }
+        });
+
         this.animate = this.animate.bind(this);
+        
+        this.statusPill = document.getElementById('status-pill');
+        this.positionReadout = document.getElementById('position-readout');
+        this.zoneReadout = document.getElementById('zone-readout');
+        this.chunkReadout = document.getElementById('chunk-readout');
+        this.wildlifeReadout = document.getElementById('wildlife-readout');
+        this.playerCountReadout = document.getElementById('player-count-readout');
+        this.adminPanel = new AdminPanel({
+            onApplyMap: (rows) => this.applyWorldMap(rows, 'custom'),
+            onRandomizeMap: (rows) => this.applyWorldMap(rows, 'random'),
+            onStartCombat: () => this.startCombatScene()
+        });
+        this.updateHud('Connecting');
+
         requestAnimationFrame(this.animate);
     }
 
@@ -37,10 +79,17 @@ export class Game {
                 z: 0
             });
             console.log('[Game] Connected to room:', this.room.id);
+            this.updateHud('Online');
 
             this.setupNetworking();
+            this.combatScene = new CombatScene({
+                client: this.client,
+                userId: this.userId,
+                onExit: () => this.updateHud('Online')
+            });
         } catch (error) {
             console.error('[Game] Failed to connect to server:', error);
+            this.updateHud('Solo');
         }
     }
 
@@ -50,24 +99,150 @@ export class Game {
         this.room.state.players.onAdd = (player, sessionId) => {
             if (sessionId === this.room.sessionId) {
                 // Sync initial position if needed
-                this.player.gridX = player.x;
-                this.player.gridY = player.y;
-                this.player.gridZ = player.z;
+                this.player.applyAuthoritativeCenter(player.centerX, player.centerY, player.centerZ, player.tileX, player.tileY, player.tileZ);
             } else {
-                console.log('[Game] Another player joined:', player.userId);
+                this.addRemotePlayer(player, sessionId);
             }
         };
+
+        this.room.state.players.onRemove = (player, sessionId) => {
+            this.removeRemotePlayer(sessionId);
+        };
+
+        this.room.onMessage('world:chunk:init', (data) => {
+            this.serverChunkInfo = data;
+            this.updateHud('Online');
+        });
+
+        this.room.onMessage('world:chunk:entered', (data) => {
+            this.serverChunkInfo = data;
+            this.updateHud('Online');
+        });
+
+        this.room.onMessage('world:map:updated', (data) => {
+            this.adminPanel.setMessage(`World ${data.source} map active: ${data.width} x ${data.height}.`, 'success');
+        });
 
         // Update loop for network sync
         setInterval(() => {
             if (this.room && this.player) {
+                const center = this.player.getCenterPayload();
+
                 this.room.send('player:move', {
-                    x: Math.round(this.player.gridX),
-                    y: Math.round(this.player.gridY),
-                    z: Math.round(this.player.gridZ)
+                    centerX: center.centerX,
+                    centerY: center.centerY,
+                    centerZ: center.centerZ
                 });
             }
         }, 100);
+    }
+
+    addRemotePlayer(playerState, sessionId) {
+        if (this.remotePlayers.has(sessionId)) return;
+        const remoteAvatar = new PlayerAvatar(
+            this.threeManager,
+            null,
+            this.worldGenerator,
+            playerState.centerX,
+            playerState.centerY,
+            {
+                isLocal: false,
+                userId: playerState.userId
+            }
+        );
+        remoteAvatar.setRemoteTarget(playerState.centerX, playerState.centerY, playerState.centerZ);
+        this.remotePlayers.set(sessionId, remoteAvatar);
+    }
+
+    removeRemotePlayer(sessionId) {
+        const remoteAvatar = this.remotePlayers.get(sessionId);
+        if (!remoteAvatar) return;
+        remoteAvatar.destroy();
+        this.remotePlayers.delete(sessionId);
+    }
+
+    syncRemotePlayersFromState() {
+        if (!this.room?.state?.players) return;
+        this.room.state.players.forEach((playerState, sessionId) => {
+            if (sessionId === this.room.sessionId) {
+                if (Math.abs(playerState.centerX - this.player.gridX) > 0.8 || Math.abs(playerState.centerY - this.player.gridY) > 0.8) {
+                    this.player.applyAuthoritativeCenter(playerState.centerX, playerState.centerY, playerState.centerZ, playerState.tileX, playerState.tileY, playerState.tileZ);
+                }
+                return;
+            }
+
+            if (!this.remotePlayers.has(sessionId)) {
+                this.addRemotePlayer(playerState, sessionId);
+            }
+            this.remotePlayers.get(sessionId).setRemoteTarget(playerState.centerX, playerState.centerY, playerState.centerZ);
+        });
+    }
+
+    applyWorldMap(rows, source) {
+        if (this.hoveredTile) {
+            this.hoveredTile.clearHighlight();
+            this.hoveredTile = null;
+        }
+        this.activePath = [];
+        this.threeManager.renderPathLine([], this.worldGenerator);
+        this.wildlifeSystem.destroy();
+        this.worldGenerator.generateFromChunkedArray(rows, MAP_LEGEND, MAP_CHUNK_SIZE);
+        this.repositionPlayerForCurrentWorld();
+        this.wildlifeSystem = new WildlifeSystem(this.threeManager, this.worldGenerator, WILDLIFE_SPAWNS);
+
+        if (this.room) {
+            this.room.send('world:admin:map_updated', {
+                source,
+                width: rows[0].length,
+                height: rows.length,
+                chunkSize: MAP_CHUNK_SIZE,
+                rows
+            });
+        }
+
+        this.updateHud();
+    }
+
+    repositionPlayerForCurrentWorld() {
+        const habitatSpawn = this.worldGenerator.findNearestHabitat(-8, 0, 'meadow', 48);
+        const validHabitatSpawn = habitatSpawn && this.worldGenerator.isWalkable(habitatSpawn.x, habitatSpawn.y)
+            ? habitatSpawn
+            : null;
+        const nearestWalkable = this.worldGenerator.findNearestWalkable(this.player.gridX, this.player.gridY, 64);
+        const fallbackSpawn = validHabitatSpawn || nearestWalkable || this.findFirstWalkableTile();
+        if (!fallbackSpawn) return;
+
+        this.player.gridX = fallbackSpawn.x;
+        this.player.gridY = fallbackSpawn.y;
+        this.player.gridZ = this.worldGenerator.getElevation(fallbackSpawn.x, fallbackSpawn.y);
+        this.player.targetX = this.player.gridX;
+        this.player.targetY = this.player.gridY;
+        this.player.targetZ = this.player.gridZ;
+        this.player.visualX = this.player.gridX;
+        this.player.visualY = this.player.gridY;
+        this.player.visualZ = this.player.gridZ;
+        this.player.currentPath = [];
+        this.player.syncModel();
+    }
+
+    findFirstWalkableTile() {
+        for (const surface of this.worldGenerator.surfaceMap.values()) {
+            if (this.worldGenerator.isWalkable(surface.x, surface.y)) {
+                return { x: surface.x, y: surface.y };
+            }
+        }
+        return null;
+    }
+
+    async startCombatScene() {
+        if (!this.combatScene) {
+            this.combatScene = new CombatScene({
+                client: this.client,
+                userId: this.userId,
+                onExit: () => this.updateHud(this.room ? 'Online' : 'Solo')
+            });
+        }
+        await this.combatScene.enter('meadow-hare-demo');
     }
 
     generateUserId() {
@@ -80,6 +255,9 @@ export class Game {
 
     animate() {
         requestAnimationFrame(this.animate);
+        const now = performance.now();
+        const deltaSeconds = Math.min((now - this.lastFrameTime) / 1000, 0.1);
+        this.lastFrameTime = now;
         
         // Handle zoom
         const wheelDelta = this.inputManager.getWheelDelta();
@@ -87,18 +265,76 @@ export class Game {
             this.threeManager.handleZoom(wheelDelta);
         }
 
+        // Handle Hover & Pathfinding
+        const tile = this.threeManager.getIntersectedTile(this.inputManager.mouseNDC);
+        if (tile !== this.hoveredTile) {
+            if (this.hoveredTile) this.hoveredTile.clearHighlight();
+            this.hoveredTile = tile;
+            
+            if (this.hoveredTile) {
+                const canStandHere = this.worldGenerator.isWalkable(this.hoveredTile.gridX, this.hoveredTile.gridY);
+                this.hoveredTile.highlight(canStandHere ? 0x2f8f4e : 0x8f2630);
+                // Calculate Path from Player to Hovered Tile
+                if (this.player && canStandHere) {
+                   this.activePath = this.pathfinder.findPath(this.player.gridX, this.player.gridY, this.hoveredTile.gridX, this.hoveredTile.gridY);
+                   this.threeManager.renderPathLine(this.activePath, this.worldGenerator);
+                } else {
+                   this.activePath = [];
+                   this.threeManager.renderPathLine([], this.worldGenerator);
+                }
+            } else {
+                this.activePath = null;
+                this.threeManager.renderPathLine([], this.worldGenerator);
+            }
+        }
+
         // Update player
         if (this.player) {
-            // Update elevation based on generator
-            const groundZ = this.worldGenerator.getElevation(this.player.gridX, this.player.gridY);
-            this.player.gridZ = groundZ;
-            this.player.update();
+            this.player.update(deltaSeconds);
+            this.syncRemotePlayersFromState();
+            for (const remoteAvatar of this.remotePlayers.values()) {
+                remoteAvatar.update(deltaSeconds);
+            }
+            this.wildlifeSystem.update(deltaSeconds);
             
             // Make camera follow player
             const targetPos = this.player.group.position;
             this.threeManager.updateCamera(targetPos);
+
+            this.updateHud();
         }
 
         this.threeManager.render();
+    }
+
+    updateHud(status) {
+        if (status && this.statusPill) {
+            this.statusPill.textContent = status;
+            this.statusPill.dataset.status = status.toLowerCase();
+        }
+
+        if (!this.player) return;
+
+        const tileX = Math.round(this.player.gridX);
+        const tileY = Math.round(this.player.gridY);
+        const surface = this.worldGenerator.getSurfaceAt(tileX, tileY);
+        const chunkKey = this.worldGenerator.getChunkKeyForTile(tileX, tileY);
+        const loadedChunks = this.worldGenerator.getLoadedChunkSummary().length;
+
+        if (this.positionReadout) {
+            this.positionReadout.textContent = `${tileX}, ${tileY}, ${this.player.gridZ}`;
+        }
+        if (this.zoneReadout) {
+            this.zoneReadout.textContent = surface?.definition?.label || 'Unknown';
+        }
+        if (this.chunkReadout) {
+            this.chunkReadout.textContent = `${chunkKey} / ${loadedChunks}`;
+        }
+        if (this.wildlifeReadout) {
+            this.wildlifeReadout.textContent = `${this.wildlifeSystem.wildlife.length}`;
+        }
+        if (this.playerCountReadout) {
+            this.playerCountReadout.textContent = `${this.room?.state?.players?.size || 1}`;
+        }
     }
 }

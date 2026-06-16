@@ -2,36 +2,51 @@ import * as THREE from 'three';
 
 export class ThreeManager {
     constructor() {
+        this.container = document.getElementById('three-game') || document.body;
         this.scene = new THREE.Scene();
-        this.scene.background = new THREE.Color(0x2a1f14);
+        this.scene.background = new THREE.Color(0xb9eaff);
 
-        const aspect = window.innerWidth / window.innerHeight;
-        const d = 20;
+        const { width, height } = this.getViewportSize();
+        const aspect = width / height;
+        const d = 16;
         this.camera = new THREE.OrthographicCamera(-d * aspect, d * aspect, d, -d, 1, 1000);
+        this.cameraBaseSize = d;
         
         // Isometric position: Equal distance on all axes
         this.camera.position.set(20, 20, 20); 
         this.camera.lookAt(0, 0, 0);
 
-        this.renderer = new THREE.WebGLRenderer({ antialias: true });
-        this.renderer.setSize(window.innerWidth, window.innerHeight);
-        this.renderer.setPixelRatio(window.devicePixelRatio);
-        
-        const container = document.getElementById('three-game');
-        if (container) {
-            container.appendChild(this.renderer.domElement);
-        } else {
-            document.body.appendChild(this.renderer.domElement);
-        }
+        this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+        this.renderer.setSize(width, height);
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.shadowMap.type = THREE.PCFShadowMap;
+        this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        this.renderer.toneMappingExposure = 1.08;
+        this.container.appendChild(this.renderer.domElement);
         
         this.renderer.domElement.id = 'three-canvas';
 
         // Lighting
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        const hemisphereLight = new THREE.HemisphereLight(0xe9fbff, 0xb7c889, 1.0);
+        this.scene.add(hemisphereLight);
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.42);
         this.scene.add(ambientLight);
 
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        directionalLight.position.set(10, 20, 10);
+        const directionalLight = new THREE.DirectionalLight(0xfff3d0, 1.35);
+        directionalLight.position.set(12, 26, 10);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.set(2048, 2048);
+        directionalLight.shadow.camera.left = -34;
+        directionalLight.shadow.camera.right = 34;
+        directionalLight.shadow.camera.top = 34;
+        directionalLight.shadow.camera.bottom = -34;
+        directionalLight.shadow.camera.near = 1;
+        directionalLight.shadow.camera.far = 80;
+        directionalLight.shadow.bias = -0.00025;
+        directionalLight.shadow.radius = 3;
         this.scene.add(directionalLight);
 
         // Layers/Groups
@@ -43,19 +58,68 @@ export class ThreeManager {
 
         this.cameraZoom = 1.0;
         this.rotationIndex = 0; // 0=SE, 1=NE, 2=NW, 3=SW
+        
+        this.raycaster = new THREE.Raycaster();
+        this.pathLine = null;
 
         window.addEventListener('resize', () => this.onWindowResize());
     }
 
+    getViewportSize() {
+        const rect = this.container.getBoundingClientRect();
+        return {
+            width: Math.max(320, rect.width || window.innerWidth),
+            height: Math.max(240, rect.height || window.innerHeight)
+        };
+    }
+
+    getIntersectedTile(mouseNDC) {
+        this.raycaster.setFromCamera(mouseNDC, this.camera);
+        const intersects = this.raycaster.intersectObjects(this.worldGroup.children);
+        if (intersects.length > 0) {
+            return intersects[0].object.userData.tile; // Grab the exact tile defined in Tile.js
+        }
+        return null;
+    }
+
+    renderPathLine(pathNodes, worldGenerator) {
+        if (this.pathLine) {
+            this.scene.remove(this.pathLine);
+            this.pathLine.geometry.dispose();
+            this.pathLine.material.dispose();
+            this.pathLine = null;
+        }
+
+        if (!pathNodes || pathNodes.length < 2) return;
+
+        const points = [];
+        for (const node of pathNodes) {
+            const z = worldGenerator.getElevation(node.x, node.y) + 1.1; // float slightly above
+            points.push(new THREE.Vector3(node.x, z, node.y)); 
+        }
+
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        const material = new THREE.LineBasicMaterial({
+            color: 0x00ffcc, // Cyan glowing line
+            transparent: true,
+            opacity: 0.8,
+            depthTest: false
+        });
+
+        this.pathLine = new THREE.Line(geometry, material);
+        this.scene.add(this.pathLine);
+    }
+
     onWindowResize() {
-        const aspect = window.innerWidth / window.innerHeight;
-        const d = 20;
+        const { width, height } = this.getViewportSize();
+        const aspect = width / height;
+        const d = this.cameraBaseSize;
         this.camera.left = -d * aspect;
         this.camera.right = d * aspect;
         this.camera.top = d;
         this.camera.bottom = -d;
         this.camera.updateProjectionMatrix();
-        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.setSize(width, height);
     }
 
     handleZoom(deltaY) {
