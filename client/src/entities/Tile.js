@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { ELEMENTS, getTileDefinition } from '../data/TileRegistry.js';
 
 export class Tile {
-    static geometry = new THREE.BoxGeometry(1, 1, 1);
+    static geometry = new THREE.BoxGeometry(0.98, 0.96, 0.98);
     static materialCache = new Map();
 
     constructor(threeManager, gridX, gridY, elevation, attributes = {}) {
@@ -24,13 +24,13 @@ export class Tile {
         this.textureValue = textureValue;
         if (this.mesh) {
             this.restoreBaseMaterial();
-            this.mesh.material = Tile.getMaterial(element, textureValue);
+            this.mesh.material = Tile.getMaterials(element, textureValue);
         }
     }
 
     render() {
         // In 3D: (x, y, z) -> gridX, elevation, gridY
-        const material = Tile.getMaterial(this.element, this.textureValue);
+        const material = Tile.getMaterials(this.element, this.textureValue);
 
         this.mesh = new THREE.Mesh(Tile.geometry, material);
         this.mesh.castShadow = !getTileDefinition(this.element, this.textureValue).walkable;
@@ -49,10 +49,13 @@ export class Tile {
     highlight(color = 0x555555) {
         if (this.mesh && this.mesh.material) {
             if (!this.highlightMaterial) {
-                this.highlightMaterial = this.mesh.material.clone();
+                this.highlightMaterial = Array.isArray(this.mesh.material)
+                    ? this.mesh.material.map((material) => material.clone())
+                    : this.mesh.material.clone();
                 this.mesh.material = this.highlightMaterial;
             }
-            this.mesh.material.emissive.setHex(color);
+            const materials = Array.isArray(this.mesh.material) ? this.mesh.material : [this.mesh.material];
+            materials.forEach((material) => material.emissive?.setHex(color));
         }
     }
 
@@ -62,23 +65,38 @@ export class Tile {
 
     restoreBaseMaterial() {
         if (!this.mesh || !this.highlightMaterial) return;
-        this.highlightMaterial.dispose();
+        const materials = Array.isArray(this.highlightMaterial) ? this.highlightMaterial : [this.highlightMaterial];
+        materials.forEach((material) => material.dispose());
         this.highlightMaterial = null;
-        this.mesh.material = Tile.getMaterial(this.element, this.textureValue);
+        this.mesh.material = Tile.getMaterials(this.element, this.textureValue);
     }
 
-    static getMaterial(element, textureValue = 0) {
+    static getMaterials(element, textureValue = 0) {
         const key = `${element}:${textureValue}`;
         if (!Tile.materialCache.has(key)) {
             const definition = getTileDefinition(element, textureValue);
-            const texture = Tile.createTexture(definition);
-            const material = new THREE.MeshStandardMaterial({
-                color: definition.sideColor,
-                map: texture,
+            const topTexture = Tile.createTexture(definition);
+            const sideTexture = Tile.createSideTexture(definition);
+            const topMaterial = new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                map: topTexture,
                 roughness: definition.roughness,
                 metalness: 0.05
             });
-            Tile.materialCache.set(key, material);
+            const sideMaterial = new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                map: sideTexture,
+                roughness: Math.min(1, definition.roughness + 0.08),
+                metalness: 0.02
+            });
+            Tile.materialCache.set(key, [
+                sideMaterial,
+                sideMaterial,
+                topMaterial,
+                sideMaterial,
+                sideMaterial,
+                sideMaterial
+            ]);
         }
         return Tile.materialCache.get(key);
     }
@@ -100,6 +118,10 @@ export class Tile {
             Tile.drawGrass(ctx, top, side);
         } else if (definition.pattern === 'forest') {
             Tile.drawForest(ctx);
+        } else if (definition.pattern === 'hill') {
+            Tile.drawHill(ctx);
+        } else if (definition.pattern === 'stone') {
+            Tile.drawStone(ctx);
         } else if (definition.pattern === 'road') {
             Tile.drawRoad(ctx);
         } else if (definition.pattern === 'water') {
@@ -130,6 +152,62 @@ export class Tile {
         texture.repeat.set(1, 1);
         texture.needsUpdate = true;
         return texture;
+    }
+
+    static createSideTexture(definition) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 96;
+        canvas.height = 96;
+        const ctx = canvas.getContext('2d');
+        const top = `#${definition.topColor.toString(16).padStart(6, '0')}`;
+        const side = `#${definition.sideColor.toString(16).padStart(6, '0')}`;
+
+        const gradient = ctx.createLinearGradient(0, 0, 0, 96);
+        gradient.addColorStop(0, top);
+        gradient.addColorStop(0.18, side);
+        gradient.addColorStop(1, Tile.shadeColor(side, -34));
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, 96, 96);
+
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.22)';
+        ctx.fillRect(0, 0, 96, 8);
+        ctx.fillStyle = 'rgba(4, 9, 12, 0.26)';
+        ctx.fillRect(0, 84, 96, 12);
+
+        ctx.strokeStyle = definition.walkable ? 'rgba(31, 58, 35, 0.22)' : 'rgba(6, 9, 12, 0.38)';
+        ctx.lineWidth = 3;
+        for (let y = 22; y < 88; y += 22) {
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(96, y);
+            ctx.stroke();
+        }
+
+        if (!definition.walkable) {
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(18, 16);
+            ctx.lineTo(78, 76);
+            ctx.moveTo(80, 18);
+            ctx.lineTo(20, 78);
+            ctx.stroke();
+        }
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+        texture.needsUpdate = true;
+        return texture;
+    }
+
+    static shadeColor(color, amount) {
+        const value = parseInt(color.replace('#', ''), 16);
+        const r = Math.max(0, Math.min(255, (value >> 16) + amount));
+        const g = Math.max(0, Math.min(255, ((value >> 8) & 0xff) + amount));
+        const b = Math.max(0, Math.min(255, (value & 0xff) + amount));
+        return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
     }
 
     static drawSoftTop(ctx, definition) {
@@ -192,6 +270,35 @@ export class Tile {
             ctx.beginPath();
             ctx.arc(x, y, 4 + (i % 3), 0, Math.PI * 2);
             ctx.fill();
+        }
+    }
+
+    static drawHill(ctx) {
+        Tile.drawSpeckles(ctx, '#d4ed91', 24, 0.36);
+        ctx.strokeStyle = 'rgba(57, 108, 53, 0.34)';
+        ctx.lineWidth = 4;
+        for (let y = 20; y < 86; y += 22) {
+            ctx.beginPath();
+            ctx.moveTo(13, y);
+            ctx.bezierCurveTo(30, y - 10, 52, y + 10, 80, y - 2);
+            ctx.stroke();
+        }
+    }
+
+    static drawStone(ctx) {
+        Tile.drawSpeckles(ctx, '#dce2b2', 30, 0.28);
+        ctx.strokeStyle = 'rgba(75, 84, 72, 0.32)';
+        ctx.lineWidth = 3;
+        for (let i = 0; i < 8; i++) {
+            const x = (i * 19) % 74 + 10;
+            const y = (i * 31) % 74 + 10;
+            ctx.beginPath();
+            ctx.moveTo(x - 8, y);
+            ctx.lineTo(x, y - 6);
+            ctx.lineTo(x + 10, y - 2);
+            ctx.lineTo(x + 6, y + 8);
+            ctx.closePath();
+            ctx.stroke();
         }
     }
 

@@ -52,7 +52,7 @@ The active player renderer is a single textured Three.js plane per avatar. The c
 - Three.js coordinates map to `(x, y, z) = (gridX, gridZ, gridY)`.
 - One block is `1 x 1 x 1` world unit.
 - Elevation is the highest block in a tile column.
-- The camera is an orthographic isometric follow camera.
+- The camera is a fixed Three.js perspective follow camera with a low map-view angle. Q/E camera rotation is intentionally disabled for now; do not re-add rotation controls until movement, pathing, and UI prompts are updated together.
 
 ## Map And Block Model
 
@@ -85,7 +85,7 @@ Current map symbols:
 
 Future large maps should add or stream more chunk arrays instead of building one huge monolithic world payload. The backend should send chunk metadata or compact block arrays, not every block for every connected player on every tick.
 
-Random generation should stay mathematical and deterministic from a seed. Use island falloff and edge distance for ocean/shore, ridge or mountain noise for elevation and volcanic terrain, latitude/high-altitude checks for ice, and village stamping after base terrain so roads and building walls sit on usable land.
+Random generation should stay mathematical and deterministic from a seed. The current pipeline builds terrain in phases: feature hints, height field, temperature, moisture, coast, ridge/mountain placement, river carving, village-site scoring, then settlement stamping. This shape is intended to accept future map/API hints such as `seaLevel`, `moistureBias`, `temperatureBias`, `volcanicBias`, or `ridgeAngle` without changing the array/chunk contract.
 
 The admin panel edits map rows directly. It accepts only known legend symbols and requires all rows to have the same width. `Randomize World` creates a new array map with `createRandomMapRows()` and applies it through `Game.applyWorldMap()`.
 
@@ -102,7 +102,7 @@ Tile behavior lives in `client/src/data/TileRegistry.js`.
 
 Use `worldGenerator.canMoveBetween(fromX, fromY, toX, toY, isDiagonal)` for movement, `worldGenerator.isWalkable(x, y)` for simple tile eligibility, and `worldGenerator.supportsHabitat(x, y, habitat)` for wildlife placement. Do not duplicate tile rules in entities.
 
-Movement collision uses the player center point rounded to the active tile column. Diagonal moves may not cut through blocked corners; both adjacent orthogonal columns must be occupiable before the diagonal is allowed. The server mirrors this rule in `WorldSurface` when resolving player centers.
+Movement collision uses the player center point rounded to the active tile column. Keyboard movement is camera-relative, but still resolves against grid columns. Diagonal moves may not cut through blocked corners; both adjacent orthogonal columns must be occupiable before the diagonal is allowed. The server mirrors this rule in `WorldSurface` when resolving player centers.
 
 ## Current Wildlife
 

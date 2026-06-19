@@ -10,6 +10,9 @@ const DIRECTION_ROWS = {
     east: 2,
     north: 3
 };
+const CAMERA_FORWARD = new THREE.Vector3();
+const CAMERA_RIGHT = new THREE.Vector3();
+const MOVE_VECTOR = new THREE.Vector2();
 
 export class PlayerAvatar {
     static texturePromise = null;
@@ -132,23 +135,39 @@ export class PlayerAvatar {
             return;
         }
 
-        let mx = 0;
-        let my = 0;
-        if (this.inputManager.isKeyDown('KeyW')) { mx -= 1; my -= 1; }
-        if (this.inputManager.isKeyDown('KeyS')) { mx += 1; my += 1; }
-        if (this.inputManager.isKeyDown('KeyA')) { mx -= 1; my += 1; }
-        if (this.inputManager.isKeyDown('KeyD')) { mx += 1; my -= 1; }
+        const sideInput = (this.inputManager.isKeyDown('KeyD') ? 1 : 0) -
+            (this.inputManager.isKeyDown('KeyA') ? 1 : 0);
+        const forwardInput = (this.inputManager.isKeyDown('KeyW') ? 1 : 0) -
+            (this.inputManager.isKeyDown('KeyS') ? 1 : 0);
 
-        if (mx !== 0 || my !== 0) {
-            const len = Math.sqrt(mx * mx + my * my);
-            const nextX = this.gridX + (mx / len) * stepSize;
-            const nextY = this.gridY + (my / len) * stepSize;
+        if (sideInput !== 0 || forwardInput !== 0) {
+            const { mx, my } = this.getCameraRelativeMovement(sideInput, forwardInput);
+            const nextX = this.gridX + mx * stepSize;
+            const nextY = this.gridY + my * stepSize;
             const movedX = this.tryMove(nextX, this.gridY, mx, 0);
             const movedY = this.tryMove(this.gridX, nextY, 0, my);
             if (!movedX && !movedY) {
                 this.tryMove(nextX, nextY, mx, my);
             }
         }
+    }
+
+    getCameraRelativeMovement(sideInput, forwardInput) {
+        CAMERA_FORWARD.set(0, 0, -1).applyQuaternion(this.threeManager.camera.quaternion);
+        CAMERA_FORWARD.y = 0;
+        CAMERA_FORWARD.normalize();
+
+        CAMERA_RIGHT.set(1, 0, 0).applyQuaternion(this.threeManager.camera.quaternion);
+        CAMERA_RIGHT.y = 0;
+        CAMERA_RIGHT.normalize();
+
+        MOVE_VECTOR.set(
+            CAMERA_RIGHT.x * sideInput + CAMERA_FORWARD.x * forwardInput,
+            CAMERA_RIGHT.z * sideInput + CAMERA_FORWARD.z * forwardInput
+        );
+
+        if (MOVE_VECTOR.lengthSq() > 1) MOVE_VECTOR.normalize();
+        return { mx: MOVE_VECTOR.x, my: MOVE_VECTOR.y };
     }
 
     moveToward(targetX, targetY, stepSize) {

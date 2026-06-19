@@ -32,9 +32,6 @@ export class Game {
         
         this.connectToServer();
 
-        this.inputManager.onKeyDown('KeyQ', () => this.threeManager.rotateCamera(1));
-        this.inputManager.onKeyDown('KeyE', () => this.threeManager.rotateCamera(-1));
-
         this.inputManager.onLeftClick((button) => {
             if (button !== 0) return; // Left click only
             if (this.hoveredTile && this.player) {

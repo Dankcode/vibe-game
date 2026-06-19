@@ -24,10 +24,12 @@
 
 - Player movement must be delta-time based.
 - Manual movement and click-to-path must both use `worldGenerator.canMoveBetween`; `isWalkable` is only a tile eligibility helper.
+- Keyboard movement should be camera-relative while collision remains grid/tile based.
 - A player cannot climb a target tile that is 2 or more blocks higher than the current tile.
 - Diagonal movement cannot cut through blocked corners. Both adjacent orthogonal tiles must be occupiable.
 - Pointer/raycast coordinates must be calculated from the canvas bounds, not the window bounds.
 - Camera follow and zoom belong in `ThreeManager`; gameplay movement belongs in entity or simulation classes.
+- Do not restore Q/E camera rotation until the movement mapping and player-facing controls are redesigned around it.
 - New movement messages should send `centerX/centerY/centerZ`; do not send client tile coordinates as authority.
 - Keep avatar rendering lightweight enough for 20+ players visible at once. Prefer one billboard/mesh per player and shared texture assets.
 
@@ -47,6 +49,8 @@
 - Keep client `MAP_LEGEND`, admin allowed symbols, and server `WorldSurface` symbols in sync.
 - Current symbols are `W B S G F H M P I L R T X`.
 - Use rounded highlights, soft shadows, and clear blocked markings so players can read walkable and non-walkable tiles quickly.
+- Block side faces should be darker than top faces and include seams/edge contrast so stacked same-terrain blocks do not look like flat walkable floor.
+- Elevation symbols such as `H` and `M` should use distinct texture variants, not plain grass tops.
 - Tile materials and geometries should be cached or instanced where practical. Do not create unique material/geometry objects for every block unless the tile genuinely needs unique state.
 - Highlighting may clone a material temporarily, but must restore and dispose it.
 

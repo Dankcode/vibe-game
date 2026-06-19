@@ -8,12 +8,12 @@ export class ThreeManager {
 
         const { width, height } = this.getViewportSize();
         const aspect = width / height;
-        const d = 16;
-        this.camera = new THREE.OrthographicCamera(-d * aspect, d * aspect, d, -d, 1, 1000);
-        this.cameraBaseSize = d;
+        this.camera = new THREE.PerspectiveCamera(38, aspect, 0.5, 1000);
+        this.cameraOffset = new THREE.Vector3(14, 13, 24);
+        this.cameraLookOffset = new THREE.Vector3(0, 0.8, 0);
         
-        // Isometric position: Equal distance on all axes
-        this.camera.position.set(20, 20, 20); 
+        // Fixed low map-view angle. This keeps WSAD stable and makes block sides readable.
+        this.camera.position.copy(this.cameraOffset);
         this.camera.lookAt(0, 0, 0);
 
         this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
@@ -57,7 +57,6 @@ export class ThreeManager {
         this.scene.add(this.entityGroup);
 
         this.cameraZoom = 1.0;
-        this.rotationIndex = 0; // 0=SE, 1=NE, 2=NW, 3=SW
         
         this.raycaster = new THREE.Raycaster();
         this.pathLine = null;
@@ -112,12 +111,7 @@ export class ThreeManager {
 
     onWindowResize() {
         const { width, height } = this.getViewportSize();
-        const aspect = width / height;
-        const d = this.cameraBaseSize;
-        this.camera.left = -d * aspect;
-        this.camera.right = d * aspect;
-        this.camera.top = d;
-        this.camera.bottom = -d;
+        this.camera.aspect = width / height;
         this.camera.updateProjectionMatrix();
         this.renderer.setSize(width, height);
     }
@@ -131,23 +125,10 @@ export class ThreeManager {
         this.camera.updateProjectionMatrix();
     }
 
-    rotateCamera(direction) {
-        // direction: 1 for clockwise, -1 for counter-clockwise
-        this.rotationIndex = (this.rotationIndex + direction + 4) % 4;
-    }
-
     updateCamera(targetPos) {
-        const dist = 20;
-        const offsets = [
-            new THREE.Vector3( dist, dist,  dist), // 0
-            new THREE.Vector3( dist, dist, -dist), // 1
-            new THREE.Vector3(-dist, dist, -dist), // 2
-            new THREE.Vector3(-dist, dist,  dist)  // 3
-        ];
-        
-        const offset = offsets[this.rotationIndex];
-        this.camera.position.copy(targetPos).add(offset);
-        this.camera.lookAt(targetPos);
+        const lookTarget = targetPos.clone().add(this.cameraLookOffset);
+        this.camera.position.copy(targetPos).add(this.cameraOffset);
+        this.camera.lookAt(lookTarget);
     }
 
     render() {

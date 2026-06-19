@@ -108,6 +108,27 @@ const VARIANT_OVERRIDES = {
         moveCost: 0.9,
         pattern: 'road'
     },
+    [`${ELEMENTS.GEO}:3`]: {
+        label: 'Hill Ledge',
+        topColor: 0xa7d879,
+        sideColor: 0x4f8c43,
+        moveCost: 1.28,
+        pattern: 'hill'
+    },
+    [`${ELEMENTS.GEO}:4`]: {
+        label: 'Mountain Ledge',
+        topColor: 0xaebc8c,
+        sideColor: 0x69745c,
+        moveCost: 1.45,
+        pattern: 'stone'
+    },
+    [`${ELEMENTS.CRYO}:1`]: {
+        label: 'Ice Lake',
+        topColor: 0xb8f0ff,
+        sideColor: 0x75bdd7,
+        moveCost: 1.24,
+        pattern: 'ice'
+    },
     [`${ELEMENTS.STRUCTURE}:0`]: {
         label: 'Stone Wall',
         topColor: 0xb5c0cc,
