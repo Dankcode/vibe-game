@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="data:,">
     <title>Vibe Game</title>
     <style>
         :root {
@@ -139,6 +140,13 @@
 
         button:hover {
             background: rgba(154, 209, 123, 0.18);
+        }
+
+        button.is-active,
+        button[aria-pressed="true"] {
+            border-color: rgba(56, 255, 156, 0.5);
+            background: rgba(56, 255, 156, 0.16);
+            color: #dfffee;
         }
 
         .quest-line {
@@ -396,7 +404,7 @@
             }
         }
     </style>
-  <script type="module" crossorigin src="/assets/index-DD6Uzfhc.js"></script>
+  <script type="module" crossorigin src="/assets/index-Bfl-WpLR.js"></script>
 </head>
 <body>
     <main class="game-shell" aria-label="Vibe Game">
@@ -444,10 +452,11 @@
                 <div class="admin-actions">
                     <button id="random-map-button" type="button">Randomize World</button>
                     <button id="apply-map-button" type="button">Apply Array</button>
+                    <button id="collision-debug-button" type="button" aria-pressed="false">Collision Area</button>
                     <button id="start-combat-button" type="button">Start Co-op Combat</button>
                 </div>
                 <textarea id="map-array-input" class="map-array-input" spellcheck="false" aria-label="World array editor"></textarea>
-                <div id="admin-message" class="admin-message">Rows use W B S G F H M P I L R T X.</div>
+                <div id="admin-message" class="admin-message">Rows use W B S G F H M P I L R T X A C D E U.</div>
             </aside>
         </div>
         <section id="combat-scene" class="combat-scene" aria-label="Turn-based combat scene">

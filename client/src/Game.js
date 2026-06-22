@@ -7,6 +7,7 @@ import { WildlifeSystem } from './systems/WildlifeSystem.js';
 import { AdminPanel } from './ui/AdminPanel.js';
 import { CombatScene } from './scenes/CombatScene.js';
 import { MAIN_MAP, MAP_CHUNK_SIZE, MAP_LEGEND, WILDLIFE_SPAWNS } from './data/MapData.js';
+import { DEFAULT_BUILDINGS } from './data/BuildingData.js';
 import * as Colyseus from 'colyseus.js';
 
 export class Game {
@@ -16,18 +17,25 @@ export class Game {
         this.inputManager.setPointerTarget(this.threeManager.renderer.domElement);
         
         this.worldGenerator = new WorldGenerator(this.threeManager, { chunkSize: MAP_CHUNK_SIZE });
-        this.worldGenerator.generateFromChunkedArray(MAIN_MAP, MAP_LEGEND, MAP_CHUNK_SIZE);
+        this.currentMapRows = MAIN_MAP;
+        this.currentBuildings = DEFAULT_BUILDINGS;
+        this.worldGenerator.generateFromChunkedArray(MAIN_MAP, MAP_LEGEND, MAP_CHUNK_SIZE, {
+            buildings: this.currentBuildings
+        });
         this.pathfinder = new Pathfinder(this.worldGenerator);
         this.userId = this.generateUserId();
+        const spawn = this.worldGenerator.findHighestWalkable() || this.worldGenerator.findNearestWalkable(0, 0, 64) || { x: -8, y: 0 };
 
-        this.player = new PlayerAvatar(this.threeManager, this.inputManager, this.worldGenerator, -8, 0, {
+        this.player = new PlayerAvatar(this.threeManager, this.inputManager, this.worldGenerator, spawn.x, spawn.y, {
             isLocal: true,
             userId: this.userId
         });
+        this.worldGenerator.updateVisibleTilesAround(this.player.gridX, this.player.gridY);
         this.remotePlayers = new Map();
         this.wildlifeSystem = new WildlifeSystem(this.threeManager, this.worldGenerator, WILDLIFE_SPAWNS);
         this.hoveredTile = null;
         this.activePath = [];
+        this.collisionDebugEnabled = false;
         this.lastFrameTime = performance.now();
         
         this.connectToServer();
@@ -56,7 +64,8 @@ export class Game {
         this.adminPanel = new AdminPanel({
             onApplyMap: (rows) => this.applyWorldMap(rows, 'custom'),
             onRandomizeMap: (rows) => this.applyWorldMap(rows, 'random'),
-            onStartCombat: () => this.startCombatScene()
+            onStartCombat: () => this.startCombatScene(),
+            onToggleCollisionDebug: (isEnabled) => this.setCollisionDebugVisible(isEnabled)
         });
         this.updateHud('Connecting');
 
@@ -79,6 +88,7 @@ export class Game {
             this.updateHud('Online');
 
             this.setupNetworking();
+            this.syncCurrentMapToServer('client-default');
             this.combatScene = new CombatScene({
                 client: this.client,
                 userId: this.userId,
@@ -122,14 +132,18 @@ export class Game {
 
         // Update loop for network sync
         setInterval(() => {
-            if (this.room && this.player) {
+            if (this.room?.connection?.isOpen && this.player) {
                 const center = this.player.getCenterPayload();
 
-                this.room.send('player:move', {
-                    centerX: center.centerX,
-                    centerY: center.centerY,
-                    centerZ: center.centerZ
-                });
+                try {
+                    this.room.send('player:move', {
+                        centerX: center.centerX,
+                        centerY: center.centerY,
+                        centerZ: center.centerZ
+                    });
+                } catch (error) {
+                    console.warn('[Game] Skipped movement sync while connection is closing.', error);
+                }
             }
         }, 100);
     }
@@ -148,6 +162,7 @@ export class Game {
             }
         );
         remoteAvatar.setRemoteTarget(playerState.centerX, playerState.centerY, playerState.centerZ);
+        remoteAvatar.setCollisionDebugVisible(this.collisionDebugEnabled);
         this.remotePlayers.set(sessionId, remoteAvatar);
     }
 
@@ -183,30 +198,22 @@ export class Game {
         this.activePath = [];
         this.threeManager.renderPathLine([], this.worldGenerator);
         this.wildlifeSystem.destroy();
-        this.worldGenerator.generateFromChunkedArray(rows, MAP_LEGEND, MAP_CHUNK_SIZE);
+        this.currentMapRows = rows;
+        this.currentBuildings = source === 'custom' ? [] : DEFAULT_BUILDINGS;
+        this.worldGenerator.generateFromChunkedArray(rows, MAP_LEGEND, MAP_CHUNK_SIZE, {
+            buildings: this.currentBuildings
+        });
         this.repositionPlayerForCurrentWorld();
         this.wildlifeSystem = new WildlifeSystem(this.threeManager, this.worldGenerator, WILDLIFE_SPAWNS);
 
-        if (this.room) {
-            this.room.send('world:admin:map_updated', {
-                source,
-                width: rows[0].length,
-                height: rows.length,
-                chunkSize: MAP_CHUNK_SIZE,
-                rows
-            });
-        }
+        this.syncCurrentMapToServer(source);
 
         this.updateHud();
     }
 
     repositionPlayerForCurrentWorld() {
-        const habitatSpawn = this.worldGenerator.findNearestHabitat(-8, 0, 'meadow', 48);
-        const validHabitatSpawn = habitatSpawn && this.worldGenerator.isWalkable(habitatSpawn.x, habitatSpawn.y)
-            ? habitatSpawn
-            : null;
-        const nearestWalkable = this.worldGenerator.findNearestWalkable(this.player.gridX, this.player.gridY, 64);
-        const fallbackSpawn = validHabitatSpawn || nearestWalkable || this.findFirstWalkableTile();
+        const highestWalkable = this.worldGenerator.findHighestWalkable();
+        const fallbackSpawn = highestWalkable || this.worldGenerator.findNearestWalkable(this.player.gridX, this.player.gridY, 64) || this.findFirstWalkableTile();
         if (!fallbackSpawn) return;
 
         this.player.gridX = fallbackSpawn.x;
@@ -219,7 +226,28 @@ export class Game {
         this.player.visualY = this.player.gridY;
         this.player.visualZ = this.player.gridZ;
         this.player.currentPath = [];
+        this.player.setCollisionDebugVisible(this.collisionDebugEnabled);
         this.player.syncModel();
+        this.worldGenerator.updateVisibleTilesAround(this.player.gridX, this.player.gridY);
+    }
+
+    syncCurrentMapToServer(source) {
+        if (!this.room || !this.currentMapRows?.length) return;
+        this.room.send('world:admin:map_updated', {
+            source,
+            width: this.currentMapRows[0].length,
+            height: this.currentMapRows.length,
+            chunkSize: MAP_CHUNK_SIZE,
+            rows: this.currentMapRows
+        });
+    }
+
+    setCollisionDebugVisible(isEnabled) {
+        this.collisionDebugEnabled = isEnabled;
+        this.player?.setCollisionDebugVisible(isEnabled);
+        for (const remoteAvatar of this.remotePlayers.values()) {
+            remoteAvatar.setCollisionDebugVisible(isEnabled);
+        }
     }
 
     findFirstWalkableTile() {
@@ -293,10 +321,13 @@ export class Game {
                 remoteAvatar.update(deltaSeconds);
             }
             this.wildlifeSystem.update(deltaSeconds);
-            
-            // Make camera follow player
+
+            // Make camera follow player before view-dependent building cutaways.
             const targetPos = this.player.group.position;
             this.threeManager.updateCamera(targetPos);
+            this.worldGenerator.updateBuildingVisibility(this.player.gridX, this.player.gridY);
+            this.worldGenerator.updateVisibleTilesAround(this.player.gridX, this.player.gridY);
+            this.worldGenerator.updatePlayerSightCutaway(this.player.gridX, this.player.gridY, this.threeManager.camera);
 
             this.updateHud();
         }

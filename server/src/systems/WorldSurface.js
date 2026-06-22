@@ -9,19 +9,24 @@ const ELEMENTS = {
 };
 
 const MAP_LEGEND = {
-    W: { element: ELEMENTS.HYDRO, maxZ: 0 },
-    B: { element: ELEMENTS.HYDRO, maxZ: 0 },
-    S: { element: ELEMENTS.ANEMO, maxZ: 1 },
-    G: { element: ELEMENTS.GEO, maxZ: 1 },
-    F: { element: ELEMENTS.GEO, maxZ: 1 },
-    H: { element: ELEMENTS.GEO, maxZ: 2 },
-    M: { element: ELEMENTS.GEO, maxZ: 3 },
-    P: { element: ELEMENTS.CRYO, maxZ: 4 },
-    I: { element: ELEMENTS.CRYO, maxZ: 0 },
-    L: { element: ELEMENTS.PYRO, maxZ: 2 },
-    R: { element: ELEMENTS.GEO, maxZ: 1 },
-    T: { element: ELEMENTS.STRUCTURE, maxZ: 3 },
-    X: { element: ELEMENTS.STRUCTURE, maxZ: 2 }
+    W: { element: ELEMENTS.HYDRO, texture: 2, effect: ELEMENTS.HYDRO, building: 0, maxZ: 0 },
+    B: { element: ELEMENTS.HYDRO, texture: 4, effect: ELEMENTS.HYDRO, building: 0, maxZ: 0 },
+    S: { element: ELEMENTS.ANEMO, texture: 0, effect: ELEMENTS.ANEMO, building: 0, maxZ: 0 },
+    G: { element: ELEMENTS.GEO, texture: 0, effect: ELEMENTS.GEO, building: 0, maxZ: 0 },
+    F: { element: ELEMENTS.GEO, texture: 1, effect: ELEMENTS.GEO, building: 0, maxZ: 0 },
+    H: { element: ELEMENTS.GEO, texture: 3, effect: ELEMENTS.GEO, building: 0, maxZ: 1 },
+    M: { element: ELEMENTS.GEO, texture: 4, effect: ELEMENTS.GEO, building: 0, maxZ: 2 },
+    P: { element: ELEMENTS.CRYO, texture: 0, effect: ELEMENTS.CRYO, building: 0, maxZ: 2 },
+    I: { element: ELEMENTS.CRYO, texture: 1, effect: ELEMENTS.CRYO, building: 0, maxZ: 0 },
+    L: { element: ELEMENTS.PYRO, texture: 0, effect: ELEMENTS.PYRO, building: 0, maxZ: 2 },
+    R: { element: ELEMENTS.GEO, texture: 2, effect: ELEMENTS.GEO, building: 0, maxZ: 0 },
+    T: { element: ELEMENTS.STRUCTURE, texture: 1, effect: ELEMENTS.STRUCTURE, building: 1, maxZ: 2 },
+    X: { element: ELEMENTS.STRUCTURE, texture: 0, effect: ELEMENTS.STRUCTURE, building: 1, maxZ: 1 },
+    A: { element: ELEMENTS.STRUCTURE, texture: 3, effect: ELEMENTS.STRUCTURE, building: 1, maxZ: 2 },
+    C: { element: ELEMENTS.STRUCTURE, texture: 4, effect: ELEMENTS.STRUCTURE, building: 1, maxZ: 2 },
+    D: { element: ELEMENTS.STRUCTURE, texture: 5, effect: ELEMENTS.STRUCTURE, building: 2, maxZ: 0, walkable: true },
+    E: { element: ELEMENTS.STRUCTURE, texture: 2, effect: ELEMENTS.STRUCTURE, building: 3, maxZ: 0, walkable: true },
+    U: { element: ELEMENTS.STRUCTURE, texture: 6, effect: ELEMENTS.STRUCTURE, building: 4, maxZ: 0, walkable: true }
 };
 
 const DEFAULT_MAP = [
@@ -75,8 +80,7 @@ class WorldSurface {
 
         for (let y = 0; y < this.height; y++) {
             for (let x = 0; x < this.width; x++) {
-                const symbol = normalized[y][x];
-                const block = MAP_LEGEND[symbol] || { element: ELEMENTS.VOID, maxZ: 0 };
+                const block = this.resolveBlock(normalized[y][x]);
                 const gridX = x - this.offsetX;
                 const gridY = y - this.offsetY;
                 this.surfaceMap.set(this.getColumnKey(gridX, gridY), {
@@ -84,7 +88,10 @@ class WorldSurface {
                     y: gridY,
                     z: block.maxZ,
                     element: block.element,
-                    walkable: WALKABLE_ELEMENTS.has(block.element)
+                    texture: block.texture,
+                    effect: block.effect,
+                    building: block.building,
+                    walkable: block.walkable ?? WALKABLE_ELEMENTS.has(block.element)
                 });
             }
         }
@@ -92,15 +99,73 @@ class WorldSurface {
 
     normalizeRows(rows) {
         if (!Array.isArray(rows) || rows.length === 0) return DEFAULT_MAP;
-        const normalized = rows.map((row) => String(row).trim().toUpperCase()).filter(Boolean);
+        const normalized = rows
+            .map((row) => {
+                if (typeof row === 'string') {
+                    return row.trim().toUpperCase().replace(/[^WBSGFHMPILRTXACDEU]/g, 'W');
+                }
+                if (Array.isArray(row)) return row.map((cell) => this.normalizeCell(cell));
+                return null;
+            })
+            .filter((row) => row && row.length > 0);
+
         if (normalized.length === 0) return DEFAULT_MAP;
 
         const width = normalized[0].length;
-        if (width === 0 || normalized.some((row) => row.length !== width)) {
-            return DEFAULT_MAP;
-        }
+        if (width === 0 || normalized.some((row) => row.length !== width)) return DEFAULT_MAP;
+        return normalized;
+    }
 
-        return normalized.map((row) => row.replace(/[^WBSGFHMPILRTX]/g, 'W'));
+    resolveBlock(rawCell) {
+        if (typeof rawCell === 'string') return this.normalizeCell(MAP_LEGEND[rawCell] || MAP_LEGEND.W);
+        return this.normalizeCell(rawCell);
+    }
+
+    normalizeCell(rawCell) {
+        if (typeof rawCell === 'string') return this.normalizeCell(MAP_LEGEND[rawCell.toUpperCase()] || MAP_LEGEND.W);
+        if (Array.isArray(rawCell)) {
+            return this.createBlock({
+                element: rawCell[0],
+                texture: rawCell[1],
+                effect: rawCell[2],
+                building: rawCell[3],
+                maxZ: rawCell[4]
+            });
+        }
+        if (rawCell && typeof rawCell === 'object') {
+            return this.createBlock({
+                element: rawCell.element ?? rawCell.e,
+                texture: rawCell.texture ?? rawCell.textureValue ?? rawCell.t,
+                effect: rawCell.effect ?? rawCell.fx,
+                building: rawCell.building ?? rawCell.b,
+                maxZ: rawCell.height ?? rawCell.maxZ ?? rawCell.h,
+                walkable: rawCell.walkable
+            });
+        }
+        return this.createBlock(MAP_LEGEND.W);
+    }
+
+    createBlock({ element = ELEMENTS.VOID, texture = 0, effect = 0, building = 0, maxZ = 0, walkable } = {}) {
+        const normalizedElement = this.clampInteger(element, ELEMENTS.VOID);
+        const textureValue = this.clampInteger(texture, 0);
+        return {
+            element: normalizedElement,
+            texture: textureValue,
+            effect: this.clampInteger(effect, 0),
+            building: this.clampInteger(building, 0),
+            maxZ: this.clampInteger(maxZ, 0),
+            walkable: walkable ?? this.isWalkableBlock(normalizedElement, textureValue)
+        };
+    }
+
+    isWalkableBlock(element, texture) {
+        if (element === ELEMENTS.STRUCTURE) return texture === 2 || texture === 5 || texture === 6;
+        return WALKABLE_ELEMENTS.has(element);
+    }
+
+    clampInteger(value, fallback) {
+        const number = Number(value);
+        return Number.isFinite(number) ? Math.max(0, Math.floor(number)) : fallback;
     }
 
     resolveCenter(centerX, centerY, previous) {
@@ -133,7 +198,16 @@ class WorldSurface {
         if (previous) {
             return { ...previous, valid: false };
         }
-        return this.resolveNearestWalkable(0, 0);
+        const spawn = this.findHighestWalkable();
+        return {
+            centerX: spawn.x,
+            centerY: spawn.y,
+            centerZ: spawn.z,
+            tileX: spawn.x,
+            tileY: spawn.y,
+            tileZ: spawn.z,
+            valid: false
+        };
     }
 
     resolveNearestWalkable(startX, startY) {
@@ -162,6 +236,15 @@ class WorldSurface {
             }
         }
         return { x: 0, y: 0, z: 0 };
+    }
+
+    findHighestWalkable() {
+        let best = null;
+        for (const surface of this.surfaceMap.values()) {
+            if (!surface.walkable) continue;
+            if (!best || surface.z > best.z) best = surface;
+        }
+        return best || this.findNearestWalkable(0, 0);
     }
 
     canOccupyTile(x, y, fromX = x, fromY = y) {

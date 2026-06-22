@@ -12,7 +12,8 @@
 ## Game Architecture Rules
 
 - Keep simulation state outside Three.js objects. Three.js meshes are render adapters.
-- Keep the map array-driven. A map row character represents one tile column; a tile column expands into stacked block arrays.
+- Keep the map array-driven. The active map format is a 2D array of tile-cell objects; each cell represents one tile column and expands into stacked block arrays.
+- A tile cell must use the hard magic data contract `{ element, texture, effect, building, height }`. Legacy row symbols may exist only as editor shorthand and must normalize through `TileLibrary.js` before gameplay systems use them.
 - Use `WorldGenerator` for block lookup, elevation, walkability, habitat, and chunk indexing.
 - Do not duplicate tile behavior inside players, wildlife, pathfinding, or UI. Add behavior to `TileRegistry.js`.
 - Use `surfaceMap` for movement and habitat decisions. Use `tileMap` only when a specific block at `x,y,z` is required.
@@ -25,6 +26,7 @@
 - Player movement must be delta-time based.
 - Manual movement and click-to-path must both use `worldGenerator.canMoveBetween`; `isWalkable` is only a tile eligibility helper.
 - Keyboard movement should be camera-relative while collision remains grid/tile based.
+- Client-side avatar movement should also check a foot-radius footprint so the visible sprite and shadow do not clip over tile edges before the center point crosses.
 - A player cannot climb a target tile that is 2 or more blocks higher than the current tile.
 - Diagonal movement cannot cut through blocked corners. Both adjacent orthogonal tiles must be occupiable.
 - Pointer/raycast coordinates must be calculated from the canvas bounds, not the window bounds.
@@ -32,6 +34,10 @@
 - Do not restore Q/E camera rotation until the movement mapping and player-facing controls are redesigned around it.
 - New movement messages should send `centerX/centerY/centerZ`; do not send client tile coordinates as authority.
 - Keep avatar rendering lightweight enough for 20+ players visible at once. Prefer one billboard/mesh per player and shared texture assets.
+- Avatar sprites should be foot-anchored. The bottom of the billboard, shadow, and collision footprint must agree visually.
+- Avatar sprites and shadows must respect tile depth. Foreground 3D blocks should cut off the 2D billboard and its shadow when the player is behind terrain; only admin collision debug overlays may ignore depth.
+- Avatar shadows, collision rings, and navigation overlays must sit on the visible tile top surface, not the elevation center. Use `worldGenerator.getSurfaceWorldY()` or `getTopSurfaceOffset()`.
+- When foreground terrain blocks the avatar, prefer cutting away the obstructing top block meshes near the player over adding xray/glow overlays.
 
 ## UI Rules
 
@@ -41,18 +47,27 @@
 - Do not add large always-open panels for debug, controls, quests, inventory, or lore. Put larger surfaces behind explicit toggles later.
 - Text in HUD chips must fit at desktop and mobile sizes.
 - Admin/debug UI must be collapsed by default and must use DOM controls outside the WebGL scene.
+- Collision visualization belongs behind the admin/debug panel and should not be enabled by default.
 
 ## Tile And Texture Rules
 
 - Add new terrain to `TileRegistry.js` with element id, label, walkability, habitats, color/material metadata, and texture pattern.
-- Add map symbols to `MAP_LEGEND`, not directly to render code.
-- Keep client `MAP_LEGEND`, admin allowed symbols, and server `WorldSurface` symbols in sync.
-- Current symbols are `W B S G F H M P I L R T X`.
+- Add tile-cell ids and symbol shorthands to `TileLibrary.js`, not directly to render code.
+- Keep `TileLibrary.js`, admin parsing, and server `WorldSurface` normalization in sync.
+- Current hard magic elements are limited to `0 VOID`, `1 GEO/Earth`, `2 HYDRO/Water`, `3 ANEMO/Wind`, `4 CRYO/Ice`, `5 PYRO/Fire`, and `6 STRUCTURE`.
+- Tile-cell fields are numeric: `element` controls magic/base behavior, `texture` selects the visual texture variant for that element, `effect` is the active elemental overlay/aura on the tile, `building` identifies building part semantics, and `height` is the top block elevation for that column.
+- Compact cells such as `[element, texture, effect, building, height]` may be used for future chunk/network payloads, but gameplay code should normalize them before use.
+- Current editor symbols are `W B S G F H M P I L R T X A C D E U`; they are shorthand only.
 - Use rounded highlights, soft shadows, and clear blocked markings so players can read walkable and non-walkable tiles quickly.
 - Block side faces should be darker than top faces and include seams/edge contrast so stacked same-terrain blocks do not look like flat walkable floor.
 - Elevation symbols such as `H` and `M` should use distinct texture variants, not plain grass tops.
 - Tile materials and geometries should be cached or instanced where practical. Do not create unique material/geometry objects for every block unless the tile genuinely needs unique state.
 - Highlighting may clone a material temporarily, but must restore and dispose it.
+- Building data should enter through serializable blueprints in `BuildingData.js`; stamp those blueprints into tile-cell arrays through the library instead of hard-coding building meshes.
+- Building walls and roofs should cut away when the player is on an interior/door/stair tile so interiors remain readable.
+- Obstruction handling should use the same visibility-flag style as building cutaways. Do not add persistent xray volumes or filled walkability highlights around the player.
+- Default/random maps should stay mostly flat for smoother travel: water, shore, grass, roads, doors, floors, and stairs share the base plane; only hills, mountains, peaks, walls, and special terrain should add meaningful height.
+- Large worlds must keep bounded render visibility around the player through `WorldGenerator.updateVisibleTilesAround()` or a future chunk-streaming equivalent.
 
 ## Wildlife Rules
 
@@ -66,13 +81,13 @@
 
 - Server-owned state should be compact and chunk-aware.
 - Send player movement as center coordinates; server derives tile and chunk coordinates.
-- Future chunk streaming should send compact block arrays or deltas by chunk, not full world snapshots.
+- Future chunk streaming should send compact tile-cell arrays or deltas by chunk, not full world snapshots.
 - Future server-authoritative validation should use the same tile/chunk rules as the client.
 - Combat should remain separate from world movement until the first wildlife/NPC behavior is stable.
 
 ## Admin World Rules
 
-- Custom maps must use the row-string array format and known `MAP_LEGEND` symbols.
+- Custom maps should use JSON tile-cell rows with `{ element, texture, effect, building, height }` objects. The admin panel may also accept compact numeric cells or legacy row-string symbols, but it must normalize them before applying.
 - Every row in a custom map must be the same width.
 - Applying or randomizing a map must rebuild the same `WorldGenerator` surface/chunk indexes used by normal play.
 - After world replacement, move the player to a valid walkable tile and respawn wildlife through `WildlifeSystem`.

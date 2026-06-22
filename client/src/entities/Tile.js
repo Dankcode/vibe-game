@@ -1,8 +1,13 @@
 import * as THREE from 'three';
 import { ELEMENTS, getTileDefinition } from '../data/TileRegistry.js';
+import { BUILDING_PARTS } from '../data/TileLibrary.js';
+
+export const TILE_HEIGHT = 0.96;
+export const TILE_TOP_OFFSET = TILE_HEIGHT / 2;
 
 export class Tile {
-    static geometry = new THREE.BoxGeometry(0.98, 0.96, 0.98);
+    static geometry = new THREE.BoxGeometry(0.98, TILE_HEIGHT, 0.98);
+    static topOffset = TILE_TOP_OFFSET;
     static materialCache = new Map();
 
     constructor(threeManager, gridX, gridY, elevation, attributes = {}) {
@@ -15,22 +20,29 @@ export class Tile {
         // Elemental system: similar to Genshin Impact
         this.element = attributes.element || ELEMENTS.GEO;
         this.textureValue = attributes.textureValue || 0; // Variant/Texture offset
+        this.effect = attributes.effect || 0;
+        this.building = attributes.building || 0;
+        this.objects = [];
 
         this.render();
     }
 
-    setElementalType(element, textureValue) {
+    setElementalType(element, textureValue, effect = 0, building = 0) {
         this.element = element;
         this.textureValue = textureValue;
+        this.effect = effect;
+        this.building = building;
         if (this.mesh) {
             this.restoreBaseMaterial();
-            this.mesh.material = Tile.getMaterials(element, textureValue);
+            this.clearObjects();
+            this.mesh.material = Tile.getMaterials(element, textureValue, effect);
+            this.createObjects();
         }
     }
 
     render() {
         // In 3D: (x, y, z) -> gridX, elevation, gridY
-        const material = Tile.getMaterials(this.element, this.textureValue);
+        const material = Tile.getMaterials(this.element, this.textureValue, this.effect);
 
         this.mesh = new THREE.Mesh(Tile.geometry, material);
         this.mesh.castShadow = !getTileDefinition(this.element, this.textureValue).walkable;
@@ -44,6 +56,169 @@ export class Tile {
         this.mesh.userData.tile = this;
         
         this.threeManager.addToWorld(this.mesh);
+        this.createObjects();
+    }
+
+    createObjects() {
+        if (!this.mesh) return;
+        if (Tile.isWindowWall(this.building)) {
+            this.addWindowWallObjects();
+        } else if (Tile.isDirectionalStair(this.building)) {
+            this.addDirectionalStairObjects();
+        }
+    }
+
+    addWindowWallObjects() {
+        const direction = Tile.getBuildingPartDirection(this.building);
+        const glassMaterial = Tile.getWindowGlassMaterial();
+        const shutterMaterial = Tile.getWindowShutterMaterial(this.textureValue);
+        const sillMaterial = Tile.getWindowSillMaterial(this.textureValue);
+        const isNorthSouth = direction === 'north' || direction === 'south';
+        const glass = new THREE.Mesh(
+            new THREE.BoxGeometry(isNorthSouth ? 0.46 : 0.06, 0.46, isNorthSouth ? 0.06 : 0.46),
+            glassMaterial
+        );
+        const normal = Tile.getDirectionVector(direction);
+        glass.position.set(normal.x * 0.515, -0.38, normal.y * 0.515);
+        glass.raycast = () => {};
+        this.mesh.add(glass);
+        this.objects.push(glass);
+
+        const shutterSize = isNorthSouth ? [0.09, 0.58, 0.07] : [0.07, 0.58, 0.09];
+        const shutterOffsets = isNorthSouth
+            ? [{ x: -0.34, z: 0 }, { x: 0.34, z: 0 }]
+            : [{ x: 0, z: -0.34 }, { x: 0, z: 0.34 }];
+        for (const offset of shutterOffsets) {
+            const shutter = new THREE.Mesh(new THREE.BoxGeometry(...shutterSize), shutterMaterial);
+            shutter.position.set(glass.position.x + offset.x, -0.38, glass.position.z + offset.z);
+            shutter.raycast = () => {};
+            this.mesh.add(shutter);
+            this.objects.push(shutter);
+        }
+
+        const sill = new THREE.Mesh(
+            new THREE.BoxGeometry(isNorthSouth ? 0.64 : 0.08, 0.08, isNorthSouth ? 0.08 : 0.64),
+            sillMaterial
+        );
+        sill.position.set(normal.x * 0.54, -0.68, normal.y * 0.54);
+        sill.raycast = () => {};
+        this.mesh.add(sill);
+        this.objects.push(sill);
+    }
+
+    addDirectionalStairObjects() {
+        const direction = Tile.getBuildingPartDirection(this.building);
+        const normal = Tile.getDirectionVector(direction);
+        const material = Tile.getStairMarkerMaterial();
+
+        for (let i = 0; i < 4; i++) {
+            const step = new THREE.Mesh(new THREE.BoxGeometry(0.72 - i * 0.1, 0.08, 0.14), material);
+            const offset = -0.3 + i * 0.2;
+            step.position.set(normal.x * offset, 0.53 + i * 0.055, normal.y * offset);
+            step.rotation.y = direction === 'east' || direction === 'west' ? Math.PI / 2 : 0;
+            step.raycast = () => {};
+            this.mesh.add(step);
+            this.objects.push(step);
+        }
+    }
+
+    clearObjects() {
+        if (!this.objects?.length) return;
+        for (const object of this.objects) {
+            object.parent?.remove(object);
+            object.geometry?.dispose();
+        }
+        this.objects = [];
+    }
+
+    static isWindowWall(buildingPart) {
+        return [
+            BUILDING_PARTS.WINDOW_NORTH,
+            BUILDING_PARTS.WINDOW_SOUTH,
+            BUILDING_PARTS.WINDOW_WEST,
+            BUILDING_PARTS.WINDOW_EAST
+        ].includes(buildingPart);
+    }
+
+    static isDirectionalStair(buildingPart) {
+        return [
+            BUILDING_PARTS.STAIRS_NORTH,
+            BUILDING_PARTS.STAIRS_SOUTH,
+            BUILDING_PARTS.STAIRS_WEST,
+            BUILDING_PARTS.STAIRS_EAST
+        ].includes(buildingPart);
+    }
+
+    static getBuildingPartDirection(buildingPart) {
+        return {
+            [BUILDING_PARTS.WINDOW_NORTH]: 'north',
+            [BUILDING_PARTS.WINDOW_SOUTH]: 'south',
+            [BUILDING_PARTS.WINDOW_WEST]: 'west',
+            [BUILDING_PARTS.WINDOW_EAST]: 'east',
+            [BUILDING_PARTS.STAIRS_NORTH]: 'north',
+            [BUILDING_PARTS.STAIRS_SOUTH]: 'south',
+            [BUILDING_PARTS.STAIRS_WEST]: 'west',
+            [BUILDING_PARTS.STAIRS_EAST]: 'east'
+        }[buildingPart] || 'north';
+    }
+
+    static getDirectionVector(direction) {
+        return {
+            north: { x: 0, y: -1 },
+            south: { x: 0, y: 1 },
+            west: { x: -1, y: 0 },
+            east: { x: 1, y: 0 }
+        }[direction] || { x: 0, y: -1 };
+    }
+
+    static getWindowGlassMaterial() {
+        if (!Tile.windowGlassMaterial) {
+            Tile.windowGlassMaterial = new THREE.MeshStandardMaterial({
+                color: 0x9de7ff,
+                emissive: 0x225c71,
+                emissiveIntensity: 0.32,
+                roughness: 0.26,
+                metalness: 0.04
+            });
+        }
+        return Tile.windowGlassMaterial;
+    }
+
+    static getWindowShutterMaterial(textureValue) {
+        const key = textureValue === 8 ? 'timber' : 'stone';
+        if (!Tile.windowShutterMaterials) Tile.windowShutterMaterials = new Map();
+        if (!Tile.windowShutterMaterials.has(key)) {
+            Tile.windowShutterMaterials.set(key, new THREE.MeshStandardMaterial({
+                color: key === 'stone' ? 0x4e674d : 0x2f6f55,
+                roughness: 0.84,
+                metalness: 0.01
+            }));
+        }
+        return Tile.windowShutterMaterials.get(key);
+    }
+
+    static getWindowSillMaterial(textureValue) {
+        const key = textureValue === 8 ? 'timber' : 'stone';
+        if (!Tile.windowSillMaterials) Tile.windowSillMaterials = new Map();
+        if (!Tile.windowSillMaterials.has(key)) {
+            Tile.windowSillMaterials.set(key, new THREE.MeshStandardMaterial({
+                color: key === 'stone' ? 0xd4d9d2 : 0x5a3421,
+                roughness: 0.86,
+                metalness: 0.02
+            }));
+        }
+        return Tile.windowSillMaterials.get(key);
+    }
+
+    static getStairMarkerMaterial() {
+        if (!Tile.stairMarkerMaterial) {
+            Tile.stairMarkerMaterial = new THREE.MeshStandardMaterial({
+                color: 0xf0d29a,
+                roughness: 0.78,
+                metalness: 0.01
+            });
+        }
+        return Tile.stairMarkerMaterial;
     }
 
     highlight(color = 0x555555) {
@@ -68,14 +243,14 @@ export class Tile {
         const materials = Array.isArray(this.highlightMaterial) ? this.highlightMaterial : [this.highlightMaterial];
         materials.forEach((material) => material.dispose());
         this.highlightMaterial = null;
-        this.mesh.material = Tile.getMaterials(this.element, this.textureValue);
+        this.mesh.material = Tile.getMaterials(this.element, this.textureValue, this.effect);
     }
 
-    static getMaterials(element, textureValue = 0) {
-        const key = `${element}:${textureValue}`;
+    static getMaterials(element, textureValue = 0, effect = 0) {
+        const key = `${element}:${textureValue}:${effect}`;
         if (!Tile.materialCache.has(key)) {
             const definition = getTileDefinition(element, textureValue);
-            const topTexture = Tile.createTexture(definition);
+            const topTexture = Tile.createTexture(definition, effect);
             const sideTexture = Tile.createSideTexture(definition);
             const topMaterial = new THREE.MeshStandardMaterial({
                 color: 0xffffff,
@@ -101,7 +276,7 @@ export class Tile {
         return Tile.materialCache.get(key);
     }
 
-    static createTexture(definition) {
+    static createTexture(definition, effect = 0) {
         const canvas = document.createElement('canvas');
         canvas.width = 96;
         canvas.height = 96;
@@ -124,6 +299,8 @@ export class Tile {
             Tile.drawStone(ctx);
         } else if (definition.pattern === 'road') {
             Tile.drawRoad(ctx);
+        } else if (definition.pattern === 'floor') {
+            Tile.drawFloor(ctx);
         } else if (definition.pattern === 'water') {
             Tile.drawWaves(ctx, '#b7e6f4', 0.35);
         } else if (definition.pattern === 'marsh') {
@@ -137,12 +314,21 @@ export class Tile {
             Tile.drawLava(ctx);
         } else if (definition.pattern === 'brick') {
             Tile.drawBrick(ctx);
+        } else if (definition.pattern === 'masonry') {
+            Tile.drawMasonry(ctx);
+        } else if (definition.pattern === 'timber') {
+            Tile.drawTimber(ctx);
+        } else if (definition.pattern === 'door') {
+            Tile.drawDoor(ctx);
+        } else if (definition.pattern === 'stairs') {
+            Tile.drawStairs(ctx);
         } else if (definition.pattern === 'blocked') {
             Tile.drawBlocked(ctx);
         } else {
             Tile.drawSpeckles(ctx, side, 28, 0.25);
         }
 
+        if (effect > 0) Tile.drawElementEffect(ctx, effect);
         Tile.drawRoundedFrame(ctx, definition.walkable);
 
         const texture = new THREE.CanvasTexture(canvas);
@@ -233,6 +419,46 @@ export class Tile {
         ctx.restore();
     }
 
+    static drawElementEffect(ctx, effect) {
+        const colors = {
+            [ELEMENTS.GEO]: '#7ed957',
+            [ELEMENTS.HYDRO]: '#4fc3f7',
+            [ELEMENTS.ANEMO]: '#ffd978',
+            [ELEMENTS.CRYO]: '#b8f0ff',
+            [ELEMENTS.PYRO]: '#ff8a3d',
+            [ELEMENTS.STRUCTURE]: '#ffb5cf'
+        };
+        const color = colors[effect];
+        if (!color) return;
+
+        ctx.save();
+        ctx.globalAlpha = 0.22;
+        ctx.fillStyle = color;
+        Tile.roundRect(ctx, 14, 14, 68, 68, 18);
+        ctx.fill();
+
+        ctx.globalAlpha = 0.5;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 4;
+        ctx.setLineDash([14, 10]);
+        ctx.beginPath();
+        ctx.arc(48, 48, 25, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.setLineDash([]);
+        ctx.globalAlpha = 0.38;
+        ctx.lineWidth = 3;
+        for (let i = 0; i < 4; i++) {
+            const angle = i * Math.PI * 0.5 + Math.PI * 0.25;
+            const x = 48 + Math.cos(angle) * 27;
+            const y = 48 + Math.sin(angle) * 27;
+            ctx.beginPath();
+            ctx.arc(x, y, 4, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+        ctx.restore();
+    }
+
     static roundRect(ctx, x, y, width, height, radius) {
         ctx.beginPath();
         ctx.moveTo(x + radius, y);
@@ -315,6 +541,24 @@ export class Tile {
         Tile.drawSpeckles(ctx, '#fff1bd', 34, 0.38);
     }
 
+    static drawFloor(ctx) {
+        ctx.strokeStyle = 'rgba(92, 58, 32, 0.26)';
+        ctx.lineWidth = 3;
+        for (let y = 16; y < 92; y += 16) {
+            ctx.beginPath();
+            ctx.moveTo(5, y);
+            ctx.lineTo(91, y);
+            ctx.stroke();
+        }
+        ctx.strokeStyle = 'rgba(255, 246, 206, 0.22)';
+        for (let x = 18; x < 96; x += 22) {
+            ctx.beginPath();
+            ctx.moveTo(x, 10);
+            ctx.lineTo(x - 6, 88);
+            ctx.stroke();
+        }
+    }
+
     static drawWaves(ctx, color, alpha) {
         ctx.strokeStyle = color;
         ctx.globalAlpha = alpha;
@@ -393,6 +637,83 @@ export class Tile {
         }
     }
 
+    static drawMasonry(ctx) {
+        Tile.drawSpeckles(ctx, '#f1f4f0', 18, 0.18);
+        ctx.strokeStyle = 'rgba(76, 84, 90, 0.36)';
+        ctx.lineWidth = 3;
+        for (let y = 16; y < 96; y += 16) {
+            ctx.beginPath();
+            ctx.moveTo(6, y);
+            ctx.lineTo(90, y);
+            ctx.stroke();
+        }
+        for (let y = 8; y < 96; y += 16) {
+            const offset = (Math.floor(y / 16) % 2) * 18;
+            for (let x = 9 + offset; x < 96; x += 36) {
+                ctx.beginPath();
+                ctx.moveTo(x, y);
+                ctx.lineTo(x, y + 16);
+                ctx.stroke();
+            }
+        }
+    }
+
+    static drawTimber(ctx) {
+        Tile.drawSpeckles(ctx, '#f3c285', 18, 0.16);
+        ctx.strokeStyle = 'rgba(83, 49, 27, 0.38)';
+        ctx.lineWidth = 5;
+        for (let x = 18; x < 96; x += 24) {
+            ctx.beginPath();
+            ctx.moveTo(x, 8);
+            ctx.lineTo(x - 4, 88);
+            ctx.stroke();
+        }
+        ctx.strokeStyle = 'rgba(255, 232, 179, 0.26)';
+        ctx.lineWidth = 2;
+        for (let x = 28; x < 96; x += 24) {
+            ctx.beginPath();
+            ctx.moveTo(x, 8);
+            ctx.lineTo(x - 4, 88);
+            ctx.stroke();
+        }
+    }
+
+    static drawDoor(ctx) {
+        ctx.fillStyle = 'rgba(70, 39, 24, 0.34)';
+        Tile.roundRect(ctx, 22, 14, 52, 68, 10);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255, 218, 132, 0.45)';
+        ctx.lineWidth = 4;
+        Tile.roundRect(ctx, 24, 16, 48, 64, 9);
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(255, 221, 128, 0.7)';
+        ctx.beginPath();
+        ctx.arc(62, 48, 4, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    static drawStairs(ctx) {
+        ctx.save();
+        ctx.fillStyle = 'rgba(84, 58, 35, 0.18)';
+        ctx.fillRect(12, 18, 72, 62);
+        ctx.strokeStyle = 'rgba(255, 246, 218, 0.42)';
+        ctx.lineWidth = 5;
+        for (let i = 0; i < 6; i++) {
+            const y = 22 + i * 10;
+            ctx.beginPath();
+            ctx.moveTo(20 + i * 4, y);
+            ctx.lineTo(76 - i * 3, y);
+            ctx.stroke();
+        }
+        ctx.strokeStyle = 'rgba(92, 58, 32, 0.34)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(20, 78);
+        ctx.lineTo(80, 20);
+        ctx.stroke();
+        ctx.restore();
+    }
+
     static drawBlocked(ctx) {
         ctx.save();
         ctx.fillStyle = 'rgba(20, 24, 28, 0.2)';
@@ -410,17 +731,11 @@ export class Tile {
     }
 
     destroy() {
+        this.clearObjects();
         if (this.mesh) {
             this.restoreBaseMaterial();
             this.threeManager.removeFromWorld(this.mesh);
             this.mesh = null;
-        }
-        if (this.objects) {
-            this.objects.forEach(obj => {
-                if (obj.destroy) obj.destroy();
-                else if (obj.dispose) obj.dispose();
-            });
-            this.objects = [];
         }
     }
 }

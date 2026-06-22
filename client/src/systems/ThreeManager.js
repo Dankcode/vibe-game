@@ -16,9 +16,13 @@ export class ThreeManager {
         this.camera.position.copy(this.cameraOffset);
         this.camera.lookAt(0, 0, 0);
 
-        this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+        this.renderer = new THREE.WebGLRenderer({
+            antialias: window.devicePixelRatio < 2,
+            alpha: false,
+            powerPreference: 'default'
+        });
         this.renderer.setSize(width, height);
-        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFShadowMap;
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -38,7 +42,7 @@ export class ThreeManager {
         const directionalLight = new THREE.DirectionalLight(0xfff3d0, 1.35);
         directionalLight.position.set(12, 26, 10);
         directionalLight.castShadow = true;
-        directionalLight.shadow.mapSize.set(2048, 2048);
+        directionalLight.shadow.mapSize.set(1024, 1024);
         directionalLight.shadow.camera.left = -34;
         directionalLight.shadow.camera.right = 34;
         directionalLight.shadow.camera.top = 34;
@@ -62,6 +66,16 @@ export class ThreeManager {
         this.pathLine = null;
 
         window.addEventListener('resize', () => this.onWindowResize());
+    }
+
+    drawRoundRect(ctx, x, y, width, height, radius) {
+        ctx.beginPath();
+        ctx.moveTo(x + radius, y);
+        ctx.arcTo(x + width, y, x + width, y + height, radius);
+        ctx.arcTo(x + width, y + height, x, y + height, radius);
+        ctx.arcTo(x, y + height, x, y, radius);
+        ctx.arcTo(x, y, x + width, y, radius);
+        ctx.closePath();
     }
 
     getViewportSize() {

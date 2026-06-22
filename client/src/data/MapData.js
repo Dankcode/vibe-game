@@ -1,55 +1,16 @@
-import { ELEMENTS } from './TileRegistry.js';
+import { DEFAULT_BUILDINGS, stampBuildingsOnRows } from './BuildingData.js';
+import { MAP_LEGEND, symbolRowsToTileCells } from './TileLibrary.js';
 
 export const MAP_CHUNK_SIZE = 16;
+export { MAP_LEGEND };
 
-export const MAP_LEGEND = {
-    'W': { element: ELEMENTS.HYDRO, maxZ: 0, textureValue: 2 }, // Deep water
-    'B': { element: ELEMENTS.HYDRO, maxZ: 0, textureValue: 4 }, // Brackish water
-    'S': { element: ELEMENTS.ANEMO, maxZ: 1, textureValue: 0 }, // Sand block
-    'G': { element: ELEMENTS.GEO,   maxZ: 1, textureValue: 0 }, // Grass
-    'F': { element: ELEMENTS.GEO,   maxZ: 1, textureValue: 1 }, // Forest floor
-    'H': { element: ELEMENTS.GEO,   maxZ: 2, textureValue: 3 }, // Hill/High Grass
-    'M': { element: ELEMENTS.GEO,   maxZ: 3, textureValue: 4 }, // Mountain
-    'P': { element: ELEMENTS.CRYO,  maxZ: 4, textureValue: 0 }, // Snow Peak
-    'I': { element: ELEMENTS.CRYO,  maxZ: 0, textureValue: 1 }, // Ice Lake
-    'L': { element: ELEMENTS.PYRO,  maxZ: 2, textureValue: 0 }, // Lava Pool
-    'R': { element: ELEMENTS.GEO,   maxZ: 1, textureValue: 2 }, // Road/plaza
-    'T': { element: ELEMENTS.STRUCTURE, maxZ: 3, textureValue: 1 }, // Town/building wall
-    'X': { element: ELEMENTS.STRUCTURE, maxZ: 2, textureValue: 0 }  // Stone/blocked wall
-};
-
-export const MAIN_MAP = [
-    "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWW",
-    "WWWWWWGSSSSSWWWWWWWWWWWWWWWWWW",
-    "WWWWWGSSSSSGGWWWWWWWWHHHHWWWWW",
-    "WWWWGGGGSSGGGGWWWWWHHHHHHGHWWW",
-    "WWWWGGGGGGGGGGGWHHHHMMMMHHGGWW",
-    "WWWGGGHHGGGGGGGWHHHHMMMMHHGGWW",
-    "WWWGGHHMMHGGGGGWHHMMMMMMMHGGWW",
-    "WWWGGHMMMHGGGGGWHHMMMMMMMHGGWW",
-    "WWGGHMMMMHGHHHHWHMMPPPPMHGGWWW",
-    "WWGGHMMMMHHHHHHWHHMPPPPMHHGWWW",
-    "WWGGHMMMHHGHGGGHHHMMPPMMMHGGWW",
-    "WWGGGHHHHGGGGGGHWWHHMMMMMHGWWW",
-    "WWWGGGGGGGGGWGGHWWWWWHHHHHGGWW",
-    "WWWWWGGGGGGWWGGHWWHHWWHHHGGWWW",
-    "WWWWWGGGGGWBBWGHWWWHWWHHGGGWWW",
-    "WWWWWGGGGGWWBBGWWWWWHWHHGGWWWW",
-    "WWWWWGGGGGBBBBWWWWWWWHHHGWWWWW",
-    "WWWWWGGGGGWBBWWWWWHWHWWHWWWWWW",
-    "WWWWWWGGGGWWWWWHHHHWWHHWWWWWWW",
-    "WWWWWWWGGGWHHHHHHMMHWHGWWWWWWW",
-    "WWWWWWWWWWHHMMMMMMMHWHGGWWWWWW",
-    "WWWWWWWWHHMMMMLLMMHHWHHGWWWWWW",
-    "WWWWWWWWHHMMMLLLMMHHWWHGWWWWWW",
-    "WWWWWWWWHHMMMMLLMMHWWWHWWWWWWW",
-    "WWWWWWWWHHHHMMMMHHWWWWWWWWWWWW",
-    "WWWWWWWWWHHHHHHHHHWWWWWWWWWWWW",
-    "WWWWWWWWIIIHWHHHWWWWWWWWWWWWWW",
-    "WWWWWWWIIIIIIWWWWWWWWWWWWWWWWW",
-    "WWWWWWWIIIIIIWWWWWWWWWWWWWWWWW",
-    "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWW"
-];
+export const MAIN_MAP = createRandomMapRows(72, 60, 20260620, {
+    seaLevel: 0.29,
+    moistureBias: 0.02,
+    temperatureBias: 0.02,
+    volcanicBias: 0.02,
+    buildings: DEFAULT_BUILDINGS
+});
 
 export const WILDLIFE_SPAWNS = [
     {
@@ -62,7 +23,7 @@ export const WILDLIFE_SPAWNS = [
     }
 ];
 
-export function createRandomMapRows(width = 72, height = 60, seed = Date.now(), mapHints = {}) {
+export function createRandomMapRows(width = 80, height = 64, seed = Date.now(), mapHints = {}) {
     const random = seededRandom(seed);
     const features = createWorldFeatures(width, height, seed, random, mapHints);
     const rows = [];
@@ -75,9 +36,13 @@ export function createRandomMapRows(width = 72, height = 60, seed = Date.now(), 
         rows.push(row);
     }
 
-    const riverRows = carveRiver(rows, features, random);
+    const smoothedRows = smoothTerrainRows(rows, 2);
+    const riverRows = carveRiver(smoothedRows, features, random);
     const villageCenter = findVillageCenter(riverRows, width, height, random);
-    return stampVillage(riverRows, villageCenter, random);
+    const villageRows = stampVillage(riverRows, villageCenter, random);
+    const finalRows = smoothTerrainRows(villageRows, 1, { keepSettlements: true });
+    const buildingRows = stampBuildingsOnRows(finalRows, mapHints.buildings || DEFAULT_BUILDINGS);
+    return symbolRowsToTileCells(buildingRows);
 }
 
 export function seededRandom(seed) {
@@ -97,12 +62,12 @@ function createWorldFeatures(width, height, seed, random, mapHints) {
         seed,
         centerX: width / 2,
         centerY: height / 2,
-        seaLevel: mapHints.seaLevel ?? 0.34,
+        seaLevel: mapHints.seaLevel ?? 0.3,
         ridgeCos: Math.cos(ridgeAngle),
         ridgeSin: Math.sin(ridgeAngle),
-        moistureBias: mapHints.moistureBias ?? random() * 0.18 - 0.06,
-        temperatureBias: mapHints.temperatureBias ?? random() * 0.16 - 0.08,
-        volcanicBias: mapHints.volcanicBias ?? random() * 0.18,
+        moistureBias: mapHints.moistureBias ?? random() * 0.12 - 0.04,
+        temperatureBias: mapHints.temperatureBias ?? random() * 0.12 - 0.06,
+        volcanicBias: mapHints.volcanicBias ?? random() * 0.08,
         riverSource: {
             x: Math.floor(width * (0.38 + random() * 0.24)),
             y: Math.floor(height * (riverFromNorth ? 0.22 : 0.78))
@@ -121,9 +86,9 @@ function getTerrainMetrics(x, y, features, seed) {
     const islandDistance = Math.sqrt(dx * dx + dy * dy);
     const ridgeDistance = Math.abs((dx * features.ridgeCos) + (dy * features.ridgeSin));
     const continent = 1.02 - islandDistance * 0.9;
-    const ridgeLift = Math.max(0, 0.28 - ridgeDistance) * 1.38;
-    const broadNoise = smoothNoise(x, y, seed, 0.055) * 0.18;
-    const detailNoise = smoothNoise(x, y, seed + 97, 0.15) * 0.08;
+    const ridgeLift = Math.max(0, 0.2 - ridgeDistance) * 0.72;
+    const broadNoise = smoothNoise(x, y, seed, 0.045) * 0.12;
+    const detailNoise = smoothNoise(x, y, seed + 97, 0.11) * 0.035;
     const mountainNoise = smoothNoise(x, y, seed + 223, 0.1);
     const heightScore = continent + ridgeLift + broadNoise + detailNoise + mountainNoise * 0.15;
     const latitude = Math.abs((y / features.height) - 0.5) * 2;
@@ -152,15 +117,52 @@ function pickTerrainSymbol(metrics) {
     if (heightScore < seaLevel - 0.04) return moisture > 0.66 ? 'B' : 'W';
     if (heightScore < seaLevel + 0.08) return 'S';
 
-    if (temperature < 0.14 && heightScore < 0.72 && moisture > 0.42) return 'I';
-    if (heightScore > 1.08 && temperature < 0.4) return 'P';
+    if (temperature < 0.1 && heightScore < 0.66 && moisture > 0.5) return 'I';
+    if (heightScore > 1.16 && temperature < 0.34) return 'P';
 
     const volcanicScore = mountainNoise + volcanicBias + Math.max(0, heightScore - 0.92);
-    if (heightScore > 0.88 && volcanicScore > 1.22 && temperature > 0.28) return 'L';
-    if (heightScore > 0.95) return mountainNoise > 0.08 ? 'M' : 'H';
-    if (heightScore > 0.74) return moisture > 0.62 && temperature > 0.24 ? 'F' : 'H';
-    if (moisture > 0.58 && temperature > 0.22) return 'F';
+    if (heightScore > 1.02 && volcanicScore > 1.34 && temperature > 0.32) return 'L';
+    if (heightScore > 1.08) return mountainNoise > 0.16 ? 'M' : 'H';
+    if (heightScore > 0.86) return 'H';
+    if (moisture > 0.64 && temperature > 0.24) return 'F';
     return 'G';
+}
+
+function smoothTerrainRows(rows, iterations = 1, options = {}) {
+    let current = rows;
+    for (let pass = 0; pass < iterations; pass++) {
+        const mutable = current.map((row) => row.split(''));
+        for (let y = 1; y < current.length - 1; y++) {
+            for (let x = 1; x < current[y].length - 1; x++) {
+                const symbol = current[y][x];
+                if (options.keepSettlements && ['R', 'T', 'A', 'C', 'D', 'E', 'U'].includes(symbol)) continue;
+                const replacement = getDominantNeighborSymbol(current, x, y, symbol);
+                if (replacement) mutable[y][x] = replacement;
+            }
+        }
+        current = mutable.map((row) => row.join(''));
+    }
+    return current;
+}
+
+function getDominantNeighborSymbol(rows, x, y, symbol) {
+    const counts = new Map();
+    for (let oy = -1; oy <= 1; oy++) {
+        for (let ox = -1; ox <= 1; ox++) {
+            if (ox === 0 && oy === 0) continue;
+            const neighbor = rows[y + oy]?.[x + ox];
+            if (!neighbor) continue;
+            counts.set(neighbor, (counts.get(neighbor) || 0) + 1);
+        }
+    }
+
+    const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+    const [dominant, dominantCount] = sorted[0] || [];
+    const currentCount = counts.get(symbol) || 0;
+    if (!dominant || dominant === symbol) return null;
+    if (dominantCount >= 5 && currentCount <= 2) return dominant;
+    if (['H', 'M', 'P', 'L', 'I', 'F'].includes(symbol) && dominantCount >= 4) return dominant;
+    return null;
 }
 
 function stampVillage(rows, center, random) {

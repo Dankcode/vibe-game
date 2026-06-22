@@ -133,10 +133,14 @@ class WorldRoom extends Colyseus.Room {
         this.onMessage('world:admin:map_updated', (client, data) => {
             const width = Number.isInteger(data?.width) ? data.width : 0;
             const height = Number.isInteger(data?.height) ? data.height : 0;
-            if (Array.isArray(data?.rows) && data.rows.length <= 128 && data.rows.every((row) => String(row).length <= 128)) {
+            if (this.isValidMapRows(data?.rows)) {
                 this.worldSurface.loadRows(data.rows);
+                const shouldUseHighestSpawn = ['random', 'client-default'].includes(data?.source);
+                const highestSpawn = shouldUseHighestSpawn ? this.worldSurface.findHighestWalkable() : null;
                 for (const player of this.state.players.values()) {
-                    let resolved = this.worldSurface.resolveCenter(player.centerX, player.centerY, this.getPlayerCenterSnapshot(player));
+                    let resolved = shouldUseHighestSpawn
+                        ? this.worldSurface.resolveNearestWalkable(highestSpawn.x, highestSpawn.y)
+                        : this.worldSurface.resolveCenter(player.centerX, player.centerY, this.getPlayerCenterSnapshot(player));
                     const resolvedSurface = this.worldSurface.getSurfaceAt(resolved.tileX, resolved.tileY);
                     if (!resolved.valid && !resolvedSurface?.walkable) {
                         resolved = this.worldSurface.resolveNearestWalkable(player.centerX, player.centerY);
@@ -196,6 +200,19 @@ class WorldRoom extends Colyseus.Room {
                 console.log(`[WorldRoom] Player ${player.userId} inventory updated:`, data);
             }
         });
+    }
+
+    isValidMapRows(rows) {
+        if (!Array.isArray(rows) || rows.length === 0 || rows.length > 128) return false;
+        const width = this.getMapRowWidth(rows[0]);
+        if (width <= 0 || width > 128) return false;
+        return rows.every((row) => this.getMapRowWidth(row) === width);
+    }
+
+    getMapRowWidth(row) {
+        if (typeof row === 'string') return row.trim().length;
+        if (Array.isArray(row)) return row.length;
+        return 0;
     }
 
     getChunkCoord(tileCoord) {

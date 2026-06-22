@@ -1,4 +1,5 @@
 const Colyseus = require('colyseus');
+const { WebSocketTransport } = require('@colyseus/ws-transport');
 const http = require('http');
 const express = require('express');
 const WorldRoom = require('./rooms/WorldRoom');
@@ -7,7 +8,12 @@ const CombatRoom = require('./rooms/CombatRoom');
 const os = require('os');
 const app = express();
 const server = http.createServer(app);
-const gameServer = new Colyseus.Server({ server });
+const gameServer = new Colyseus.Server({
+    transport: new WebSocketTransport({
+        server,
+        maxPayload: 512 * 1024
+    })
+});
 
 // Function to get local LAN IP
 function getLocalIp() {

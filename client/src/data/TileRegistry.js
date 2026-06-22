@@ -140,6 +140,54 @@ const VARIANT_OVERRIDES = {
         topColor: 0xffc36e,
         sideColor: 0xd8893c,
         pattern: 'brick'
+    },
+    [`${ELEMENTS.STRUCTURE}:2`]: {
+        label: 'Building Floor',
+        walkable: true,
+        topColor: 0xd7b98a,
+        sideColor: 0xa7754f,
+        moveCost: 0.95,
+        pattern: 'floor'
+    },
+    [`${ELEMENTS.STRUCTURE}:3`]: {
+        label: 'Stone Building Wall',
+        topColor: 0xc5cbd1,
+        sideColor: 0x7d8790,
+        pattern: 'masonry'
+    },
+    [`${ELEMENTS.STRUCTURE}:4`]: {
+        label: 'Timber Building Wall',
+        topColor: 0xd59a63,
+        sideColor: 0x895936,
+        pattern: 'timber'
+    },
+    [`${ELEMENTS.STRUCTURE}:5`]: {
+        label: 'Doorway',
+        walkable: true,
+        topColor: 0x9b633a,
+        sideColor: 0x6f4028,
+        moveCost: 0.9,
+        pattern: 'door'
+    },
+    [`${ELEMENTS.STRUCTURE}:6`]: {
+        label: 'Stairs',
+        walkable: true,
+        topColor: 0xc8aa7a,
+        sideColor: 0x8c6540,
+        moveCost: 1.05,
+        pattern: 'stairs'
+    },
+    [`${ELEMENTS.STRUCTURE}:7`]: {
+        label: 'Stone Window Wall',
+        topColor: 0xc7d0d8,
+        sideColor: 0x7b8791,
+        pattern: 'masonry'
+    },
+    [`${ELEMENTS.STRUCTURE}:8`]: {
+        label: 'Timber Window Wall',
+        topColor: 0xd7a069,
+        sideColor: 0x8a5a36,
+        pattern: 'timber'
     }
 };
 

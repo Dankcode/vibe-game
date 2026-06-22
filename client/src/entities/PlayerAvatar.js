@@ -1,9 +1,14 @@
 import * as THREE from 'three';
 
-const SPRITE_SHEET = 'assets/characters/lpc-human-male/Walk.png';
 const FRAME_COLUMNS = 8;
 const FRAME_ROWS = 4;
 const FRAME_DURATION = 0.11;
+const FRAME_WIDTH = 96;
+const FRAME_HEIGHT = 128;
+const PLAYER_WIDTH = 1.28;
+const PLAYER_HEIGHT = 1.86;
+const FOOT_RADIUS = 0.32;
+const SURFACE_EPSILON = 0.025;
 const DIRECTION_ROWS = {
     south: 0,
     west: 1,
@@ -16,13 +21,43 @@ const MOVE_VECTOR = new THREE.Vector2();
 
 export class PlayerAvatar {
     static texturePromise = null;
-    static geometry = new THREE.PlaneGeometry(1.18, 2.0);
-    static shadowGeometry = new THREE.CircleGeometry(0.32, 20);
-    static shadowMaterial = new THREE.MeshBasicMaterial({
-        color: 0x050705,
+    static geometry = new THREE.PlaneGeometry(PLAYER_WIDTH, PLAYER_HEIGHT);
+    static shadowGeometry = new THREE.CircleGeometry(0.42, 28);
+    static collisionGeometry = new THREE.RingGeometry(FOOT_RADIUS * 0.9, FOOT_RADIUS * 1.08, 36);
+    static collisionFillGeometry = new THREE.CircleGeometry(FOOT_RADIUS, 36);
+    static occlusionShadowMaterial = new THREE.MeshBasicMaterial({
+        color: 0x98fff1,
         transparent: true,
-        opacity: 0.28,
-        depthWrite: false
+        opacity: 0.34,
+        depthTest: true,
+        depthWrite: false,
+        depthFunc: THREE.GreaterDepth,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide
+    });
+    static shadowMaterial = new THREE.MeshBasicMaterial({
+        color: 0x041009,
+        transparent: true,
+        opacity: 0.36,
+        depthTest: true,
+        depthWrite: false,
+        depthFunc: THREE.LessEqualDepth
+    });
+    static collisionMaterial = new THREE.MeshBasicMaterial({
+        color: 0x32ff8f,
+        transparent: true,
+        opacity: 1,
+        depthTest: false,
+        depthWrite: false,
+        side: THREE.DoubleSide
+    });
+    static collisionFillMaterial = new THREE.MeshBasicMaterial({
+        color: 0x32ff8f,
+        transparent: true,
+        opacity: 0.18,
+        depthTest: false,
+        depthWrite: false,
+        side: THREE.DoubleSide
     });
 
     constructor(threeManager, inputManager, worldGenerator, gridX, gridY, options = {}) {
@@ -40,29 +75,71 @@ export class PlayerAvatar {
         this.targetX = this.gridX;
         this.targetY = this.gridY;
         this.targetZ = this.gridZ;
-        this.speed = 3.2;
+        this.speed = 4.8;
         this.currentPath = [];
         this.direction = 'south';
         this.frame = 0;
         this.frameTimer = 0;
         this.isMoving = false;
+        this.footRadius = FOOT_RADIUS;
 
         this.group = new THREE.Group();
         this.shadow = new THREE.Mesh(PlayerAvatar.shadowGeometry, PlayerAvatar.shadowMaterial);
         this.shadow.rotation.x = -Math.PI / 2;
-        this.shadow.position.y = 0.02;
+        this.shadow.position.y = 0.018;
+        this.shadow.renderOrder = 18;
         this.group.add(this.shadow);
+
+        this.occlusionShadow = new THREE.Mesh(PlayerAvatar.shadowGeometry, PlayerAvatar.occlusionShadowMaterial);
+        this.occlusionShadow.rotation.x = -Math.PI / 2;
+        this.occlusionShadow.position.y = 0.022;
+        this.occlusionShadow.renderOrder = 25;
+        this.group.add(this.occlusionShadow);
+
+        this.collisionDisc = new THREE.Mesh(PlayerAvatar.collisionFillGeometry, PlayerAvatar.collisionFillMaterial);
+        this.collisionDisc.rotation.x = -Math.PI / 2;
+        this.collisionDisc.position.y = 0.03;
+        this.collisionDisc.renderOrder = 29;
+        this.collisionDisc.visible = false;
+        this.group.add(this.collisionDisc);
+
+        this.collisionRing = new THREE.Mesh(PlayerAvatar.collisionGeometry, PlayerAvatar.collisionMaterial);
+        this.collisionRing.rotation.x = -Math.PI / 2;
+        this.collisionRing.position.y = 0.035;
+        this.collisionRing.renderOrder = 30;
+        this.collisionRing.visible = false;
+        this.group.add(this.collisionRing);
 
         this.material = new THREE.MeshBasicMaterial({
             transparent: true,
             alphaTest: 0.08,
-            depthWrite: false
+            depthTest: true,
+            depthWrite: false,
+            depthFunc: THREE.LessEqualDepth
         });
         this.mesh = new THREE.Mesh(PlayerAvatar.geometry, this.material);
-        this.mesh.position.y = 1.0;
+        this.mesh.position.y = PLAYER_HEIGHT / 2 + 0.07;
+        this.mesh.renderOrder = 24;
         this.group.add(this.mesh);
 
+        this.occlusionMaterial = new THREE.MeshBasicMaterial({
+            color: 0x98fff1,
+            transparent: true,
+            opacity: 0.42,
+            alphaTest: 0.08,
+            depthTest: true,
+            depthWrite: false,
+            depthFunc: THREE.GreaterDepth,
+            blending: THREE.AdditiveBlending
+        });
+        this.occlusionMesh = new THREE.Mesh(PlayerAvatar.geometry, this.occlusionMaterial);
+        this.occlusionMesh.position.copy(this.mesh.position);
+        this.occlusionMesh.scale.set(1.08, 1.08, 1);
+        this.occlusionMesh.renderOrder = 26;
+        this.group.add(this.occlusionMesh);
+
         this.threeManager.addToEntities(this.group);
+        this.setTileOcclusionEnabled(true);
         this.loadTexture();
         this.syncModel();
     }
@@ -74,26 +151,144 @@ export class PlayerAvatar {
         this.texture.repeat.set(1 / FRAME_COLUMNS, 1 / FRAME_ROWS);
         this.material.map = this.texture;
         this.material.needsUpdate = true;
+        this.occlusionMaterial.map = this.texture;
+        this.occlusionMaterial.needsUpdate = true;
         this.updateFrame(0);
     }
 
     static getSourceTexture() {
         if (!PlayerAvatar.texturePromise) {
-            PlayerAvatar.texturePromise = new Promise((resolve, reject) => {
-                new THREE.TextureLoader().load(
-                    SPRITE_SHEET,
-                    (texture) => {
-                        texture.colorSpace = THREE.SRGBColorSpace;
-                        texture.magFilter = THREE.NearestFilter;
-                        texture.minFilter = THREE.NearestFilter;
-                        resolve(texture);
-                    },
-                    undefined,
-                    reject
-                );
-            });
+            const canvas = PlayerAvatar.createAnimeSpriteSheet();
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.colorSpace = THREE.SRGBColorSpace;
+            texture.magFilter = THREE.LinearFilter;
+            texture.minFilter = THREE.LinearFilter;
+            texture.needsUpdate = true;
+            PlayerAvatar.texturePromise = Promise.resolve(texture);
         }
         return PlayerAvatar.texturePromise;
+    }
+
+    static createAnimeSpriteSheet() {
+        const canvas = document.createElement('canvas');
+        canvas.width = FRAME_WIDTH * FRAME_COLUMNS;
+        canvas.height = FRAME_HEIGHT * FRAME_ROWS;
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        for (const [direction, row] of Object.entries(DIRECTION_ROWS)) {
+            for (let frame = 0; frame < FRAME_COLUMNS; frame++) {
+                PlayerAvatar.drawAnimeFrame(ctx, frame * FRAME_WIDTH, row * FRAME_HEIGHT, frame, direction);
+            }
+        }
+        return canvas;
+    }
+
+    static drawAnimeFrame(ctx, originX, originY, frame, direction) {
+        const bob = Math.sin((frame / FRAME_COLUMNS) * Math.PI * 2) * 2;
+        const step = Math.sin((frame / FRAME_COLUMNS) * Math.PI * 2);
+        const facingSide = direction === 'west' ? -1 : direction === 'east' ? 1 : 0;
+        const skin = '#ffe2cf';
+        const blush = '#ff9eb4';
+        const hair = '#4b2f7f';
+        const hairShade = '#2d214f';
+        const coat = '#7fd6ff';
+        const coatShade = '#3989c7';
+        const boots = '#5a3a55';
+        const outline = 'rgba(42, 28, 54, 0.72)';
+
+        ctx.save();
+        ctx.translate(originX, originY);
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        ctx.fillStyle = 'rgba(42, 32, 48, 0.18)';
+        ctx.beginPath();
+        ctx.ellipse(48, 116, 18, 5, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        const bodyY = 66 + bob;
+        const headY = 34 + bob;
+        const faceShift = facingSide * 4;
+
+        ctx.strokeStyle = outline;
+        ctx.lineWidth = 5;
+        ctx.fillStyle = coatShade;
+        PlayerAvatar.roundRect(ctx, 31, bodyY, 34, 39, 13);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = coat;
+        PlayerAvatar.roundRect(ctx, 35, bodyY + 2, 26, 32, 11);
+        ctx.fill();
+
+        ctx.strokeStyle = outline;
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.moveTo(35, bodyY + 13);
+        ctx.lineTo(25 + step * 2, bodyY + 31);
+        ctx.moveTo(61, bodyY + 13);
+        ctx.lineTo(71 - step * 2, bodyY + 31);
+        ctx.stroke();
+
+        ctx.strokeStyle = boots;
+        ctx.lineWidth = 8;
+        ctx.beginPath();
+        ctx.moveTo(39, bodyY + 37);
+        ctx.lineTo(35 + step * 3, 113);
+        ctx.moveTo(57, bodyY + 37);
+        ctx.lineTo(61 - step * 3, 113);
+        ctx.stroke();
+
+        ctx.strokeStyle = outline;
+        ctx.lineWidth = 5;
+        ctx.fillStyle = skin;
+        ctx.beginPath();
+        ctx.ellipse(48, headY + 15, 22, 24, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = hair;
+        ctx.beginPath();
+        ctx.ellipse(47, headY + 6, 24, 18, -0.08, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = hairShade;
+        ctx.beginPath();
+        ctx.ellipse(33 - faceShift * 0.2, headY + 22, 8, 17, 0.18, 0, Math.PI * 2);
+        ctx.ellipse(63 + faceShift * 0.2, headY + 20, 8, 15, -0.18, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#2d2540';
+        if (direction !== 'north') {
+            ctx.beginPath();
+            ctx.ellipse(40 + faceShift, headY + 16, 3, 5, 0, 0, Math.PI * 2);
+            ctx.ellipse(55 + faceShift, headY + 16, 3, 5, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(41 + faceShift, headY + 14, 1.2, 0, Math.PI * 2);
+            ctx.arc(56 + faceShift, headY + 14, 1.2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = blush;
+            ctx.globalAlpha = 0.42;
+            ctx.beginPath();
+            ctx.ellipse(32 + faceShift, headY + 25, 4, 2, 0, 0, Math.PI * 2);
+            ctx.ellipse(64 + faceShift, headY + 25, 4, 2, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalAlpha = 1;
+        }
+
+        ctx.restore();
+    }
+
+    static roundRect(ctx, x, y, width, height, radius) {
+        ctx.beginPath();
+        ctx.moveTo(x + radius, y);
+        ctx.arcTo(x + width, y, x + width, y + height, radius);
+        ctx.arcTo(x + width, y + height, x, y + height, radius);
+        ctx.arcTo(x, y + height, x, y, radius);
+        ctx.arcTo(x, y, x + width, y, radius);
+        ctx.closePath();
     }
 
     setPath(path) {
@@ -191,10 +386,9 @@ export class PlayerAvatar {
         const fromY = Math.round(this.gridY);
         const repX = Math.round(nextX);
         const repY = Math.round(nextY);
-        const isDiagonal = fromX !== repX && fromY !== repY;
         const nextElevation = this.worldGenerator.getElevation(repX, repY);
 
-        if (this.worldGenerator.canMoveBetween(fromX, fromY, repX, repY, isDiagonal)) {
+        if (this.worldGenerator.canMoveFootprintBetween(this.gridX, this.gridY, nextX, nextY, this.footRadius)) {
             this.gridX = nextX;
             this.gridY = nextY;
             this.gridZ = nextElevation;
@@ -206,6 +400,24 @@ export class PlayerAvatar {
             return true;
         }
         return false;
+    }
+
+    setCollisionDebugVisible(isVisible) {
+        this.collisionDisc.visible = isVisible;
+        this.collisionRing.visible = isVisible;
+    }
+
+    setTileOcclusionEnabled(isEnabled = true) {
+        this.material.depthTest = isEnabled;
+        this.material.depthFunc = THREE.LessEqualDepth;
+        this.material.needsUpdate = true;
+
+        PlayerAvatar.shadowMaterial.depthTest = isEnabled;
+        PlayerAvatar.shadowMaterial.depthFunc = THREE.LessEqualDepth;
+        PlayerAvatar.shadowMaterial.needsUpdate = true;
+
+        this.occlusionMesh.visible = isEnabled;
+        this.occlusionShadow.visible = isEnabled;
     }
 
     updateRemote(deltaSeconds) {
@@ -252,8 +464,10 @@ export class PlayerAvatar {
         this.visualX += (this.gridX - this.visualX) * 0.45;
         this.visualY += (this.gridY - this.visualY) * 0.45;
         this.visualZ += (this.gridZ - this.visualZ) * 0.2;
-        this.group.position.set(this.visualX, this.visualZ + 0.02, this.visualY);
+        const surfaceY = this.visualZ + this.worldGenerator.getTopSurfaceOffset();
+        this.group.position.set(this.visualX, surfaceY + SURFACE_EPSILON, this.visualY);
         this.mesh.quaternion.copy(this.threeManager.camera.quaternion);
+        this.occlusionMesh.quaternion.copy(this.mesh.quaternion);
     }
 
     getCenterPayload() {
@@ -286,5 +500,6 @@ export class PlayerAvatar {
         this.threeManager.removeFromEntities(this.group);
         if (this.texture) this.texture.dispose();
         this.material.dispose();
+        this.occlusionMaterial.dispose();
     }
 }
