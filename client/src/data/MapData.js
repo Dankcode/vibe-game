@@ -1,4 +1,4 @@
-import { DEFAULT_BUILDINGS, stampBuildingsOnRows } from './BuildingData.js';
+import { createGeneratedBuildings, stampBuildingsOnRows } from './BuildingData.js';
 import { MAP_LEGEND, symbolRowsToTileCells } from './TileLibrary.js';
 
 export const MAP_CHUNK_SIZE = 16;
@@ -8,8 +8,7 @@ export const MAIN_MAP = createRandomMapRows(72, 60, 20260620, {
     seaLevel: 0.29,
     moistureBias: 0.02,
     temperatureBias: 0.02,
-    volcanicBias: 0.02,
-    buildings: DEFAULT_BUILDINGS
+    volcanicBias: 0.02
 });
 
 export const WILDLIFE_SPAWNS = [
@@ -41,8 +40,12 @@ export function createRandomMapRows(width = 80, height = 64, seed = Date.now(), 
     const villageCenter = findVillageCenter(riverRows, width, height, random);
     const villageRows = stampVillage(riverRows, villageCenter, random);
     const finalRows = smoothTerrainRows(villageRows, 1, { keepSettlements: true });
-    const buildingRows = stampBuildingsOnRows(finalRows, mapHints.buildings || DEFAULT_BUILDINGS);
-    return symbolRowsToTileCells(buildingRows);
+    const buildings = mapHints.buildings || createGeneratedBuildings(width, height, seed, villageCenter, finalRows);
+    const buildingRows = stampBuildingsOnRows(finalRows, buildings);
+    const tileRows = symbolRowsToTileCells(buildingRows);
+    tileRows.buildings = buildings;
+    tileRows.seed = seed;
+    return tileRows;
 }
 
 export function seededRandom(seed) {
@@ -167,30 +170,11 @@ function getDominantNeighborSymbol(rows, x, y, symbol) {
 
 function stampVillage(rows, center, random) {
     const mutable = rows.map((row) => row.split(''));
-    const footprints = [
-        { x: -7, y: -3, w: 5, h: 4 },
-        { x: 3, y: -4, w: 6, h: 4 },
-        { x: -2, y: 4, w: 5, h: 4 }
-    ];
-
-    for (const footprint of footprints) {
-        for (let y = 0; y < footprint.h; y++) {
-            for (let x = 0; x < footprint.w; x++) {
-                const gx = center.x + footprint.x + x;
-                const gy = center.y + footprint.y + y;
-                if (!mutable[gy]?.[gx]) continue;
-                if (!canPlaceSettlement(mutable[gy][gx])) continue;
-                const isEdge = x === 0 || y === 0 || x === footprint.w - 1 || y === footprint.h - 1;
-                mutable[gy][gx] = isEdge ? 'T' : 'R';
-            }
-        }
-    }
-
     for (let x = center.x - 11; x <= center.x + 11; x++) {
-        if (mutable[center.y]?.[x] && mutable[center.y][x] !== 'T' && canPlaceRoad(mutable[center.y][x])) mutable[center.y][x] = 'R';
+        if (mutable[center.y]?.[x] && canPlaceRoad(mutable[center.y][x])) mutable[center.y][x] = 'R';
     }
     for (let y = center.y - 8; y <= center.y + 8; y++) {
-        if (mutable[y]?.[center.x] && mutable[y][center.x] !== 'T' && canPlaceRoad(mutable[y][center.x])) mutable[y][center.x] = 'R';
+        if (mutable[y]?.[center.x] && canPlaceRoad(mutable[y][center.x])) mutable[y][center.x] = 'R';
     }
 
     for (let i = 0; i < 18; i++) {
@@ -200,10 +184,6 @@ function stampVillage(rows, center, random) {
     }
 
     return mutable.map((row) => row.join(''));
-}
-
-function canPlaceSettlement(symbol) {
-    return ['G', 'F', 'S'].includes(symbol);
 }
 
 function canPlaceRoad(symbol) {

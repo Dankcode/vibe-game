@@ -35,14 +35,18 @@ export class Tile {
         if (this.mesh) {
             this.restoreBaseMaterial();
             this.clearObjects();
-            this.mesh.material = Tile.getMaterials(element, textureValue, effect);
+            this.mesh.material = Tile.isSpecialBuildingShape(building)
+                ? Tile.getInvisibleMaterial()
+                : Tile.getMaterials(element, textureValue, effect);
             this.createObjects();
         }
     }
 
     render() {
         // In 3D: (x, y, z) -> gridX, elevation, gridY
-        const material = Tile.getMaterials(this.element, this.textureValue, this.effect);
+        const material = Tile.isSpecialBuildingShape(this.building)
+            ? Tile.getInvisibleMaterial()
+            : Tile.getMaterials(this.element, this.textureValue, this.effect);
 
         this.mesh = new THREE.Mesh(Tile.geometry, material);
         this.mesh.castShadow = !getTileDefinition(this.element, this.textureValue).walkable;
@@ -64,58 +68,55 @@ export class Tile {
         if (Tile.isWindowWall(this.building)) {
             this.addWindowWallObjects();
         } else if (Tile.isDirectionalStair(this.building)) {
-            this.addDirectionalStairObjects();
+            this.addStairObjects();
         }
     }
 
     addWindowWallObjects() {
         const direction = Tile.getBuildingPartDirection(this.building);
         const glassMaterial = Tile.getWindowGlassMaterial();
-        const shutterMaterial = Tile.getWindowShutterMaterial(this.textureValue);
-        const sillMaterial = Tile.getWindowSillMaterial(this.textureValue);
-        const isNorthSouth = direction === 'north' || direction === 'south';
+        const wallMaterial = Tile.getMaterials(this.element, this.textureValue, this.effect);
+        const isUpper = Tile.isUpperWindowWall(this.building);
+        const wall = new THREE.Mesh(
+            new THREE.BoxGeometry(0.98, 0.48, 0.98),
+            wallMaterial
+        );
+        wall.position.y = isUpper ? 0.24 : -0.24;
+        wall.castShadow = true;
+        wall.receiveShadow = true;
+        wall.raycast = () => {};
+        this.mesh.add(wall);
+        this.objects.push(wall);
+
         const glass = new THREE.Mesh(
-            new THREE.BoxGeometry(isNorthSouth ? 0.46 : 0.06, 0.46, isNorthSouth ? 0.06 : 0.46),
+            new THREE.BoxGeometry(
+                direction === 'north' || direction === 'south' ? 0.82 : 0.045,
+                0.44,
+                direction === 'north' || direction === 'south' ? 0.045 : 0.82
+            ),
             glassMaterial
         );
         const normal = Tile.getDirectionVector(direction);
-        glass.position.set(normal.x * 0.515, -0.38, normal.y * 0.515);
+        glass.position.set(normal.x * 0.47, isUpper ? -0.25 : 0.25, normal.y * 0.47);
         glass.raycast = () => {};
         this.mesh.add(glass);
         this.objects.push(glass);
-
-        const shutterSize = isNorthSouth ? [0.09, 0.58, 0.07] : [0.07, 0.58, 0.09];
-        const shutterOffsets = isNorthSouth
-            ? [{ x: -0.34, z: 0 }, { x: 0.34, z: 0 }]
-            : [{ x: 0, z: -0.34 }, { x: 0, z: 0.34 }];
-        for (const offset of shutterOffsets) {
-            const shutter = new THREE.Mesh(new THREE.BoxGeometry(...shutterSize), shutterMaterial);
-            shutter.position.set(glass.position.x + offset.x, -0.38, glass.position.z + offset.z);
-            shutter.raycast = () => {};
-            this.mesh.add(shutter);
-            this.objects.push(shutter);
-        }
-
-        const sill = new THREE.Mesh(
-            new THREE.BoxGeometry(isNorthSouth ? 0.64 : 0.08, 0.08, isNorthSouth ? 0.08 : 0.64),
-            sillMaterial
-        );
-        sill.position.set(normal.x * 0.54, -0.68, normal.y * 0.54);
-        sill.raycast = () => {};
-        this.mesh.add(sill);
-        this.objects.push(sill);
     }
 
-    addDirectionalStairObjects() {
+    addStairObjects() {
         const direction = Tile.getBuildingPartDirection(this.building);
         const normal = Tile.getDirectionVector(direction);
-        const material = Tile.getStairMarkerMaterial();
+        const material = Tile.getMaterials(this.element, this.textureValue, this.effect);
+        const stepDepth = 0.3;
 
-        for (let i = 0; i < 4; i++) {
-            const step = new THREE.Mesh(new THREE.BoxGeometry(0.72 - i * 0.1, 0.08, 0.14), material);
-            const offset = -0.3 + i * 0.2;
-            step.position.set(normal.x * offset, 0.53 + i * 0.055, normal.y * offset);
+        for (let i = 0; i < 3; i++) {
+            const height = (i + 1) * 0.32;
+            const step = new THREE.Mesh(new THREE.BoxGeometry(0.9, height, stepDepth), material);
+            const offset = -0.3 + i * stepDepth;
+            step.position.set(normal.x * offset, -0.48 + height / 2, normal.y * offset);
             step.rotation.y = direction === 'east' || direction === 'west' ? Math.PI / 2 : 0;
+            step.castShadow = true;
+            step.receiveShadow = true;
             step.raycast = () => {};
             this.mesh.add(step);
             this.objects.push(step);
@@ -133,11 +134,28 @@ export class Tile {
 
     static isWindowWall(buildingPart) {
         return [
-            BUILDING_PARTS.WINDOW_NORTH,
-            BUILDING_PARTS.WINDOW_SOUTH,
-            BUILDING_PARTS.WINDOW_WEST,
-            BUILDING_PARTS.WINDOW_EAST
+            BUILDING_PARTS.WINDOW_LOWER_NORTH,
+            BUILDING_PARTS.WINDOW_LOWER_SOUTH,
+            BUILDING_PARTS.WINDOW_LOWER_WEST,
+            BUILDING_PARTS.WINDOW_LOWER_EAST,
+            BUILDING_PARTS.WINDOW_UPPER_NORTH,
+            BUILDING_PARTS.WINDOW_UPPER_SOUTH,
+            BUILDING_PARTS.WINDOW_UPPER_WEST,
+            BUILDING_PARTS.WINDOW_UPPER_EAST
         ].includes(buildingPart);
+    }
+
+    static isUpperWindowWall(buildingPart) {
+        return [
+            BUILDING_PARTS.WINDOW_UPPER_NORTH,
+            BUILDING_PARTS.WINDOW_UPPER_SOUTH,
+            BUILDING_PARTS.WINDOW_UPPER_WEST,
+            BUILDING_PARTS.WINDOW_UPPER_EAST
+        ].includes(buildingPart);
+    }
+
+    static isSpecialBuildingShape(buildingPart) {
+        return Tile.isWindowWall(buildingPart) || Tile.isDirectionalStair(buildingPart);
     }
 
     static isDirectionalStair(buildingPart) {
@@ -151,10 +169,14 @@ export class Tile {
 
     static getBuildingPartDirection(buildingPart) {
         return {
-            [BUILDING_PARTS.WINDOW_NORTH]: 'north',
-            [BUILDING_PARTS.WINDOW_SOUTH]: 'south',
-            [BUILDING_PARTS.WINDOW_WEST]: 'west',
-            [BUILDING_PARTS.WINDOW_EAST]: 'east',
+            [BUILDING_PARTS.WINDOW_LOWER_NORTH]: 'north',
+            [BUILDING_PARTS.WINDOW_LOWER_SOUTH]: 'south',
+            [BUILDING_PARTS.WINDOW_LOWER_WEST]: 'west',
+            [BUILDING_PARTS.WINDOW_LOWER_EAST]: 'east',
+            [BUILDING_PARTS.WINDOW_UPPER_NORTH]: 'north',
+            [BUILDING_PARTS.WINDOW_UPPER_SOUTH]: 'south',
+            [BUILDING_PARTS.WINDOW_UPPER_WEST]: 'west',
+            [BUILDING_PARTS.WINDOW_UPPER_EAST]: 'east',
             [BUILDING_PARTS.STAIRS_NORTH]: 'north',
             [BUILDING_PARTS.STAIRS_SOUTH]: 'south',
             [BUILDING_PARTS.STAIRS_WEST]: 'west',
@@ -176,49 +198,27 @@ export class Tile {
             Tile.windowGlassMaterial = new THREE.MeshStandardMaterial({
                 color: 0x9de7ff,
                 emissive: 0x225c71,
-                emissiveIntensity: 0.32,
-                roughness: 0.26,
-                metalness: 0.04
+                emissiveIntensity: 0.2,
+                roughness: 0.18,
+                metalness: 0.02,
+                transparent: true,
+                opacity: 0.58,
+                depthWrite: false
             });
         }
         return Tile.windowGlassMaterial;
     }
 
-    static getWindowShutterMaterial(textureValue) {
-        const key = textureValue === 8 ? 'timber' : 'stone';
-        if (!Tile.windowShutterMaterials) Tile.windowShutterMaterials = new Map();
-        if (!Tile.windowShutterMaterials.has(key)) {
-            Tile.windowShutterMaterials.set(key, new THREE.MeshStandardMaterial({
-                color: key === 'stone' ? 0x4e674d : 0x2f6f55,
-                roughness: 0.84,
-                metalness: 0.01
-            }));
-        }
-        return Tile.windowShutterMaterials.get(key);
-    }
-
-    static getWindowSillMaterial(textureValue) {
-        const key = textureValue === 8 ? 'timber' : 'stone';
-        if (!Tile.windowSillMaterials) Tile.windowSillMaterials = new Map();
-        if (!Tile.windowSillMaterials.has(key)) {
-            Tile.windowSillMaterials.set(key, new THREE.MeshStandardMaterial({
-                color: key === 'stone' ? 0xd4d9d2 : 0x5a3421,
-                roughness: 0.86,
-                metalness: 0.02
-            }));
-        }
-        return Tile.windowSillMaterials.get(key);
-    }
-
-    static getStairMarkerMaterial() {
-        if (!Tile.stairMarkerMaterial) {
-            Tile.stairMarkerMaterial = new THREE.MeshStandardMaterial({
-                color: 0xf0d29a,
-                roughness: 0.78,
-                metalness: 0.01
+    static getInvisibleMaterial() {
+        if (!Tile.invisibleMaterial) {
+            Tile.invisibleMaterial = new THREE.MeshBasicMaterial({
+                transparent: true,
+                opacity: 0,
+                depthWrite: false,
+                colorWrite: false
             });
         }
-        return Tile.stairMarkerMaterial;
+        return Tile.invisibleMaterial;
     }
 
     highlight(color = 0x555555) {
@@ -243,7 +243,9 @@ export class Tile {
         const materials = Array.isArray(this.highlightMaterial) ? this.highlightMaterial : [this.highlightMaterial];
         materials.forEach((material) => material.dispose());
         this.highlightMaterial = null;
-        this.mesh.material = Tile.getMaterials(this.element, this.textureValue, this.effect);
+        this.mesh.material = Tile.isSpecialBuildingShape(this.building)
+            ? Tile.getInvisibleMaterial()
+            : Tile.getMaterials(this.element, this.textureValue, this.effect);
     }
 
     static getMaterials(element, textureValue = 0, effect = 0) {

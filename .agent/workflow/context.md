@@ -93,9 +93,13 @@ Current editor shorthand symbols:
 - `X`: stone/blocking wall, non-walkable.
 - `A`: stone building wall, non-walkable.
 - `C`: timber building wall, non-walkable.
+- `N O J K`: north/south/west/east stone window-wall columns.
+- `Q V Y Z`: north/south/west/east timber window-wall columns.
 - `D`: functional doorway, walkable `STRUCTURE`.
 - `E`: interior building floor, walkable `STRUCTURE`.
-- `U`: stairs, walkable `STRUCTURE` and a second-floor cue.
+- `U`: generic stairs, walkable `STRUCTURE`.
+- `1 2 3 4`: north/south/west/east stone stairs.
+- `5 6 7 8`: north/south/west/east timber stairs.
 
 Future large maps should add or stream more chunk arrays instead of building one huge monolithic world payload. The backend should send chunk metadata or compact tile-cell arrays/deltas, not every block for every connected player on every tick.
 
@@ -105,7 +109,13 @@ The default world should remain mostly flat for smoother travel. Water, shore, g
 
 The admin panel edits JSON tile-cell rows directly. It also accepts known legacy symbols and compact numeric cells as convenience input, then normalizes them to tile-cell objects before calling `Game.applyWorldMap()`. Every custom map must be rectangular. `Randomize World` creates a new tile-cell map with `createRandomMapRows()` and applies it through `Game.applyWorldMap()`.
 
-Building imports live in `client/src/data/BuildingData.js`. `DEFAULT_BUILDINGS` is a serializable blueprint array; `stampBuildingsOnRows()` stamps walls, doors, floors, and stairs before `TileLibrary.js` converts the result into tile-cell arrays. `WorldGenerator.registerBuildingBlueprints()` turns those same blueprints into runtime roof/wall visibility state. When the player enters an interior tile, matching roof and wall obstruction hides in a RuneScape-style cutaway so the interior and stairs remain readable.
+Building imports live in `client/src/data/BuildingData.js`. Seeded random worlds call `createGeneratedBuildings()` to place varied stone/timber blueprints on complete dry footprints around the selected village center. `stampBuildingsOnRows()` stamps congruent walls, directional window columns, reachable doors, floors, and style-matched stairs before `TileLibrary.js` converts the result into tile-cell arrays. Generated tile-row arrays carry their building blueprints so `Game` can register matching runtime roofs, furniture, and cutaway state.
+
+One building floor is two wall blocks high. `WorldGenerator.generateFromArray()` expands a wall cell into a ground block plus two structure blocks. Window columns expand into a lower block with wall below glass and an upper block with glass below wall, both using the same stone or timber texture as the surrounding wall. Roofs are flat grids of roof blocks with low perimeter parapets; do not add triangular or gabled roofs for the current visual direction.
+
+Building stairs are three-step block wedges contained inside one tile. Their north/south/east/west metadata controls visual orientation only; players may enter and leave a stair tile from any direction. Stone and timber stairs use separate tile-library variants congruent with their building style.
+
+Building cutaways are block-local rather than building-wide. Each frame, `WorldGenerator` samples camera-to-player sight segments across the avatar's feet, torso, head, and screen-space width. Only wall blocks one or two blocks above the player's current floor and individual roof cells whose AABBs intersect those finite segments are hidden. Floors, walls behind the player, walls on another floor, and non-intersecting roof cells remain visible.
 
 ## Tile And Habitat Rules
 
@@ -176,4 +186,4 @@ Combat is a separate scene and room, not a mode embedded directly into world mov
 
 ## Known Caveat
 
-The local instructions reference an `rtk` shell proxy, but `rtk` is not available in the current shell. Use it when installed; otherwise use normal shell commands and keep outputs concise.
+The local shell uses the `rtk` proxy required by the repository instructions. Prefix project shell commands with `rtk`.

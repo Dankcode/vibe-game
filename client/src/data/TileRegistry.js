@@ -177,16 +177,20 @@ const VARIANT_OVERRIDES = {
         moveCost: 1.05,
         pattern: 'stairs'
     },
-    [`${ELEMENTS.STRUCTURE}:7`]: {
-        label: 'Stone Window Wall',
-        topColor: 0xc7d0d8,
-        sideColor: 0x7b8791,
+    [`${ELEMENTS.STRUCTURE}:9`]: {
+        label: 'Stone Stairs',
+        walkable: true,
+        topColor: 0xc5cbd1,
+        sideColor: 0x7d8790,
+        moveCost: 1.05,
         pattern: 'masonry'
     },
-    [`${ELEMENTS.STRUCTURE}:8`]: {
-        label: 'Timber Window Wall',
-        topColor: 0xd7a069,
-        sideColor: 0x8a5a36,
+    [`${ELEMENTS.STRUCTURE}:10`]: {
+        label: 'Timber Stairs',
+        walkable: true,
+        topColor: 0xd59a63,
+        sideColor: 0x895936,
+        moveCost: 1.05,
         pattern: 'timber'
     }
 };

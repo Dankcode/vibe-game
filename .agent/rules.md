@@ -57,14 +57,20 @@
 - Current hard magic elements are limited to `0 VOID`, `1 GEO/Earth`, `2 HYDRO/Water`, `3 ANEMO/Wind`, `4 CRYO/Ice`, `5 PYRO/Fire`, and `6 STRUCTURE`.
 - Tile-cell fields are numeric: `element` controls magic/base behavior, `texture` selects the visual texture variant for that element, `effect` is the active elemental overlay/aura on the tile, `building` identifies building part semantics, and `height` is the top block elevation for that column.
 - Compact cells such as `[element, texture, effect, building, height]` may be used for future chunk/network payloads, but gameplay code should normalize them before use.
-- Current editor symbols are `W B S G F H M P I L R T X A C D E U`; they are shorthand only.
+- Current editor symbols are `W B S G F H M P I L R T X A C N O J K Q V Y Z D E U 1 2 3 4 5 6 7 8`; they are shorthand only.
 - Use rounded highlights, soft shadows, and clear blocked markings so players can read walkable and non-walkable tiles quickly.
 - Block side faces should be darker than top faces and include seams/edge contrast so stacked same-terrain blocks do not look like flat walkable floor.
 - Elevation symbols such as `H` and `M` should use distinct texture variants, not plain grass tops.
 - Tile materials and geometries should be cached or instanced where practical. Do not create unique material/geometry objects for every block unless the tile genuinely needs unique state.
 - Highlighting may clone a material temporarily, but must restore and dispose it.
 - Building data should enter through serializable blueprints in `BuildingData.js`; stamp those blueprints into tile-cell arrays through the library instead of hard-coding building meshes.
+- Seeded world generation must place buildings only when the full footprint and one-tile perimeter are on valid dry terrain, and runtime building blueprints must match the stamped rows.
+- Building wall floors are two structure blocks high. Window columns must pair lower-wall/upper-glass and lower-glass/upper-wall blocks using the same stone or timber texture as adjacent walls.
+- Building stairs are three-step tile-contained shapes. Direction controls their visual orientation only; movement may enter and leave the stair tile from any direction.
+- Roofs must remain flat block grids with simple perimeter trim or parapets. Do not use triangular, gabled, or decorative floating slab stacks for the current building style.
 - Building walls and roofs should cut away when the player is on an interior/door/stair tile so interiors remain readable.
+- Building cutaways must be calculated per block against finite camera-to-player sight segments. Never hide all walls or the whole roof merely because the player entered a building.
+- Structure floors must never participate in sight cutaways. Only foreground wall blocks on the player's current floor and intersecting roof cells may hide; blocks behind the player must remain visible.
 - Obstruction handling should use the same visibility-flag style as building cutaways. Do not add persistent xray volumes or filled walkability highlights around the player.
 - Default/random maps should stay mostly flat for smoother travel: water, shore, grass, roads, doors, floors, and stairs share the base plane; only hills, mountains, peaks, walls, and special terrain should add meaningful height.
 - Large worlds must keep bounded render visibility around the player through `WorldGenerator.updateVisibleTilesAround()` or a future chunk-streaming equivalent.

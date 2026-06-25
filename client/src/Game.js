@@ -7,7 +7,6 @@ import { WildlifeSystem } from './systems/WildlifeSystem.js';
 import { AdminPanel } from './ui/AdminPanel.js';
 import { CombatScene } from './scenes/CombatScene.js';
 import { MAIN_MAP, MAP_CHUNK_SIZE, MAP_LEGEND, WILDLIFE_SPAWNS } from './data/MapData.js';
-import { DEFAULT_BUILDINGS } from './data/BuildingData.js';
 import * as Colyseus from 'colyseus.js';
 
 export class Game {
@@ -18,7 +17,7 @@ export class Game {
         
         this.worldGenerator = new WorldGenerator(this.threeManager, { chunkSize: MAP_CHUNK_SIZE });
         this.currentMapRows = MAIN_MAP;
-        this.currentBuildings = DEFAULT_BUILDINGS;
+        this.currentBuildings = MAIN_MAP.buildings || [];
         this.worldGenerator.generateFromChunkedArray(MAIN_MAP, MAP_LEGEND, MAP_CHUNK_SIZE, {
             buildings: this.currentBuildings
         });
@@ -199,7 +198,7 @@ export class Game {
         this.threeManager.renderPathLine([], this.worldGenerator);
         this.wildlifeSystem.destroy();
         this.currentMapRows = rows;
-        this.currentBuildings = source === 'custom' ? [] : DEFAULT_BUILDINGS;
+        this.currentBuildings = source === 'custom' ? [] : (rows.buildings || []);
         this.worldGenerator.generateFromChunkedArray(rows, MAP_LEGEND, MAP_CHUNK_SIZE, {
             buildings: this.currentBuildings
         });
