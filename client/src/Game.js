@@ -23,7 +23,9 @@ export class Game {
         });
         this.pathfinder = new Pathfinder(this.worldGenerator);
         this.userId = this.generateUserId();
-        const spawn = this.worldGenerator.findHighestWalkable() || this.worldGenerator.findNearestWalkable(0, 0, 64) || { x: -8, y: 0 };
+        const preferredSpawn = MAIN_MAP.spawn || { x: 0, y: 0 };
+        const spawn = this.worldGenerator.findNearestWalkable(preferredSpawn.x, preferredSpawn.y, 16) ||
+            this.worldGenerator.findHighestWalkable() || { x: -8, y: 0 };
 
         this.player = new PlayerAvatar(this.threeManager, this.inputManager, this.worldGenerator, spawn.x, spawn.y, {
             isLocal: true,
@@ -79,9 +81,9 @@ export class Game {
             
             this.room = await this.client.joinOrCreate('world', {
                 userId: this.userId,
-                x: 0,
-                y: 0,
-                z: 0
+                x: this.player.gridX,
+                y: this.player.gridY,
+                z: this.player.gridZ
             });
             console.log('[Game] Connected to room:', this.room.id);
             this.updateHud('Online');
@@ -211,8 +213,9 @@ export class Game {
     }
 
     repositionPlayerForCurrentWorld() {
-        const highestWalkable = this.worldGenerator.findHighestWalkable();
-        const fallbackSpawn = highestWalkable || this.worldGenerator.findNearestWalkable(this.player.gridX, this.player.gridY, 64) || this.findFirstWalkableTile();
+        const preferredSpawn = this.currentMapRows.spawn || { x: this.player.gridX, y: this.player.gridY };
+        const fallbackSpawn = this.worldGenerator.findNearestWalkable(preferredSpawn.x, preferredSpawn.y, 16) ||
+            this.worldGenerator.findHighestWalkable() || this.findFirstWalkableTile();
         if (!fallbackSpawn) return;
 
         this.player.gridX = fallbackSpawn.x;
@@ -237,6 +240,7 @@ export class Game {
             width: this.currentMapRows[0].length,
             height: this.currentMapRows.length,
             chunkSize: MAP_CHUNK_SIZE,
+            spawn: this.currentMapRows.spawn,
             rows: this.currentMapRows
         });
     }

@@ -24,9 +24,18 @@ export const TEXTURE_IDS = {
     STONE_BUILDING_WALL: 3,
     TIMBER_BUILDING_WALL: 4,
     DOOR: 5,
+    OAK_DOOR: 5,
     STAIRS: 6,
+    IRON_DOOR: 7,
+    PAINTED_DOOR: 8,
     STONE_STAIRS: 9,
     TIMBER_STAIRS: 10
+};
+
+export const DOOR_STYLE_TEXTURES = {
+    oak: TEXTURE_IDS.OAK_DOOR,
+    iron: TEXTURE_IDS.IRON_DOOR,
+    painted: TEXTURE_IDS.PAINTED_DOOR
 };
 
 export const BUILDING_PARTS = {

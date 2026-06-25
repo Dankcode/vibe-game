@@ -66,11 +66,20 @@
 - Building data should enter through serializable blueprints in `BuildingData.js`; stamp those blueprints into tile-cell arrays through the library instead of hard-coding building meshes.
 - Seeded world generation must place buildings only when the full footprint and one-tile perimeter are on valid dry terrain, and runtime building blueprints must match the stamped rows.
 - Building wall floors are two structure blocks high. Window columns must pair lower-wall/upper-glass and lower-glass/upper-wall blocks using the same stone or timber texture as adjacent walls.
+- Building blueprints may define `stories` from `1` through `3`; wall height is exactly `stories * 2`. Repeat the paired window pattern for every floor and keep ground-level door surfaces walkable by adding upper door-facade blocks without updating `surfaceMap`.
+- The default town must contain at least one three-floor building. Seeded random town generation must also produce a three-floor civic building and may assign one-to-three floors to additional buildings.
 - Building stairs are three-step tile-contained shapes. Direction controls their visual orientation only; movement may enter and leave the stair tile from any direction.
 - Roofs must remain flat block grids with simple perimeter trim or parapets. Do not use triangular, gabled, or decorative floating slab stacks for the current building style.
 - Building walls and roofs should cut away when the player is on an interior/door/stair tile so interiors remain readable.
-- Building cutaways must be calculated per block against finite camera-to-player sight segments. Never hide all walls or the whole roof merely because the player entered a building.
-- Structure floors must never participate in sight cutaways. Only foreground wall blocks on the player's current floor and intersecting roof cells may hide; blocks behind the player must remain visible.
+- Always preserve the first wall block above a building floor during cutaways. It defines room boundaries and keeps door positions legible for the approximately two-block-tall player.
+- When the player enters a building, hide the entire roof and only the upper course of the two perimeter wall edges nearest the camera. Determine those edges mathematically from the camera position relative to the building center.
+- When an outside player walks fully behind a building, use a finite camera-to-player segment/footprint intersection to hide that building's entire roof and upper wall course across all edges. Restore it when the building no longer intervenes.
+- Generated towns must use coordinated non-overlapping lots with walkable foundations and a guaranteed road connection from every exterior door approach to the village center.
+- Small-town generation should follow the Azgaar-inspired data pipeline in `AzgaarTownGenerator.js`: score a dry settlement site, carve terrain-cost-aware routes, then emit serializable building blueprints for the voxel renderer.
+- Keep the default small town as a frozen fixture in `SmallTownTemplate.js`. Random worlds may change the seed, but must pass through the same town plan and tile normalization pipeline.
+- Building doors may use `oak`, `iron`, or `painted` styles. The blueprint door style, tile texture id, procedural tile pattern, and runtime door-panel material must agree.
+- Outdoor GEO, ANEMO, and CRYO blocks must use visible elevation lighting bands: base blocks darker, higher blocks progressively lighter. Do not apply elevation tones to structures, interiors, roofs, water, or lava.
+- Terrain sight cutaways must preserve elevation `0` and may hide only overlapping blocks at elevation `1` or higher. Apply this through normalized world block data so default, randomized, and imported generated maps behave consistently.
 - Obstruction handling should use the same visibility-flag style as building cutaways. Do not add persistent xray volumes or filled walkability highlights around the player.
 - Default/random maps should stay mostly flat for smoother travel: water, shore, grass, roads, doors, floors, and stairs share the base plane; only hills, mountains, peaks, walls, and special terrain should add meaningful height.
 - Large worlds must keep bounded render visibility around the player through `WorldGenerator.updateVisibleTilesAround()` or a future chunk-streaming equivalent.

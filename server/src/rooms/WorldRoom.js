@@ -136,10 +136,13 @@ class WorldRoom extends Colyseus.Room {
             if (this.isValidMapRows(data?.rows)) {
                 this.worldSurface.loadRows(data.rows);
                 const shouldUseHighestSpawn = ['random', 'client-default'].includes(data?.source);
-                const highestSpawn = shouldUseHighestSpawn ? this.worldSurface.findHighestWalkable() : null;
+                const requestedSpawn = this.getRequestedMapSpawn(data?.spawn);
+                const fallbackSpawn = shouldUseHighestSpawn ? this.worldSurface.findHighestWalkable() : null;
                 for (const player of this.state.players.values()) {
-                    let resolved = shouldUseHighestSpawn
-                        ? this.worldSurface.resolveNearestWalkable(highestSpawn.x, highestSpawn.y)
+                    let resolved = requestedSpawn
+                        ? this.worldSurface.resolveNearestWalkable(requestedSpawn.x, requestedSpawn.y)
+                        : shouldUseHighestSpawn
+                            ? this.worldSurface.resolveNearestWalkable(fallbackSpawn.x, fallbackSpawn.y)
                         : this.worldSurface.resolveCenter(player.centerX, player.centerY, this.getPlayerCenterSnapshot(player));
                     const resolvedSurface = this.worldSurface.getSurfaceAt(resolved.tileX, resolved.tileY);
                     if (!resolved.valid && !resolvedSurface?.walkable) {
@@ -213,6 +216,13 @@ class WorldRoom extends Colyseus.Room {
         if (typeof row === 'string') return row.trim().length;
         if (Array.isArray(row)) return row.length;
         return 0;
+    }
+
+    getRequestedMapSpawn(spawn) {
+        const x = Number(spawn?.x);
+        const y = Number(spawn?.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+        return { x, y };
     }
 
     getChunkCoord(tileCoord) {

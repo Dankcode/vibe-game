@@ -1,15 +1,16 @@
-import { createGeneratedBuildings, stampBuildingsOnRows } from './BuildingData.js';
+import {
+    applyBuildingDoorTexturesToTileRows,
+    applyBuildingStoriesToTileRows,
+    stampBuildingsOnRows
+} from './BuildingData.js';
+import { SMALL_TOWN_TEMPLATE } from './SmallTownTemplate.js';
 import { MAP_LEGEND, symbolRowsToTileCells } from './TileLibrary.js';
+import { generateAzgaarTownPlan } from '../generation/AzgaarTownGenerator.js';
 
 export const MAP_CHUNK_SIZE = 16;
 export { MAP_LEGEND };
 
-export const MAIN_MAP = createRandomMapRows(72, 60, 20260620, {
-    seaLevel: 0.29,
-    moistureBias: 0.02,
-    temperatureBias: 0.02,
-    volcanicBias: 0.02
-});
+export const MAIN_MAP = createTownTileRows(SMALL_TOWN_TEMPLATE);
 
 export const WILDLIFE_SPAWNS = [
     {
@@ -22,7 +23,33 @@ export const WILDLIFE_SPAWNS = [
     }
 ];
 
-export function createRandomMapRows(width = 80, height = 64, seed = Date.now(), mapHints = {}) {
+export function createRandomMapRows(width = 40, height = 32, seed = Date.now(), mapHints = {}) {
+    const townPlan = generateAzgaarTownPlan({ width, height, seed, ...mapHints });
+    return createTownTileRows(townPlan);
+}
+
+export function createTownTileRows(townPlan) {
+    const buildings = townPlan.buildings || [];
+    const buildingRows = stampBuildingsOnRows(townPlan.rows, buildings, {
+        villageCenter: townPlan.center,
+        connectDoors: false
+    });
+    const tileRows = symbolRowsToTileCells(buildingRows);
+    applyBuildingStoriesToTileRows(tileRows, buildings);
+    applyBuildingDoorTexturesToTileRows(tileRows, buildings);
+    tileRows.buildings = buildings;
+    tileRows.seed = townPlan.seed;
+    tileRows.townName = townPlan.townName;
+    tileRows.townCenter = townPlan.center;
+    tileRows.spawn = {
+        x: townPlan.center.x - Math.floor(townPlan.width / 2),
+        y: townPlan.center.y - Math.floor(townPlan.height / 2)
+    };
+    tileRows.generator = 'azgaar-inspired-small-town-v1';
+    return tileRows;
+}
+
+export function createLegacyRandomMapRows(width = 40, height = 32, seed = Date.now(), mapHints = {}) {
     const random = seededRandom(seed);
     const features = createWorldFeatures(width, height, seed, random, mapHints);
     const rows = [];
@@ -40,9 +67,10 @@ export function createRandomMapRows(width = 80, height = 64, seed = Date.now(), 
     const villageCenter = findVillageCenter(riverRows, width, height, random);
     const villageRows = stampVillage(riverRows, villageCenter, random);
     const finalRows = smoothTerrainRows(villageRows, 1, { keepSettlements: true });
-    const buildings = mapHints.buildings || createGeneratedBuildings(width, height, seed, villageCenter, finalRows);
-    const buildingRows = stampBuildingsOnRows(finalRows, buildings);
-    const tileRows = symbolRowsToTileCells(buildingRows);
+    const buildings = mapHints.buildings || [];
+    const buildingRows = stampBuildingsOnRows(finalRows, buildings, { villageCenter });
+    const tileRows = applyBuildingStoriesToTileRows(symbolRowsToTileCells(buildingRows), buildings);
+    applyBuildingDoorTexturesToTileRows(tileRows, buildings);
     tileRows.buildings = buildings;
     tileRows.seed = seed;
     return tileRows;

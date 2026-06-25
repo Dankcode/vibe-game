@@ -1,3 +1,5 @@
+import { DOOR_STYLE_TEXTURES } from './TileLibrary.js';
+
 export const BUILDING_SYMBOLS = {
     stoneWall: 'A',
     timberWall: 'C',
@@ -25,89 +27,147 @@ export const BUILDING_SYMBOLS = {
 
 export const DEFAULT_BUILDINGS = [
     {
-        id: 'market-hall',
-        name: 'Market Hall',
+        id: 'guild-hall',
+        name: 'Guild Hall',
         x: -11,
-        y: -7,
+        y: -8,
         width: 8,
         height: 6,
+        stories: 3,
         style: 'timber',
-        door: { x: 3, y: 5 },
-        stairs: [{ x: 5, y: 2, direction: 'north' }]
+        doorStyle: 'oak',
+        door: { x: 4, y: 5 },
+        stairs: [{ x: 1, y: 1, direction: 'north' }]
     },
     {
-        id: 'stone-inn',
-        name: 'Stone Inn',
+        id: 'village-inn',
+        name: 'Village Inn',
         x: 3,
         y: -8,
-        width: 9,
-        height: 7,
+        width: 8,
+        height: 6,
+        stories: 1,
         style: 'stone',
-        door: { x: 4, y: 6 },
-        stairs: [{ x: 6, y: 2, direction: 'north' }]
+        doorStyle: 'iron',
+        door: { x: 4, y: 5 },
+        stairs: [{ x: 6, y: 1, direction: 'north' }]
     },
     {
-        id: 'ridge-house',
-        name: 'Ridge House',
-        x: -5,
-        y: 5,
+        id: 'craft-house',
+        name: 'Craft House',
+        x: -10,
+        y: 3,
         width: 7,
         height: 6,
+        stories: 1,
         style: 'timber',
+        doorStyle: 'painted',
         door: { x: 3, y: 0 },
-        stairs: [{ x: 1, y: 3, direction: 'south' }]
+        stairs: [{ x: 5, y: 4, direction: 'south' }]
     },
     {
-        id: 'watch-tower',
-        name: 'Watch Tower',
-        x: 10,
-        y: 5,
+        id: 'general-store',
+        name: 'General Store',
+        x: 3,
+        y: 3,
+        width: 7,
+        height: 6,
+        stories: 1,
+        style: 'stone',
+        doorStyle: 'oak',
+        door: { x: 3, y: 0 },
+        stairs: [{ x: 1, y: 4, direction: 'south' }]
+    },
+    {
+        id: 'watch-house',
+        name: 'Watch House',
+        x: 12,
+        y: -2,
         width: 5,
         height: 5,
+        stories: 2,
         style: 'stone',
-        door: { x: 2, y: 4 },
-        stairs: [{ x: 2, y: 2, direction: 'north' }]
+        doorStyle: 'iron',
+        door: { x: 0, y: 2 },
+        stairs: [{ x: 3, y: 3, direction: 'east' }]
     }
 ];
 
-export function createGeneratedBuildings(width, height, seed, villageCenter, terrainRows = []) {
+export function createGeneratedBuildings(width, height, seed, villageCenter) {
     const random = seededBuildingRandom(seed);
     const centerX = villageCenter.x - Math.floor(width / 2);
     const centerY = villageCenter.y - Math.floor(height / 2);
-    const occupied = new Set();
     const templates = [
-        { id: 'hall', name: 'Guild Hall', dx: -11, dy: -8, width: 8, height: 6, doorEdge: 'south' },
-        { id: 'inn', name: 'Village Inn', dx: 3, dy: -9, width: 9, height: 7, doorEdge: 'south' },
-        { id: 'house', name: 'Craft House', dx: -7, dy: 5, width: 7, height: 6, doorEdge: 'north' },
-        { id: 'store', name: 'General Store', dx: 3, dy: 5, width: 7, height: 6, doorEdge: 'north' },
-        { id: 'tower', name: 'Watch House', dx: 11, dy: 2, width: 5, height: 5, doorEdge: 'west' }
+        { id: 'hall', name: 'Guild Hall', dx: -11, dy: -8, width: 8, height: 6, doorEdge: 'south', stories: 3 },
+        { id: 'inn', name: 'Village Inn', dx: 3, dy: -8, width: 8, height: 6, doorEdge: 'south' },
+        { id: 'house', name: 'Craft House', dx: -10, dy: 3, width: 7, height: 6, doorEdge: 'north' },
+        { id: 'store', name: 'General Store', dx: 3, dy: 3, width: 7, height: 6, doorEdge: 'north' },
+        { id: 'tower', name: 'Watch House', dx: 12, dy: -2, width: 5, height: 5, doorEdge: 'west' }
     ];
 
     return templates.map((template, index) => {
         const style = random() > 0.48 ? 'stone' : 'timber';
+        const stories = template.stories || (random() > 0.78 ? 3 : random() > 0.48 ? 2 : 1);
         const door = getCenteredDoor(template.width, template.height, template.doorEdge);
         const stairs = getInteriorStairs(template.width, template.height, template.doorEdge, random);
-        const building = {
+        return {
             id: `${template.id}-${Math.abs(Math.floor(seed))}-${index}`,
             name: template.name,
             x: clamp(template.dx + centerX, -Math.floor(width / 2) + 2, Math.floor(width / 2) - template.width - 2),
             y: clamp(template.dy + centerY, -Math.floor(height / 2) + 2, Math.floor(height / 2) - template.height - 2),
             width: template.width,
             height: template.height,
+            stories,
             style,
+            doorStyle: ['oak', 'iron', 'painted'][index % 3],
             door,
             stairs: [stairs]
         };
-        const origin = findBuildableOrigin(building, terrainRows, width, height, occupied);
-        if (!origin) return null;
-        building.x = origin.x;
-        building.y = origin.y;
-        reserveBuildingArea(building, occupied);
-        return building;
-    }).filter(Boolean);
+    });
 }
 
-export function stampBuildingsOnRows(rows, buildings = DEFAULT_BUILDINGS) {
+export function applyBuildingStoriesToTileRows(tileRows, buildings = []) {
+    if (!Array.isArray(tileRows) || tileRows.length === 0) return tileRows;
+    const height = tileRows.length;
+    const width = tileRows[0]?.length || 0;
+    const offsetX = Math.floor(width / 2);
+    const offsetY = Math.floor(height / 2);
+
+    for (const building of buildings) {
+        const wallHeight = Math.max(2, Math.min(6, Math.floor(building.stories || 1) * 2));
+        for (let localY = 0; localY < building.height; localY++) {
+            for (let localX = 0; localX < building.width; localX++) {
+                const isEdge = localX === 0 || localY === 0 ||
+                    localX === building.width - 1 || localY === building.height - 1;
+                const isDoor = building.door?.x === localX && building.door?.y === localY;
+                if (!isEdge || isDoor) continue;
+                const row = building.y + localY + offsetY;
+                const col = building.x + localX + offsetX;
+                if (tileRows[row]?.[col]) tileRows[row][col].height = wallHeight;
+            }
+        }
+    }
+    return tileRows;
+}
+
+export function applyBuildingDoorTexturesToTileRows(tileRows, buildings = []) {
+    if (!Array.isArray(tileRows) || tileRows.length === 0) return tileRows;
+    const offsetX = Math.floor((tileRows[0]?.length || 0) / 2);
+    const offsetY = Math.floor(tileRows.length / 2);
+
+    for (const building of buildings) {
+        if (!building.door) continue;
+        const row = building.y + building.door.y + offsetY;
+        const col = building.x + building.door.x + offsetX;
+        const doorCell = tileRows[row]?.[col];
+        if (!doorCell) continue;
+        doorCell.texture = DOOR_STYLE_TEXTURES[building.doorStyle] || DOOR_STYLE_TEXTURES.oak;
+    }
+
+    return tileRows;
+}
+
+export function stampBuildingsOnRows(rows, buildings = DEFAULT_BUILDINGS, options = {}) {
     if (!Array.isArray(rows) || rows.length === 0) return rows;
 
     const mutable = rows.map((row) => row.split(''));
@@ -116,12 +176,66 @@ export function stampBuildingsOnRows(rows, buildings = DEFAULT_BUILDINGS) {
     const offsetX = Math.floor(width / 2);
     const offsetY = Math.floor(height / 2);
 
+    prepareTownLots(mutable, buildings, offsetX, offsetY, options);
     for (const building of buildings) {
         stampBuilding(mutable, building, offsetX, offsetY);
         stampDoorApproach(mutable, building, offsetX, offsetY);
     }
 
     return mutable.map((row) => row.join(''));
+}
+
+function prepareTownLots(mutable, buildings, offsetX, offsetY, options) {
+    for (const building of buildings) {
+        for (let localY = -1; localY <= building.height; localY++) {
+            for (let localX = -1; localX <= building.width; localX++) {
+                const row = building.y + localY + offsetY;
+                const col = building.x + localX + offsetX;
+                if (!mutable[row]?.[col]) continue;
+                mutable[row][col] = BUILDING_SYMBOLS.approach;
+            }
+        }
+
+        const approach = getDoorApproachPosition(building);
+        if (approach && options.villageCenter && options.connectDoors !== false) {
+            stampRoadPath(mutable, approach, {
+                x: options.villageCenter.x - offsetX,
+                y: options.villageCenter.y - offsetY
+            }, offsetX, offsetY);
+        }
+    }
+}
+
+function stampRoadPath(mutable, from, to, offsetX, offsetY) {
+    let x = from.x;
+    let y = from.y;
+    while (x !== to.x) {
+        stampRoadCell(mutable, x, y, offsetX, offsetY);
+        x += Math.sign(to.x - x);
+    }
+    while (y !== to.y) {
+        stampRoadCell(mutable, x, y, offsetX, offsetY);
+        y += Math.sign(to.y - y);
+    }
+    stampRoadCell(mutable, x, y, offsetX, offsetY);
+}
+
+function stampRoadCell(mutable, x, y, offsetX, offsetY) {
+    const row = y + offsetY;
+    const col = x + offsetX;
+    if (!mutable[row]?.[col]) return;
+    mutable[row][col] = BUILDING_SYMBOLS.approach;
+}
+
+function getDoorApproachPosition(building) {
+    if (!building.door) return null;
+    const edge = getEdge(building, building.door.x, building.door.y);
+    const direction = getEdgeDirection(edge);
+    if (!direction) return null;
+    return {
+        x: building.x + building.door.x + direction.x,
+        y: building.y + building.door.y + direction.y
+    };
 }
 
 function stampBuilding(mutable, building, offsetX, offsetY) {
@@ -240,50 +354,6 @@ function seededBuildingRandom(seed) {
         state = (state * 1103515245 + 12345) % 2147483648;
         return state / 2147483648;
     };
-}
-
-function findBuildableOrigin(building, rows, width, height, occupied) {
-    if (!rows.length) return { x: building.x, y: building.y };
-    const candidates = [{ x: building.x, y: building.y }];
-    for (let radius = 1; radius <= 8; radius++) {
-        for (let offset = -radius; offset <= radius; offset++) {
-            candidates.push(
-                { x: building.x + offset, y: building.y - radius },
-                { x: building.x + offset, y: building.y + radius },
-                { x: building.x - radius, y: building.y + offset },
-                { x: building.x + radius, y: building.y + offset }
-            );
-        }
-    }
-
-    return candidates.find((candidate) =>
-        isBuildableOrigin({ ...building, ...candidate }, rows, width, height, occupied)
-    ) || null;
-}
-
-function isBuildableOrigin(building, rows, width, height, occupied) {
-    const offsetX = Math.floor(width / 2);
-    const offsetY = Math.floor(height / 2);
-    for (let localY = -1; localY <= building.height; localY++) {
-        for (let localX = -1; localX <= building.width; localX++) {
-            const worldX = building.x + localX;
-            const worldY = building.y + localY;
-            const row = worldY + offsetY;
-            const col = worldX + offsetX;
-            const symbol = rows[row]?.[col];
-            if (!symbol || !['G', 'F', 'S', 'H', 'R'].includes(symbol)) return false;
-            if (occupied.has(`${worldX},${worldY}`)) return false;
-        }
-    }
-    return true;
-}
-
-function reserveBuildingArea(building, occupied) {
-    for (let localY = -1; localY <= building.height; localY++) {
-        for (let localX = -1; localX <= building.width; localX++) {
-            occupied.add(`${building.x + localX},${building.y + localY}`);
-        }
-    }
 }
 
 function clamp(value, min, max) {

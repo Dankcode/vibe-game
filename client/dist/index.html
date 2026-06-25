@@ -391,8 +391,27 @@
                 padding: 7px 8px;
             }
 
+            .hud-bottom {
+                left: 0;
+                display: grid;
+                grid-template-columns: repeat(5, minmax(0, 1fr));
+                width: 100%;
+            }
+
+            .hud-bottom .stat-chip {
+                min-width: 0;
+                padding: 7px 5px;
+                overflow: hidden;
+            }
+
+            .hud-bottom .stat-label {
+                font-size: 8px;
+            }
+
             .stat-value {
-                font-size: 12px;
+                overflow: hidden;
+                font-size: 10px;
+                text-overflow: ellipsis;
             }
 
             .admin-panel {
@@ -404,7 +423,7 @@
             }
         }
     </style>
-  <script type="module" crossorigin src="/assets/index-CQ0AOg8T.js"></script>
+  <script type="module" crossorigin src="/assets/index-Dqhj36EQ.js"></script>
 </head>
 <body>
     <main class="game-shell" aria-label="Vibe Game">

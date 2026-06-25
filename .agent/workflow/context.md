@@ -30,6 +30,8 @@ Vibe Game is a 3.5D isometric MMORPG prototype. The client renders a voxel-like 
 - `client/src/data/TileRegistry.js`: tile definitions, element ids, walkability, habitats, and material metadata.
 - `client/src/data/TileLibrary.js`: tile-cell object contract, texture/building ids, shorthand symbol conversion, map legend compatibility, and normalization helpers.
 - `client/src/data/MapData.js`: array-authored main map generation, chunk size, wildlife spawns.
+- `client/src/data/SmallTownTemplate.js`: frozen 40 x 32 Aldermere fixture used as the stable default world.
+- `client/src/generation/AzgaarTownGenerator.js`: deterministic small-town site scoring, route carving, names, and building blueprints.
 - `server/src/rooms/WorldRoom.js`: multiplayer room, player movement sync, chunk-entry tracking and chunk message contract.
 - `server/src/systems/WorldSurface.js`: backend map surface resolver. Converts player center coordinates into authoritative block/tile coordinates.
 - `server/src/rooms/CombatRoom.js`: co-op turn-based combat room; all party members submit actions before round resolution.
@@ -103,19 +105,29 @@ Current editor shorthand symbols:
 
 Future large maps should add or stream more chunk arrays instead of building one huge monolithic world payload. The backend should send chunk metadata or compact tile-cell arrays/deltas, not every block for every connected player on every tick.
 
-Random generation should stay mathematical and deterministic from a seed. The current pipeline builds terrain in phases: feature hints, height field, temperature, moisture, coast, ridge/mountain placement, terrain smoothing, river carving, village-site scoring, settlement stamping, a final light smoothing pass, then building blueprint stamping. This shape is intended to accept future map/API hints such as `seaLevel`, `moistureBias`, `temperatureBias`, `volcanicBias`, `ridgeAngle`, or imported building blueprints without changing the array/chunk contract.
+Random generation stays mathematical and deterministic from a seed. The active compact pipeline is inspired by Azgaar's Fantasy Map Generator: create terrain cells, score a broad dry footprint for settlement suitability, carve weighted land routes between the plaza, gates, and door approaches, then stamp serializable voxel building blueprints. `SmallTownTemplate.js` freezes seed `20260625` as the current Aldermere regression world; admin randomization runs the same generator with a fresh seed.
 
 The default world should remain mostly flat for smoother travel. Water, shore, grass, forest floor, roads, doors, floors, and stairs share the base plane so water can sit directly beside sand without needing to be one block lower. `H`, `M`, and `P` still create elevation, but generation should keep them sparse and smoothed rather than scattered as spotted single-tile bumps.
 
 The admin panel edits JSON tile-cell rows directly. It also accepts known legacy symbols and compact numeric cells as convenience input, then normalizes them to tile-cell objects before calling `Game.applyWorldMap()`. Every custom map must be rectangular. `Randomize World` creates a new tile-cell map with `createRandomMapRows()` and applies it through `Game.applyWorldMap()`.
 
-Building imports live in `client/src/data/BuildingData.js`. Seeded random worlds call `createGeneratedBuildings()` to place varied stone/timber blueprints on complete dry footprints around the selected village center. `stampBuildingsOnRows()` stamps congruent walls, directional window columns, reachable doors, floors, and style-matched stairs before `TileLibrary.js` converts the result into tile-cell arrays. Generated tile-row arrays carry their building blueprints so `Game` can register matching runtime roofs, furniture, and cutaway state.
+Building stamping lives in `client/src/data/BuildingData.js`. The town generator emits varied stone/timber blueprints on coordinated dry lots around the selected plaza. `stampBuildingsOnRows()` stamps congruent walls, directional window columns, reachable doors, floors, and style-matched stairs before `TileLibrary.js` converts the result into tile-cell arrays. Generated tile-row arrays carry their building blueprints so `Game` can register matching runtime roofs, furniture, and cutaway state.
+
+Doors have three blueprint-backed texture styles: oak, iron, and painted. `applyBuildingDoorTexturesToTileRows()` maps the style to dedicated structure texture ids, while `Tile.js` and `WorldGenerator` use matching procedural top patterns and visible hinged panel materials.
 
 One building floor is two wall blocks high. `WorldGenerator.generateFromArray()` expands a wall cell into a ground block plus two structure blocks. Window columns expand into a lower block with wall below glass and an upper block with glass below wall, both using the same stone or timber texture as the surrounding wall. Roofs are flat grids of roof blocks with low perimeter parapets; do not add triangular or gabled roofs for the current visual direction.
 
+Building blueprints use `stories` from `1` through `3`. Wall height is `stories * 2`, and window lower/upper halves repeat for every floor. Door tiles remain walkable at ground level; `WorldGenerator.addUpperDoorBlocks()` adds non-surface wall blocks above the doorway so tall buildings retain a complete facade without changing collision or the authoritative door surface. The default Guild Hall is three floors, and seeded random towns always include that three-floor civic building while other buildings may randomly use one, two, or three floors.
+
 Building stairs are three-step block wedges contained inside one tile. Their north/south/east/west metadata controls visual orientation only; players may enter and leave a stair tile from any direction. Stone and timber stairs use separate tile-library variants congruent with their building style.
 
-Building cutaways are block-local rather than building-wide. Each frame, `WorldGenerator` samples camera-to-player sight segments across the avatar's feet, torso, head, and screen-space width. Only wall blocks one or two blocks above the player's current floor and individual roof cells whose AABBs intersect those finite segments are hidden. Floors, walls behind the player, walls on another floor, and non-intersecting roof cells remain visible.
+Building cutaways preserve the first wall course at all times because the player is approximately two blocks tall and needs a visible boundary/door frame. When the player is inside, the entire roof hides together with only the upper course of the two perimeter edges nearest the camera. When a whole building lies between the camera and an outside player, its entire roof and upper wall course hide across all four edges. Floors and lower wall blocks never hide.
+
+The generated default town is a coordinated plaza plan rather than independently relocated houses. Building lots are flattened to walkable road/foundation tiles, buildings use non-overlapping offsets around the village center, and each exterior door approach receives a guaranteed orthogonal road path back to the central village road.
+
+Outdoor ground blocks use elevation-banded texture lighting. Base-level GEO, ANEMO, and CRYO blocks receive a darker tone, while blocks at increasing world height become significantly lighter. This is encoded in cached tile materials and must not affect structure, furniture, roof, water, lava, or interior building tiles.
+
+Outdoor terrain cutaways follow the same preserved-first-layer rule as buildings. When raised terrain overlaps the character from the camera direction, every obstructing terrain block above the player's visible base course may hide, but elevation `0` is never cut away. Generated, randomized, and imported array maps all receive this rule because it operates on `WorldGenerator.tileMap`, not on default-map symbols.
 
 ## Tile And Habitat Rules
 
@@ -139,7 +151,7 @@ The admin panel has a `Collision Area` toggle. It shows a green ring at each ava
 
 Hidden navigation should rely on cutaway visibility, not filled walkable highlights or persistent xray volumes. Movement legality still comes from `WorldGenerator`.
 
-The current client and server both spawn or reposition players on the highest walkable surface after default/random world replacement. This prevents the character from starting under terrain after larger generated maps.
+The client spawns or repositions the local player near the generated town center first, then falls back to the highest or first walkable surface. This keeps the compact default and randomized maps immediately focused on the town.
 
 ## Current Wildlife
 

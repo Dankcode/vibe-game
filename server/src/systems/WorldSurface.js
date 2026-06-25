@@ -159,7 +159,9 @@ class WorldSurface {
     }
 
     isWalkableBlock(element, texture) {
-        if (element === ELEMENTS.STRUCTURE) return texture === 2 || texture === 5 || texture === 6;
+        if (element === ELEMENTS.STRUCTURE) {
+            return [2, 5, 6, 7, 8, 9, 10].includes(texture);
+        }
         return WALKABLE_ELEMENTS.has(element);
     }
 

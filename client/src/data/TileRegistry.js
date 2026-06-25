@@ -162,12 +162,12 @@ const VARIANT_OVERRIDES = {
         pattern: 'timber'
     },
     [`${ELEMENTS.STRUCTURE}:5`]: {
-        label: 'Doorway',
+        label: 'Oak Doorway',
         walkable: true,
         topColor: 0x9b633a,
         sideColor: 0x6f4028,
         moveCost: 0.9,
-        pattern: 'door'
+        pattern: 'doorOak'
     },
     [`${ELEMENTS.STRUCTURE}:6`]: {
         label: 'Stairs',
@@ -176,6 +176,22 @@ const VARIANT_OVERRIDES = {
         sideColor: 0x8c6540,
         moveCost: 1.05,
         pattern: 'stairs'
+    },
+    [`${ELEMENTS.STRUCTURE}:7`]: {
+        label: 'Iron Doorway',
+        walkable: true,
+        topColor: 0x66717b,
+        sideColor: 0x343b42,
+        moveCost: 0.9,
+        pattern: 'doorIron'
+    },
+    [`${ELEMENTS.STRUCTURE}:8`]: {
+        label: 'Painted Doorway',
+        walkable: true,
+        topColor: 0x3f7f79,
+        sideColor: 0x28514d,
+        moveCost: 0.9,
+        pattern: 'doorPainted'
     },
     [`${ELEMENTS.STRUCTURE}:9`]: {
         label: 'Stone Stairs',

@@ -37,7 +37,7 @@ export class Tile {
             this.clearObjects();
             this.mesh.material = Tile.isSpecialBuildingShape(building)
                 ? Tile.getInvisibleMaterial()
-                : Tile.getMaterials(element, textureValue, effect);
+                : Tile.getMaterials(element, textureValue, effect, this.elevation, building);
             this.createObjects();
         }
     }
@@ -46,7 +46,7 @@ export class Tile {
         // In 3D: (x, y, z) -> gridX, elevation, gridY
         const material = Tile.isSpecialBuildingShape(this.building)
             ? Tile.getInvisibleMaterial()
-            : Tile.getMaterials(this.element, this.textureValue, this.effect);
+            : Tile.getMaterials(this.element, this.textureValue, this.effect, this.elevation, this.building);
 
         this.mesh = new THREE.Mesh(Tile.geometry, material);
         this.mesh.castShadow = !getTileDefinition(this.element, this.textureValue).walkable;
@@ -75,7 +75,7 @@ export class Tile {
     addWindowWallObjects() {
         const direction = Tile.getBuildingPartDirection(this.building);
         const glassMaterial = Tile.getWindowGlassMaterial();
-        const wallMaterial = Tile.getMaterials(this.element, this.textureValue, this.effect);
+        const wallMaterial = Tile.getMaterials(this.element, this.textureValue, this.effect, this.elevation, this.building);
         const isUpper = Tile.isUpperWindowWall(this.building);
         const wall = new THREE.Mesh(
             new THREE.BoxGeometry(0.98, 0.48, 0.98),
@@ -106,7 +106,7 @@ export class Tile {
     addStairObjects() {
         const direction = Tile.getBuildingPartDirection(this.building);
         const normal = Tile.getDirectionVector(direction);
-        const material = Tile.getMaterials(this.element, this.textureValue, this.effect);
+        const material = Tile.getMaterials(this.element, this.textureValue, this.effect, this.elevation, this.building);
         const stepDepth = 0.3;
 
         for (let i = 0; i < 3; i++) {
@@ -245,15 +245,16 @@ export class Tile {
         this.highlightMaterial = null;
         this.mesh.material = Tile.isSpecialBuildingShape(this.building)
             ? Tile.getInvisibleMaterial()
-            : Tile.getMaterials(this.element, this.textureValue, this.effect);
+            : Tile.getMaterials(this.element, this.textureValue, this.effect, this.elevation, this.building);
     }
 
-    static getMaterials(element, textureValue = 0, effect = 0) {
-        const key = `${element}:${textureValue}:${effect}`;
+    static getMaterials(element, textureValue = 0, effect = 0, elevation = 0, building = BUILDING_PARTS.NONE) {
+        const elevationTone = Tile.getOutdoorElevationTone(element, elevation, building);
+        const key = `${element}:${textureValue}:${effect}:${elevationTone}`;
         if (!Tile.materialCache.has(key)) {
             const definition = getTileDefinition(element, textureValue);
-            const topTexture = Tile.createTexture(definition, effect);
-            const sideTexture = Tile.createSideTexture(definition);
+            const topTexture = Tile.createTexture(definition, effect, elevationTone);
+            const sideTexture = Tile.createSideTexture(definition, elevationTone);
             const topMaterial = new THREE.MeshStandardMaterial({
                 color: 0xffffff,
                 map: topTexture,
@@ -278,7 +279,14 @@ export class Tile {
         return Tile.materialCache.get(key);
     }
 
-    static createTexture(definition, effect = 0) {
+    static getOutdoorElevationTone(element, elevation, building) {
+        if (building !== BUILDING_PARTS.NONE) return 0;
+        if (![ELEMENTS.GEO, ELEMENTS.ANEMO, ELEMENTS.CRYO].includes(element)) return 0;
+        if (elevation <= 0) return -0.14;
+        return Math.min(0.3, 0.08 + elevation * 0.11);
+    }
+
+    static createTexture(definition, effect = 0, elevationTone = 0) {
         const canvas = document.createElement('canvas');
         canvas.width = 96;
         canvas.height = 96;
@@ -320,8 +328,12 @@ export class Tile {
             Tile.drawMasonry(ctx);
         } else if (definition.pattern === 'timber') {
             Tile.drawTimber(ctx);
-        } else if (definition.pattern === 'door') {
-            Tile.drawDoor(ctx);
+        } else if (definition.pattern === 'doorOak') {
+            Tile.drawDoor(ctx, 'oak');
+        } else if (definition.pattern === 'doorIron') {
+            Tile.drawDoor(ctx, 'iron');
+        } else if (definition.pattern === 'doorPainted') {
+            Tile.drawDoor(ctx, 'painted');
         } else if (definition.pattern === 'stairs') {
             Tile.drawStairs(ctx);
         } else if (definition.pattern === 'blocked') {
@@ -331,6 +343,7 @@ export class Tile {
         }
 
         if (effect > 0) Tile.drawElementEffect(ctx, effect);
+        Tile.applyElevationTone(ctx, elevationTone);
         Tile.drawRoundedFrame(ctx, definition.walkable);
 
         const texture = new THREE.CanvasTexture(canvas);
@@ -342,7 +355,7 @@ export class Tile {
         return texture;
     }
 
-    static createSideTexture(definition) {
+    static createSideTexture(definition, elevationTone = 0) {
         const canvas = document.createElement('canvas');
         canvas.width = 96;
         canvas.height = 96;
@@ -382,12 +395,24 @@ export class Tile {
             ctx.stroke();
         }
 
+        Tile.applyElevationTone(ctx, elevationTone * 0.9);
+
         const texture = new THREE.CanvasTexture(canvas);
         texture.colorSpace = THREE.SRGBColorSpace;
         texture.wrapS = THREE.RepeatWrapping;
         texture.wrapT = THREE.RepeatWrapping;
         texture.needsUpdate = true;
         return texture;
+    }
+
+    static applyElevationTone(ctx, amount) {
+        if (Math.abs(amount) < 0.001) return;
+        ctx.save();
+        ctx.globalCompositeOperation = amount > 0 ? 'screen' : 'multiply';
+        ctx.globalAlpha = Math.min(0.42, Math.abs(amount));
+        ctx.fillStyle = amount > 0 ? '#ffffff' : '#46513d';
+        ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+        ctx.restore();
     }
 
     static shadeColor(color, amount) {
@@ -680,15 +705,41 @@ export class Tile {
         }
     }
 
-    static drawDoor(ctx) {
-        ctx.fillStyle = 'rgba(70, 39, 24, 0.34)';
+    static drawDoor(ctx, style = 'oak') {
+        const palettes = {
+            oak: {
+                panel: 'rgba(70, 39, 24, 0.38)',
+                frame: 'rgba(255, 218, 132, 0.45)',
+                accent: 'rgba(255, 221, 128, 0.7)'
+            },
+            iron: {
+                panel: 'rgba(36, 43, 49, 0.52)',
+                frame: 'rgba(190, 207, 216, 0.52)',
+                accent: 'rgba(224, 191, 92, 0.78)'
+            },
+            painted: {
+                panel: 'rgba(25, 85, 79, 0.5)',
+                frame: 'rgba(174, 232, 207, 0.5)',
+                accent: 'rgba(244, 205, 93, 0.78)'
+            }
+        };
+        const colors = palettes[style] || palettes.oak;
+
+        ctx.fillStyle = colors.panel;
         Tile.roundRect(ctx, 22, 14, 52, 68, 10);
         ctx.fill();
-        ctx.strokeStyle = 'rgba(255, 218, 132, 0.45)';
+        ctx.strokeStyle = colors.frame;
         ctx.lineWidth = 4;
         Tile.roundRect(ctx, 24, 16, 48, 64, 9);
         ctx.stroke();
-        ctx.fillStyle = 'rgba(255, 221, 128, 0.7)';
+        ctx.lineWidth = style === 'iron' ? 5 : 3;
+        for (let y = 32; y <= 64; y += 16) {
+            ctx.beginPath();
+            ctx.moveTo(27, y);
+            ctx.lineTo(69, y);
+            ctx.stroke();
+        }
+        ctx.fillStyle = colors.accent;
         ctx.beginPath();
         ctx.arc(62, 48, 4, 0, Math.PI * 2);
         ctx.fill();
