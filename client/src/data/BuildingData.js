@@ -134,16 +134,26 @@ export function applyBuildingStoriesToTileRows(tileRows, buildings = []) {
     const offsetY = Math.floor(height / 2);
 
     for (const building of buildings) {
-        const wallHeight = Math.max(2, Math.min(6, Math.floor(building.stories || 1) * 2));
+        const stories = Math.max(1, Math.min(3, Math.floor(building.stories || 1)));
+        const wallHeight = stories * 2;
+        const upperFloorMap = createUpperFloorElevationMap(building, stories);
         for (let localY = 0; localY < building.height; localY++) {
             for (let localX = 0; localX < building.width; localX++) {
                 const isEdge = localX === 0 || localY === 0 ||
                     localX === building.width - 1 || localY === building.height - 1;
                 const isDoor = building.door?.x === localX && building.door?.y === localY;
-                if (!isEdge || isDoor) continue;
                 const row = building.y + localY + offsetY;
                 const col = building.x + localX + offsetX;
-                if (tileRows[row]?.[col]) tileRows[row][col].height = wallHeight;
+                const cell = tileRows[row]?.[col];
+                if (!cell) continue;
+                if (isEdge && !isDoor) {
+                    cell.height = wallHeight;
+                    continue;
+                }
+                if (!isEdge && stories > 1) {
+                    const upperElevation = upperFloorMap.get(`${localX},${localY}`) || 0;
+                    if (upperElevation > 0) cell.height = upperElevation;
+                }
             }
         }
     }
@@ -162,6 +172,8 @@ export function applyBuildingDoorTexturesToTileRows(tileRows, buildings = []) {
         const doorCell = tileRows[row]?.[col];
         if (!doorCell) continue;
         doorCell.texture = DOOR_STYLE_TEXTURES[building.doorStyle] || DOOR_STYLE_TEXTURES.oak;
+        doorCell.doorStyleTexture = doorCell.texture;
+        doorCell.texture = 2;
     }
 
     return tileRows;
@@ -270,6 +282,69 @@ function stampBuilding(mutable, building, offsetX, offsetY) {
             }
         }
     }
+}
+
+function createUpperFloorElevationMap(building, stories) {
+    const map = new Map();
+    if (stories <= 1) return map;
+
+    const stairs = getStoryStairs(building, stories);
+    const stairKeys = new Set(stairs.map((stair) => `${stair.x},${stair.y}`));
+    stairs.forEach((stair, index) => {
+        const elevation = (index + 1) * 2;
+        map.set(`${stair.x},${stair.y}`, elevation);
+        for (const point of getUpperFloorZone(building, stair, index)) {
+            if (stairKeys.has(`${point.x},${point.y}`)) continue;
+            map.set(`${point.x},${point.y}`, Math.max(map.get(`${point.x},${point.y}`) || 0, elevation));
+        }
+    });
+
+    return map;
+}
+
+function getStoryStairs(building, stories) {
+    const baseStair = building.stairs?.[0] || getInteriorStairs(building.width, building.height, getDoorEdge(building), () => 0.25);
+    const stairs = [];
+    for (let level = 0; level < stories - 1; level++) {
+        stairs.push({
+            ...baseStair,
+            x: clamp(
+                baseStair.x + level * (baseStair.x <= building.width / 2 ? 1 : -1),
+                1,
+                building.width - 2
+            ),
+            y: clamp(
+                baseStair.y + level * (baseStair.y <= building.height / 2 ? 1 : -1),
+                1,
+                building.height - 2
+            )
+        });
+    }
+    return stairs;
+}
+
+function getUpperFloorZone(building, stair, levelIndex) {
+    const zone = [];
+    const radiusX = building.width >= 9 ? 3 : 2;
+    const radiusY = building.height >= 7 ? 2 : 1;
+    const biasX = stair.x <= building.width / 2 ? 1 : -1;
+    const biasY = stair.y <= building.height / 2 ? 1 : -1;
+    const centerX = clamp(stair.x + biasX * levelIndex, 1, building.width - 2);
+    const centerY = clamp(stair.y + biasY * levelIndex, 1, building.height - 2);
+
+    for (let y = centerY - radiusY; y <= centerY + radiusY; y++) {
+        for (let x = centerX - radiusX; x <= centerX + radiusX; x++) {
+            if (x <= 0 || y <= 0 || x >= building.width - 1 || y >= building.height - 1) continue;
+            if (building.door?.x === x && building.door?.y === y) continue;
+            zone.push({ x, y });
+        }
+    }
+    return zone;
+}
+
+function getDoorEdge(building) {
+    if (!building?.door) return 'south';
+    return getEdge(building, building.door.x, building.door.y) || 'south';
 }
 
 function stampDoorApproach(mutable, building, offsetX, offsetY) {

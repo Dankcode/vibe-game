@@ -9,7 +9,7 @@ export class InputManager {
             if (!this.keys[e.code]) {
                 // Key just pressed, trigger callbacks if any
                 if (this.callbacks[e.code]) {
-                    this.callbacks[e.code].forEach(cb => cb());
+                    this.callbacks[e.code].forEach(cb => cb(e));
                 }
             }
             this.keys[e.code] = true;

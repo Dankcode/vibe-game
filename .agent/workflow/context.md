@@ -21,19 +21,19 @@ Vibe Game is a 3.5D isometric MMORPG prototype. The client renders a voxel-like 
 - `client/src/systems/WorldGenerator.js`: array map loading, block creation, surface map, chunk indexes, walkability, habitat checks.
 - `client/src/systems/Pathfinder.js`: A* pathing over walkable surface tiles.
 - `client/src/systems/WildlifeSystem.js`: spawns wildlife only on compatible habitat tiles.
-- `client/src/ui/AdminPanel.js`: collapsed admin drawer for random world generation, array map editing, and combat entry.
+- `client/src/ui/AdminPanel.js`: collapsed Map drawer for fantasy-world teleporting, collision debug, and combat entry.
 - `client/src/scenes/CombatScene.js`: client-side turn-combat overlay and Colyseus combat-room bridge.
 - `client/src/entities/Tile.js`: block mesh creation, cached geometry/materials, procedural tile texture generation.
 - `client/src/entities/PlayerAvatar.js`: current player rendering and movement. Uses the LPC Human Male walk sheet on a Three.js billboard plane.
 - `client/src/entities/PlayerGirl2.js`: legacy unused sprite implementation; do not wire new work to it.
 - `client/src/entities/Wildlife.js`: first small wildlife mob, `MeadowHare`.
 - `client/src/data/TileRegistry.js`: tile definitions, element ids, walkability, habitats, and material metadata.
-- `client/src/data/TileLibrary.js`: tile-cell object contract, texture/building ids, shorthand symbol conversion, map legend compatibility, and normalization helpers.
+- `client/src/data/TileLibrary.js`: tile-cell object contract, texture/building ids, shorthand symbol conversion, map legend compatibility, normalization helpers, and `voxel-matrix-v1` column expansion.
 - `client/src/data/MapData.js`: array-authored main map generation, chunk size, wildlife spawns.
-- `client/src/data/SmallTownTemplate.js`: frozen 40 x 32 Aldermere fixture used as the stable default world.
+- `client/src/data/FantasyWorldData.js`: frozen fantasy-map-generator-style world export used as the stable map source for all current world windows.
 - `client/src/generation/AzgaarTownGenerator.js`: deterministic small-town site scoring, route carving, names, and building blueprints.
 - `server/src/rooms/WorldRoom.js`: multiplayer room, player movement sync, chunk-entry tracking and chunk message contract.
-- `server/src/systems/WorldSurface.js`: backend map surface resolver. Converts player center coordinates into authoritative block/tile coordinates.
+- `server/src/systems/WorldSurface.js`: backend voxel-matrix surface resolver. Converts player center coordinates into authoritative block/tile coordinates.
 - `server/src/rooms/CombatRoom.js`: co-op turn-based combat room; all party members submit actions before round resolution.
 - `server/src/schemas/PlayerState.js`: networked player fields, including current tile and chunk.
 - `server/src/schemas/CombatState.js`: shared combat actor and encounter state.
@@ -63,18 +63,19 @@ Avatar billboards and their floor shadows are depth-aware. `PlayerAvatar.setTile
 
 The map must remain array-authored so it can scale by chunks:
 
-- `MAIN_MAP` is a 2D array of tile-cell objects.
+- `MAIN_MAP` is authored as a 2D array of tile-cell objects, then normalized into `voxel-matrix-v1` before gameplay or rendering decisions.
 - A tile cell is `{ element, texture, effect, building, height }`.
 - `element` is the hard magic/base behavior id: `0 VOID`, `1 GEO/Earth`, `2 HYDRO/Water`, `3 ANEMO/Wind`, `4 CRYO/Ice`, `5 PYRO/Fire`, `6 STRUCTURE`.
 - `texture` selects the visual texture variant within that element's tile library.
 - `effect` is the active elemental overlay/aura on top of the tile; use `0` when the tile has no active effect.
 - `building` is `0` for no building and otherwise identifies building semantics such as wall, door, floor, stairs, or roof.
 - `height` is the top block elevation for that tile column.
-- Each tile cell expands into an array of stacked blocks from `z = 0` through `height`.
-- `TileLibrary.js` is the source of truth for tile-cell ids, symbol shorthand conversion, map legend compatibility, and normalization.
-- Legacy row symbols and compact cells such as `[element, texture, effect, building, height]` are accepted only as authoring/network shorthand and must normalize before gameplay systems use them.
-- `WorldGenerator.tileMap` stores individual blocks by `"x,y,z"`.
-- `WorldGenerator.surfaceMap` stores only the top block by `"x,y"` for movement, habitat, and UI.
+- Each tile cell expands into a z-indexed voxel column from `z = 0` through `height`.
+- `TileLibrary.js` is the source of truth for tile-cell ids, symbol shorthand conversion, map legend compatibility, normalization, voxel-column expansion, and top-voxel extraction.
+- Legacy row symbols and compact cells such as `[element, texture, effect, building, height]` are accepted only as authoring/network shorthand and must normalize into a voxel matrix before gameplay systems use them.
+- `WorldGenerator.voxelMatrix` and `WorldGenerator.voxelColumnMap` are the simulation-side map representation.
+- `WorldGenerator.tileMap` stores individual rendered block adapters by `"x,y,z"`.
+- `WorldGenerator.surfaceMap` is a derived top-voxel index by `"x,y"` for movement, habitat, and UI.
 - `WorldGenerator.chunkMap` groups block keys by chunk key `"chunkX,chunkY"`.
 - `MAP_CHUNK_SIZE` is currently `16`.
 
@@ -97,37 +98,37 @@ Current editor shorthand symbols:
 - `C`: timber building wall, non-walkable.
 - `N O J K`: north/south/west/east stone window-wall columns.
 - `Q V Y Z`: north/south/west/east timber window-wall columns.
-- `D`: functional doorway, walkable `STRUCTURE`.
+- `D`: functional doorway, a floor-height walkable `STRUCTURE` opening.
 - `E`: interior building floor, walkable `STRUCTURE`.
 - `U`: generic stairs, walkable `STRUCTURE`.
 - `1 2 3 4`: north/south/west/east stone stairs.
 - `5 6 7 8`: north/south/west/east timber stairs.
 
-Future large maps should add or stream more chunk arrays instead of building one huge monolithic world payload. The backend should send chunk metadata or compact tile-cell arrays/deltas, not every block for every connected player on every tick.
+Future large maps should add or stream more chunk arrays instead of building one huge monolithic world payload. The backend should send chunk metadata, compact tile-cell arrays, voxel matrix columns, or deltas, not every block for every connected player on every tick.
 
-Random generation stays mathematical and deterministic from a seed. The active compact pipeline is inspired by Azgaar's Fantasy Map Generator: create terrain cells, score a broad dry footprint for settlement suitability, carve weighted land routes between the plaza, gates, and door approaches, then stamp serializable voxel building blueprints. `SmallTownTemplate.js` freezes seed `20260625` as the current Aldermere regression world; admin randomization runs the same generator with a fresh seed.
+World generation stays mathematical and deterministic from the static fantasy-map data. The active compact pipeline is inspired by Azgaar's Fantasy Map Generator: keep map-level places and routes as data, convert a selected world-coordinate window into terrain/roads/settlements, stamp serializable voxel building blueprints, then normalize the tile-cell rows into voxel matrices. `FantasyWorldData.js` is the current frozen test-world source; every current map window should come from that same world data.
 
 The default world should remain mostly flat for smoother travel. Water, shore, grass, forest floor, roads, doors, floors, and stairs share the base plane so water can sit directly beside sand without needing to be one block lower. `H`, `M`, and `P` still create elevation, but generation should keep them sparse and smoothed rather than scattered as spotted single-tile bumps.
 
-The admin panel edits JSON tile-cell rows directly. It also accepts known legacy symbols and compact numeric cells as convenience input, then normalizes them to tile-cell objects before calling `Game.applyWorldMap()`. Every custom map must be rectangular. `Randomize World` creates a new tile-cell map with `createRandomMapRows()` and applies it through `Game.applyWorldMap()`.
+The Map panel no longer edits or randomizes tile arrays. It shows the frozen fantasy world, lets the user choose known locations or enter world coordinates, then teleports by rebuilding a deterministic voxel window around that coordinate.
 
 Building stamping lives in `client/src/data/BuildingData.js`. The town generator emits varied stone/timber blueprints on coordinated dry lots around the selected plaza. `stampBuildingsOnRows()` stamps congruent walls, directional window columns, reachable doors, floors, and style-matched stairs before `TileLibrary.js` converts the result into tile-cell arrays. Generated tile-row arrays carry their building blueprints so `Game` can register matching runtime roofs, furniture, and cutaway state.
 
-Doors have three blueprint-backed texture styles: oak, iron, and painted. `applyBuildingDoorTexturesToTileRows()` maps the style to dedicated structure texture ids, while `Tile.js` and `WorldGenerator` use matching procedural top patterns and visible hinged panel materials.
+Doors have three blueprint-backed texture styles: oak, iron, and painted. Door cells normalize back to the single-tile building floor plane so movement passes through an actual opening. `WorldGenerator` renders the styled hinged panel, jambs, lintel, threshold, and matching material accents from the building blueprint.
 
 One building floor is two wall blocks high. `WorldGenerator.generateFromArray()` expands a wall cell into a ground block plus two structure blocks. Window columns expand into a lower block with wall below glass and an upper block with glass below wall, both using the same stone or timber texture as the surrounding wall. Roofs are flat grids of roof blocks with low perimeter parapets; do not add triangular or gabled roofs for the current visual direction.
 
-Building blueprints use `stories` from `1` through `3`. Wall height is `stories * 2`, and window lower/upper halves repeat for every floor. Door tiles remain walkable at ground level; `WorldGenerator.addUpperDoorBlocks()` adds non-surface wall blocks above the doorway so tall buildings retain a complete facade without changing collision or the authoritative door surface. The default Guild Hall is three floors, and seeded random towns always include that three-floor civic building while other buildings may randomly use one, two, or three floors.
+Building blueprints use `stories` from `1` through `3`. Wall height is `stories * 2`, and window lower/upper halves repeat for every floor. Door tiles remain walkable at ground level as one-tile floor openings; runtime door frames provide the visible jamb/lintel boundary without adding hidden wall blockers above the doorway. The default Hall and Watch House are three floors, and seeded random towns always include multi-floor civic buildings while other buildings may use one, two, or three floors.
 
-Building stairs are three-step block wedges contained inside one tile. Their north/south/east/west metadata controls visual orientation only; players may enter and leave a stair tile from any direction. Stone and timber stairs use separate tile-library variants congruent with their building style.
+Building stairs are three-step block wedges contained inside one tile with a visible stairwell opening and rail. Their north/south/east/west metadata controls visual orientation; players may enter and leave a stair tile from any direction. Each stair connector may bridge exactly one 2-voxel story. Stone and timber stairs use separate tile-library variants congruent with their building style.
 
-Building cutaways preserve the first wall course at all times because the player is approximately two blocks tall and needs a visible boundary/door frame. When the player is inside, the entire roof hides together with only the upper course of the two perimeter edges nearest the camera. When a whole building lies between the camera and an outside player, its entire roof and upper wall course hide across all four edges. Floors and lower wall blocks never hide.
+Building cutaways preserve the first wall course at all times because the player is approximately two blocks tall and needs a visible boundary/door frame. Door panels open while the player is close to the doorway and close again after the player has moved through. When the player is inside, the entire roof hides together with only the upper course of the two perimeter edges nearest the camera. When a whole building lies between the camera and an outside player, its entire roof and upper wall course hide across all four edges. Floors and lower wall blocks never hide.
 
-The generated default town is a coordinated plaza plan rather than independently relocated houses. Building lots are flattened to walkable road/foundation tiles, buildings use non-overlapping offsets around the village center, and each exterior door approach receives a guaranteed orthogonal road path back to the central village road.
+Settlements come from fantasy-world locations rather than one repeated town template. Building lots are flattened to walkable road/foundation tiles, buildings use role-specific offsets around the selected map location, and each exterior door approach receives an orthogonal road path back to the local settlement roads.
 
 Outdoor ground blocks use elevation-banded texture lighting. Base-level GEO, ANEMO, and CRYO blocks receive a darker tone, while blocks at increasing world height become significantly lighter. This is encoded in cached tile materials and must not affect structure, furniture, roof, water, lava, or interior building tiles.
 
-Outdoor terrain cutaways follow the same preserved-first-layer rule as buildings. When raised terrain overlaps the character from the camera direction, every obstructing terrain block above the player's visible base course may hide, but elevation `0` is never cut away. Generated, randomized, and imported array maps all receive this rule because it operates on `WorldGenerator.tileMap`, not on default-map symbols.
+Outdoor terrain cutaways follow the same preserved-first-layer rule as buildings. When raised terrain overlaps the character from the camera direction, every obstructing terrain voxel above the player's visible base course may hide, but elevation `0` is never cut away. Generated, randomized, and imported array maps all receive this rule because it operates on normalized voxel columns, not on default-map symbols.
 
 ## Tile And Habitat Rules
 
@@ -143,7 +144,7 @@ Tile behavior lives in `client/src/data/TileRegistry.js`.
 
 Use `worldGenerator.canMoveBetween(fromX, fromY, toX, toY, isDiagonal)` for movement, `worldGenerator.isWalkable(x, y)` for simple tile eligibility, and `worldGenerator.supportsHabitat(x, y, habitat)` for wildlife placement. Do not duplicate tile rules in entities.
 
-Movement collision uses the player center point plus a small foot-radius footprint around the shadow. Keyboard movement is camera-relative, but still resolves against grid columns. Diagonal moves may not cut through blocked corners; both adjacent orthogonal columns must be occupiable before the diagonal is allowed. The server mirrors the center-point rule in `WorldSurface`; the client adds the stricter footprint check so the visible feet do not clip across block edges.
+Movement collision uses the player center point plus a small foot-radius footprint around the shadow. Keyboard movement is camera-relative, but still resolves against grid columns. Diagonal moves may not cut through blocked corners; both adjacent orthogonal columns must be occupiable before the diagonal is allowed. Ordinary movement climbs at most one voxel; stair surfaces may bridge one 2-voxel story. The server mirrors the center-point rule in `WorldSurface`; the client adds the stricter footprint check so the visible feet do not clip across block edges.
 
 The admin panel has a `Collision Area` toggle. It shows a green ring at each avatar's foot/shadow anchor on top of the current tile surface so movement bugs can be debugged visually.
 

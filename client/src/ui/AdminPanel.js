@@ -1,33 +1,34 @@
-import { MAIN_MAP, createRandomMapRows } from '../data/MapData.js';
-import { normalizeTileCell, normalizeTileRows, serializeTileRowsForAdmin, symbolRowsToTileCells, TILE_SYMBOLS } from '../data/TileLibrary.js';
+import { FANTASY_WORLD, getWorldMapLocations } from '../data/MapData.js';
 
 export class AdminPanel {
     constructor(options) {
-        this.onApplyMap = options.onApplyMap;
-        this.onRandomizeMap = options.onRandomizeMap;
+        this.onTeleport = options.onTeleport;
         this.onStartCombat = options.onStartCombat;
         this.onToggleCollisionDebug = options.onToggleCollisionDebug;
         this.collisionDebugEnabled = false;
+        this.locations = getWorldMapLocations();
 
         this.toggleButton = document.getElementById('admin-toggle');
         this.panel = document.getElementById('admin-panel');
-        this.mapInput = document.getElementById('map-array-input');
         this.message = document.getElementById('admin-message');
-        this.applyButton = document.getElementById('apply-map-button');
-        this.randomButton = document.getElementById('random-map-button');
+        this.mapCard = document.getElementById('world-map-card');
+        this.locationList = document.getElementById('world-location-list');
+        this.worldXInput = document.getElementById('world-map-x-input');
+        this.worldYInput = document.getElementById('world-map-y-input');
+        this.teleportButton = document.getElementById('world-teleport-button');
         this.combatButton = document.getElementById('start-combat-button');
         this.collisionButton = document.getElementById('collision-debug-button');
         this.closeButton = document.getElementById('admin-close-button');
 
-        this.mapInput.value = serializeTileRowsForAdmin(MAIN_MAP);
+        this.renderWorldMap();
+        this.setCoordinates(this.locations[0]?.x ?? 0, this.locations[0]?.y ?? 0);
         this.bindEvents();
     }
 
     bindEvents() {
-        this.toggleButton.addEventListener('click', () => this.setOpen(!this.panel.classList.contains('is-open')));
+        this.toggleButton.addEventListener('click', () => this.toggle());
         this.closeButton.addEventListener('click', () => this.setOpen(false));
-        this.applyButton.addEventListener('click', () => this.applyCurrentMap());
-        this.randomButton.addEventListener('click', () => this.randomizeMap());
+        this.teleportButton.addEventListener('click', () => this.teleportToInputs());
         this.collisionButton.addEventListener('click', () => this.toggleCollisionDebug());
         this.combatButton.addEventListener('click', () => {
             this.setOpen(false);
@@ -35,26 +36,84 @@ export class AdminPanel {
         });
     }
 
-    setOpen(isOpen) {
-        this.panel.classList.toggle('is-open', isOpen);
-        this.toggleButton.setAttribute('aria-expanded', String(isOpen));
-    }
+    renderWorldMap() {
+        if (!this.mapCard || !this.locationList) return;
+        this.mapCard.innerHTML = '';
+        this.locationList.innerHTML = '';
 
-    applyCurrentMap() {
-        try {
-            const rows = this.parseMapRows(this.mapInput.value);
-            this.onApplyMap(rows);
-            this.setMessage(`Applied ${rows[0].length} x ${rows.length} array map.`, 'success');
-        } catch (error) {
-            this.setMessage(error.message, 'error');
+        for (const [fromId, toId] of FANTASY_WORLD.routes) {
+            const from = this.locations.find((location) => location.id === fromId);
+            const to = this.locations.find((location) => location.id === toId);
+            if (!from || !to) continue;
+            this.mapCard.appendChild(this.createRouteElement(from, to));
+        }
+
+        for (const location of this.locations) {
+            const point = document.createElement('button');
+            point.type = 'button';
+            point.className = `world-point ${location.type === 'capital' ? 'is-major' : ''}`;
+            point.title = `${location.name} (${location.x}, ${location.y})`;
+            point.style.left = `${(location.x / FANTASY_WORLD.width) * 100}%`;
+            point.style.top = `${(location.y / FANTASY_WORLD.height) * 100}%`;
+            point.addEventListener('click', () => this.teleportToLocation(location));
+            this.mapCard.appendChild(point);
+
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.textContent = location.name;
+            button.addEventListener('click', () => this.teleportToLocation(location));
+            this.locationList.appendChild(button);
         }
     }
 
-    randomizeMap() {
-        const rows = createRandomMapRows();
-        this.mapInput.value = serializeTileRowsForAdmin(rows);
-        this.onRandomizeMap(rows);
-        this.setMessage(`Randomized ${rows[0].length} x ${rows.length} world.`, 'success');
+    createRouteElement(from, to) {
+        const route = document.createElement('div');
+        route.className = 'world-route';
+        const x1 = (from.x / FANTASY_WORLD.width) * 100;
+        const y1 = (from.y / FANTASY_WORLD.height) * 100;
+        const x2 = (to.x / FANTASY_WORLD.width) * 100;
+        const y2 = (to.y / FANTASY_WORLD.height) * 100;
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        route.style.left = `${x1}%`;
+        route.style.top = `${y1}%`;
+        route.style.width = `${Math.hypot(dx, dy)}%`;
+        route.style.transform = `rotate(${Math.atan2(dy, dx)}rad)`;
+        return route;
+    }
+
+    teleportToLocation(location) {
+        this.setCoordinates(location.x, location.y);
+        this.onTeleport({
+            worldX: location.x,
+            worldY: location.y,
+            location
+        });
+        this.setMessage(`Arrived at ${location.name}.`, 'success');
+        this.setOpen(false);
+    }
+
+    teleportToInputs() {
+        const worldX = clampInteger(this.worldXInput.value, 0, FANTASY_WORLD.width - 1);
+        const worldY = clampInteger(this.worldYInput.value, 0, FANTASY_WORLD.height - 1);
+        this.setCoordinates(worldX, worldY);
+        this.onTeleport({ worldX, worldY });
+        this.setMessage(`Arrived at ${worldX}, ${worldY}.`, 'success');
+        this.setOpen(false);
+    }
+
+    setCoordinates(worldX, worldY) {
+        if (this.worldXInput) this.worldXInput.value = String(worldX);
+        if (this.worldYInput) this.worldYInput.value = String(worldY);
+    }
+
+    toggle() {
+        this.setOpen(!this.panel.classList.contains('is-open'));
+    }
+
+    setOpen(isOpen) {
+        this.panel.classList.toggle('is-open', isOpen);
+        this.toggleButton.setAttribute('aria-expanded', String(isOpen));
     }
 
     toggleCollisionDebug() {
@@ -68,89 +127,14 @@ export class AdminPanel {
         );
     }
 
-    parseMapRows(value) {
-        const trimmed = value.trim();
-        const rows = trimmed.startsWith('[')
-            ? this.parseJsonMapRows(trimmed)
-            : this.parseSymbolMapRows(trimmed);
-
-        this.validateRectangularRows(rows);
-        return rows;
-    }
-
-    parseJsonMapRows(value) {
-        let parsed;
-        try {
-            parsed = JSON.parse(value);
-        } catch (error) {
-            throw new Error(`Map JSON is invalid: ${error.message}`);
-        }
-
-        if (!Array.isArray(parsed)) {
-            throw new Error('Map JSON must be an array of rows.');
-        }
-
-        const rows = parsed.map((row) => {
-            if (!Array.isArray(row)) {
-                throw new Error('Each map row in JSON must be an array.');
-            }
-            return row.map((cell) => normalizeTileCell(cell));
-        });
-
-        return normalizeTileRows(rows);
-    }
-
-    parseSymbolMapRows(value) {
-        const rows = value
-            .split('\n')
-            .map((row) => row.trim().toUpperCase())
-            .filter(Boolean);
-
-        if (rows.length < 4) {
-            throw new Error('Map needs at least 4 rows.');
-        }
-
-        const width = rows[0].length;
-        if (width < 4) {
-            throw new Error('Map rows need at least 4 columns.');
-        }
-
-        const allowed = new Set(TILE_SYMBOLS);
-        for (const row of rows) {
-            if (row.length !== width) {
-                throw new Error('Every map row must have the same width.');
-            }
-            for (const char of row) {
-                if (!allowed.has(char)) {
-                    throw new Error(`Unknown map symbol "${char}".`);
-                }
-            }
-        }
-
-        return symbolRowsToTileCells(rows);
-    }
-
-    validateRectangularRows(rows) {
-        if (rows.length < 4) {
-            throw new Error('Map needs at least 4 rows.');
-        }
-
-        const width = rows[0]?.length || 0;
-        if (width < 4) {
-            throw new Error('Map rows need at least 4 columns.');
-        }
-
-        if (rows.some((row) => row.length !== width)) {
-            throw new Error('Every map row must have the same width.');
-        }
-    }
-
-    setMapRows(rows) {
-        this.mapInput.value = serializeTileRowsForAdmin(rows);
-    }
-
     setMessage(text, tone = 'neutral') {
         this.message.textContent = text;
         this.message.dataset.tone = tone;
     }
+}
+
+function clampInteger(value, min, max) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return min;
+    return Math.max(min, Math.min(max, Math.round(number)));
 }

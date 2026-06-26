@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Tile } from '../entities/Tile.js';
 import { ELEMENTS, getTileDefinition, isTileWalkable, tileSupportsHabitat } from '../data/TileRegistry.js';
-import { BUILDING_PARTS, TEXTURE_IDS, tileCellToBlockInfo } from '../data/TileLibrary.js';
+import { BUILDING_PARTS, createTileCell, createVoxelBlock, createVoxelMatrix, getTopVoxel, getVoxelColumn } from '../data/TileLibrary.js';
 
 export { ELEMENTS };
 
@@ -16,6 +16,8 @@ export class WorldGenerator {
         this.elevationMap = new Map(); // key: "x,y" -> maxZ
         this.surfaceMap = new Map(); // key: "x,y" -> top tile data
         this.chunkMap = new Map(); // key: "chunkX,chunkY" -> sparse block keys
+        this.voxelMatrix = null;
+        this.voxelColumnMap = new Map(); // key: "x,y" -> voxel column array
         this.buildingStates = new Map();
         this.sightCutawayTiles = new Set();
         this.visibleTileRadius = options.visibleTileRadius || 34;
@@ -26,37 +28,43 @@ export class WorldGenerator {
      * Streamlined world generation using a simplified mathematical method.
      */
     generate(width, height) {
-        this.clear();
+        const rows = [];
 
-        for (let x = -width/2; x < width/2; x++) {
-            for (let y = -height/2; y < height/2; y++) {
-                const dist = Math.sqrt(x*x + y*y);
-                let maxZ = 1;
+        for (let y = 0; y < height; y++) {
+            const row = [];
+            for (let x = 0; x < width; x++) {
+                const gridX = x - Math.floor(width / 2);
+                const gridY = y - Math.floor(height / 2);
+                const dist = Math.sqrt(gridX * gridX + gridY * gridY);
+                let heightValue = 1;
                 let element = ELEMENTS.GEO;
                 let textureValue = 0;
 
                 if (dist > width * 0.4) {
                     element = ELEMENTS.HYDRO;
                     textureValue = 2; // Normal water
-                    maxZ = 0;
+                    heightValue = 0;
                     
                     // Randomly make some water brackish
-                    if (Math.abs(Math.sin(x * 0.2) * Math.cos(y * 0.2)) > 0.7) {
+                    if (Math.abs(Math.sin(gridX * 0.2) * Math.cos(gridY * 0.2)) > 0.7) {
                         textureValue = 4; // Brackish water
                     }
                 } else if (dist > width * 0.35) {
                     element = ELEMENTS.ANEMO;
-                    maxZ = 0;
+                    heightValue = 0;
                 }
 
-                // Add tiles from 0 up to maxZ
-                for (let z = 0; z <= maxZ; z++) {
-                    const actualElement = (z === maxZ) ? element : ELEMENTS.GEO;
-                    const actualVariant = (z === maxZ) ? textureValue : 0;
-                    this.addTile(x, y, z, actualElement, actualVariant);
-                }
+                row.push(createTileCell({
+                    element,
+                    texture: textureValue,
+                    effect: element,
+                    height: heightValue
+                }));
             }
+            rows.push(row);
         }
+
+        this.generateFromArray(rows);
     }
 
     /**
@@ -64,85 +72,30 @@ export class WorldGenerator {
      */
     generateFromArray(mapArray, legend) {
         this.clear();
-        
-        const height = mapArray.length;
-        const width = mapArray[0]?.length || 0;
-        
-        const offsetX = Math.floor(width / 2);
-        const offsetY = Math.floor(height / 2);
+        this.loadVoxelMatrix(createVoxelMatrix(mapArray, legend));
+    }
 
-        for (let y = 0; y < height; y++) {
-            const row = mapArray[y];
-            for (let x = 0; x < width; x++) {
-                const rawCell = row[x];
-                const blockInfo = this.resolveBlockInfo(rawCell, legend);
-                
-                const gridX = x - offsetX;
-                const gridY = y - offsetY;
-                
-                if (this.isTwoBlockBuildingWall(blockInfo)) {
-                    this.addTile(gridX, gridY, 0, ELEMENTS.GEO, 0, 0, BUILDING_PARTS.NONE);
-                    for (let z = 1; z <= blockInfo.maxZ; z++) {
-                        const buildingPart = this.getBuildingPartAtElevation(blockInfo.building, z);
-                        this.addTile(
-                            gridX,
-                            gridY,
-                            z,
-                            blockInfo.element,
-                            blockInfo.textureValue ?? 0,
-                            blockInfo.effect ?? 0,
-                            buildingPart
-                        );
-                    }
-                    continue;
-                }
-
-                for (let z = 0; z <= blockInfo.maxZ; z++) {
-                    const actualElement = (z === blockInfo.maxZ) ? blockInfo.element : ELEMENTS.GEO;
-                    const actualVariant = (z === blockInfo.maxZ) ? (blockInfo.textureValue ?? 0) : 0;
-                    const actualEffect = (z === blockInfo.maxZ) ? (blockInfo.effect ?? 0) : 0;
-                    const actualBuilding = (z === blockInfo.maxZ) ? (blockInfo.building ?? 0) : 0;
-                    this.addTile(gridX, gridY, z, actualElement, actualVariant, actualEffect, actualBuilding);
+    loadVoxelMatrix(voxelMatrix) {
+        this.voxelMatrix = voxelMatrix;
+        for (let y = 0; y < voxelMatrix.height; y++) {
+            for (let x = 0; x < voxelMatrix.width; x++) {
+                const gridX = x - voxelMatrix.offsetX;
+                const gridY = y - voxelMatrix.offsetY;
+                const column = voxelMatrix.columns[y][x];
+                this.voxelColumnMap.set(this.getColumnKey(gridX, gridY), column);
+                for (const voxel of column) {
+                    this.addTile(
+                        gridX,
+                        gridY,
+                        voxel.z,
+                        voxel.element,
+                        voxel.textureValue ?? voxel.texture ?? 0,
+                        voxel.effect ?? 0,
+                        voxel.building ?? 0
+                    );
                 }
             }
         }
-    }
-
-    resolveBlockInfo(rawCell, legend = {}) {
-        if (typeof rawCell === 'string') {
-            const symbolInfo = legend[rawCell] || legend[rawCell.toUpperCase?.()] || null;
-            if (symbolInfo) return tileCellToBlockInfo(symbolInfo);
-        }
-        return tileCellToBlockInfo(rawCell);
-    }
-
-    isTwoBlockBuildingWall(blockInfo) {
-        return blockInfo?.element === ELEMENTS.STRUCTURE &&
-            blockInfo.maxZ >= 2 &&
-            (blockInfo.building === BUILDING_PARTS.WALL || this.isLowerWindowPart(blockInfo.building));
-    }
-
-    isLowerWindowPart(buildingPart) {
-        return [
-            BUILDING_PARTS.WINDOW_LOWER_NORTH,
-            BUILDING_PARTS.WINDOW_LOWER_SOUTH,
-            BUILDING_PARTS.WINDOW_LOWER_WEST,
-            BUILDING_PARTS.WINDOW_LOWER_EAST
-        ].includes(buildingPart);
-    }
-
-    getUpperWindowPart(buildingPart) {
-        return {
-            [BUILDING_PARTS.WINDOW_LOWER_NORTH]: BUILDING_PARTS.WINDOW_UPPER_NORTH,
-            [BUILDING_PARTS.WINDOW_LOWER_SOUTH]: BUILDING_PARTS.WINDOW_UPPER_SOUTH,
-            [BUILDING_PARTS.WINDOW_LOWER_WEST]: BUILDING_PARTS.WINDOW_UPPER_WEST,
-            [BUILDING_PARTS.WINDOW_LOWER_EAST]: BUILDING_PARTS.WINDOW_UPPER_EAST
-        }[buildingPart] || buildingPart;
-    }
-
-    getBuildingPartAtElevation(buildingPart, elevation) {
-        if (!this.isLowerWindowPart(buildingPart)) return buildingPart;
-        return elevation % 2 === 0 ? this.getUpperWindowPart(buildingPart) : buildingPart;
     }
 
     generateFromChunkedArray(mapArray, legend, chunkSize = this.chunkSize, options = {}) {
@@ -153,6 +106,8 @@ export class WorldGenerator {
     }
 
     addTile(x, y, z, element, textureValue = 0, effect = 0, building = 0, affectSurface = true) {
+        const voxel = this.getVoxelAt(x, y, z) ||
+            this.setVoxelAt(x, y, z, { element, texture: textureValue, effect, building });
         const tile = new Tile(this.threeManager, x, y, z, { element, textureValue, effect, building });
         this.tiles.push(tile);
         const tileKey = this.getTileKey(x, y, z);
@@ -173,7 +128,8 @@ export class WorldGenerator {
                     textureValue,
                     effect,
                     building,
-                    definition: getTileDefinition(element, textureValue)
+                    definition: getTileDefinition(element, textureValue),
+                    voxel
                 });
             }
         }
@@ -203,6 +159,21 @@ export class WorldGenerator {
         return this.surfaceMap.get(this.getColumnKey(gridX, gridY));
     }
 
+    getVoxelColumnAt(x, y) {
+        const { gridX, gridY } = this.toGridPosition(x, y);
+        return this.voxelColumnMap.get(this.getColumnKey(gridX, gridY)) ||
+            getVoxelColumn(this.voxelMatrix, gridX, gridY);
+    }
+
+    getTopVoxelAt(x, y) {
+        return getTopVoxel(this.getVoxelColumnAt(x, y));
+    }
+
+    getVoxelAt(x, y, z) {
+        const column = this.getVoxelColumnAt(x, y);
+        return column?.find((voxel) => voxel.z === z) || null;
+    }
+
     findHighestWalkable() {
         let best = null;
         for (const surface of this.surfaceMap.values()) {
@@ -224,13 +195,17 @@ export class WorldGenerator {
     }
 
     canOccupyTile(x, y, fromX = x, fromY = y) {
-        if (!this.isWalkable(x, y)) return false;
+        const surface = this.getSurfaceAt(x, y);
+        if (!surface || !this.isWalkable(x, y)) return false;
 
-        const fromZ = this.getElevation(fromX, fromY);
-        const toZ = this.getElevation(x, y);
+        const fromSurface = this.getSurfaceAt(fromX, fromY);
+        const fromZ = fromSurface?.z ?? surface.z;
+        const toZ = surface.z;
         const elevationDiff = toZ - fromZ;
         if (Math.abs(elevationDiff) < 1) return true;
-        return Math.abs(elevationDiff) === 1;
+        if (Math.abs(elevationDiff) === 1) return true;
+        return Math.abs(elevationDiff) === 2 &&
+            (this.isStairSurface(surface) || this.isStairSurface(fromSurface));
     }
 
     canMoveBetween(fromX, fromY, toX, toY, isDiagonal = false) {
@@ -257,11 +232,21 @@ export class WorldGenerator {
 
     canOccupyFootprint(centerX, centerY, fromX = centerX, fromY = centerY, radius = 0.32) {
         const from = this.toGridPosition(fromX, fromY);
+        const center = this.toGridPosition(centerX, centerY);
+        const fromSurface = this.getSurfaceAt(from.gridX, from.gridY);
+        const centerSurface = this.getSurfaceAt(center.gridX, center.gridY);
+        const stairTransition = Math.abs((centerSurface?.z ?? 0) - (fromSurface?.z ?? 0)) === 2 &&
+            (this.isStairSurface(centerSurface) || this.isStairSurface(fromSurface));
         const samples = this.getFootprintSamples(centerX, centerY, radius);
 
         for (const sample of samples) {
             const point = this.toGridPosition(sample.x, sample.y);
-            if (!this.canOccupyTile(point.gridX, point.gridY, from.gridX, from.gridY)) return false;
+            if (this.canOccupyTile(point.gridX, point.gridY, from.gridX, from.gridY)) continue;
+            if (stairTransition) {
+                const sampleSurface = this.getSurfaceAt(point.gridX, point.gridY);
+                if (sampleSurface?.definition?.walkable && sampleSurface.z === centerSurface?.z) continue;
+            }
+            return false;
         }
 
         return true;
@@ -294,33 +279,8 @@ export class WorldGenerator {
     registerBuildingBlueprints(buildings = []) {
         this.clearBuildingStates();
         for (const building of buildings) {
-            this.addUpperDoorBlocks(building);
             const state = this.createBuildingState(building);
             if (state) this.buildingStates.set(building.id, state);
-        }
-    }
-
-    addUpperDoorBlocks(building) {
-        if (!building?.door) return;
-        const wallHeight = Math.max(2, Math.min(6, Math.floor(building.stories || 1) * 2));
-        const x = building.x + building.door.x;
-        const y = building.y + building.door.y;
-        const textureValue = building.style === 'stone'
-            ? TEXTURE_IDS.STONE_BUILDING_WALL
-            : TEXTURE_IDS.TIMBER_BUILDING_WALL;
-
-        for (let z = 1; z <= wallHeight; z++) {
-            if (this.getTileAt(x, y, z)) continue;
-            this.addTile(
-                x,
-                y,
-                z,
-                ELEMENTS.STRUCTURE,
-                textureValue,
-                ELEMENTS.STRUCTURE,
-                BUILDING_PARTS.WALL,
-                false
-            );
         }
     }
 
@@ -439,9 +399,19 @@ export class WorldGenerator {
         if (building.door) {
             const doorEdge = this.getBuildingEdge(building, building.door.x, building.door.y);
             if (doorEdge) {
-                const doorPivot = this.createDoorPanel(building, floorSurfaceY, doorEdge);
-                state.doors.push({ pivot: doorPivot, edge: doorEdge });
-                group.add(doorPivot);
+                const doorAssembly = this.createDoorPanel(building, floorSurfaceY, doorEdge);
+                const pivot = doorAssembly.userData.doorPivot;
+                state.doors.push({
+                    pivot,
+                    edge: doorEdge,
+                    worldX: building.x + building.door.x,
+                    worldY: building.y + building.door.y,
+                    closedRotation: 0,
+                    targetRotation: 0,
+                    currentRotation: 0,
+                    openRotation: this.getDoorOpenRotation(doorEdge)
+                });
+                group.add(doorAssembly);
             }
         }
 
@@ -458,32 +428,40 @@ export class WorldGenerator {
     }
 
     createDoorPanel(building, floorSurfaceY, edge) {
+        const group = new THREE.Group();
         const pivot = new THREE.Group();
-        const doorHeight = 1.82;
-        const doorWidth = 0.64;
-        const thickness = 0.1;
+        const doorHeight = 1.84;
+        const doorWidth = 0.84;
+        const thickness = 0.09;
+        const frameHeight = 2.12;
+        const frameThickness = 0.16;
         const isNorthSouth = edge === 'north' || edge === 'south';
         const material = WorldGenerator.getDoorMaterial(building.doorStyle);
         const accentMaterial = WorldGenerator.getDoorAccentMaterial(building.doorStyle);
+        const frameMaterial = WorldGenerator.getDoorFrameMaterial(building.style);
         const panel = new THREE.Mesh(
             new THREE.BoxGeometry(isNorthSouth ? doorWidth : thickness, doorHeight, isNorthSouth ? thickness : doorWidth),
             material
         );
         const worldX = building.x + building.door.x;
         const worldY = building.y + building.door.y;
+        const wallOffset = 0.52;
 
-        pivot.position.set(worldX, floorSurfaceY, worldY);
+        group.position.set(worldX, floorSurfaceY, worldY);
+        group.userData.cutawayType = 'doorway';
+        group.userData.doorPivot = pivot;
+
         if (edge === 'north') {
-            pivot.position.z -= 0.52;
+            pivot.position.set(-doorWidth / 2, 0, -wallOffset);
             panel.position.x = doorWidth / 2;
         } else if (edge === 'south') {
-            pivot.position.z += 0.52;
+            pivot.position.set(doorWidth / 2, 0, wallOffset);
             panel.position.x = -doorWidth / 2;
         } else if (edge === 'west') {
-            pivot.position.x -= 0.52;
+            pivot.position.set(-wallOffset, 0, doorWidth / 2);
             panel.position.z = -doorWidth / 2;
         } else if (edge === 'east') {
-            pivot.position.x += 0.52;
+            pivot.position.set(wallOffset, 0, -doorWidth / 2);
             panel.position.z = doorWidth / 2;
         }
 
@@ -491,6 +469,50 @@ export class WorldGenerator {
         panel.castShadow = true;
         panel.raycast = () => {};
         pivot.add(panel);
+        group.add(pivot);
+
+        const jambGeometry = new THREE.BoxGeometry(
+            isNorthSouth ? frameThickness : frameThickness,
+            frameHeight,
+            isNorthSouth ? frameThickness : frameThickness
+        );
+        const lintelGeometry = new THREE.BoxGeometry(
+            isNorthSouth ? 1.08 : frameThickness,
+            0.22,
+            isNorthSouth ? frameThickness : 1.08
+        );
+        const thresholdGeometry = new THREE.BoxGeometry(
+            isNorthSouth ? 1.08 : 0.18,
+            0.08,
+            isNorthSouth ? 0.18 : 1.08
+        );
+        const frameZ = edge === 'north' ? -wallOffset : edge === 'south' ? wallOffset : 0;
+        const frameX = edge === 'west' ? -wallOffset : edge === 'east' ? wallOffset : 0;
+        const jambOffsets = isNorthSouth
+            ? [{ x: -0.54, z: frameZ }, { x: 0.54, z: frameZ }]
+            : [{ x: frameX, z: -0.54 }, { x: frameX, z: 0.54 }];
+
+        for (const offset of jambOffsets) {
+            const jamb = new THREE.Mesh(jambGeometry, frameMaterial);
+            jamb.position.set(offset.x, frameHeight / 2, offset.z);
+            jamb.castShadow = true;
+            jamb.receiveShadow = true;
+            jamb.raycast = () => {};
+            group.add(jamb);
+        }
+
+        const lintel = new THREE.Mesh(lintelGeometry, frameMaterial);
+        lintel.position.set(frameX, frameHeight, frameZ);
+        lintel.castShadow = true;
+        lintel.receiveShadow = true;
+        lintel.raycast = () => {};
+        group.add(lintel);
+
+        const threshold = new THREE.Mesh(thresholdGeometry, WorldGenerator.getFloorAccentMaterial(building.style));
+        threshold.position.set(frameX, 0.04, frameZ);
+        threshold.receiveShadow = true;
+        threshold.raycast = () => {};
+        group.add(threshold);
 
         const bandGeometry = new THREE.BoxGeometry(
             isNorthSouth ? doorWidth * 0.82 : thickness * 1.25,
@@ -519,7 +541,11 @@ export class WorldGenerator {
         knob.castShadow = true;
         knob.raycast = () => {};
         pivot.add(knob);
-        return pivot;
+        return group;
+    }
+
+    getDoorOpenRotation(edge) {
+        return (edge === 'north' || edge === 'west' ? -1 : 1) * Math.PI * 0.58;
     }
 
     createBuildingFurniture(building, floorSurfaceY) {
@@ -531,15 +557,31 @@ export class WorldGenerator {
         const minZ = building.y + 1;
         const maxZ = building.y + building.height - 2;
 
+        this.addRug(group, building.x + building.width / 2 - 0.5, y, building.y + building.height / 2 - 0.5, building.style);
         this.addTable(group, minX + 0.55, y, minZ + 0.55, building.style);
         this.addBench(group, maxX - 0.3, y, minZ + 0.65, building.style, 'x');
         this.addCrateStack(group, minX + 0.35, y, maxZ - 0.35, building.style);
+        this.addShelf(group, maxX - 0.15, y, maxZ - 0.75, building.style, 'z');
+        this.addPartition(group, building.x + Math.floor(building.width / 2), y, building.y + 1.2, building.style, 'x', Math.max(1.4, building.width - 4));
 
         if (building.width >= 7 && building.height >= 6) {
             this.addCounter(group, maxX - 0.45, y, maxZ - 0.25, building.style);
             this.addBed(group, minX + 1.45, y, maxZ - 0.45, building.style);
+            this.addHearth(group, minX + 0.25, y, building.y + Math.floor(building.height / 2), building.style);
         } else {
             this.addStool(group, maxX - 0.35, y, maxZ - 0.35, building.style);
+        }
+
+        const stories = Math.max(1, Math.min(3, Math.floor(building.stories || 1)));
+        for (let level = 1; level < stories; level++) {
+            const upperY = floorSurfaceY + level * 2 + 0.08;
+            const stair = building.stairs?.[level - 1] || building.stairs?.[0];
+            const stairX = building.x + (stair?.x ?? 1);
+            const stairZ = building.y + (stair?.y ?? 1);
+            this.addBed(group, Math.min(maxX - 0.65, stairX + 1.15), upperY, Math.min(maxZ - 0.55, stairZ + 0.95), building.style);
+            this.addShelf(group, Math.max(minX + 0.25, stairX - 1.15), upperY, Math.max(minZ + 0.45, stairZ - 0.8), building.style, 'x');
+            this.addStool(group, Math.min(maxX - 0.35, stairX + 0.5), upperY, Math.max(minZ + 0.35, stairZ - 0.65), building.style);
+            this.addPartition(group, stairX + 0.5, upperY, stairZ + 0.5, building.style, 'z', Math.min(1.8, building.height - 3));
         }
 
         group.traverse((child) => {
@@ -612,6 +654,55 @@ export class WorldGenerator {
         group.add(stool);
     }
 
+    addRug(group, x, y, z, style) {
+        const material = WorldGenerator.getRugMaterial(style);
+        const rug = new THREE.Mesh(new THREE.BoxGeometry(1.65, 0.035, 1.12), material);
+        rug.position.set(x, y + 0.025, z);
+        group.add(rug);
+    }
+
+    addShelf(group, x, y, z, style, axis = 'x') {
+        const material = WorldGenerator.getFurnitureMaterial(style);
+        const shelf = new THREE.Mesh(
+            new THREE.BoxGeometry(axis === 'x' ? 1.05 : 0.24, 0.92, axis === 'x' ? 0.24 : 1.05),
+            material
+        );
+        shelf.position.set(x, y + 0.46, z);
+        group.add(shelf);
+
+        const itemMaterial = WorldGenerator.getShelfItemMaterial(style);
+        for (let i = 0; i < 3; i++) {
+            const item = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.18, 0.12), itemMaterial);
+            item.position.set(
+                x + (axis === 'x' ? -0.32 + i * 0.32 : 0),
+                y + 0.28 + i * 0.18,
+                z + (axis === 'z' ? -0.32 + i * 0.32 : 0)
+            );
+            group.add(item);
+        }
+    }
+
+    addPartition(group, x, y, z, style, axis = 'x', length = 1.6) {
+        const material = WorldGenerator.getTrimMaterial(style);
+        const partition = new THREE.Mesh(
+            new THREE.BoxGeometry(axis === 'x' ? length : 0.08, 0.72, axis === 'x' ? 0.08 : length),
+            material
+        );
+        partition.position.set(x, y + 0.36, z);
+        group.add(partition);
+    }
+
+    addHearth(group, x, y, z, style) {
+        const stone = WorldGenerator.getDoorFrameMaterial(style);
+        const fire = WorldGenerator.getHearthFireMaterial();
+        const base = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.34, 0.38), stone);
+        base.position.set(x, y + 0.17, z);
+        group.add(base);
+        const flame = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.28, 0.12), fire);
+        flame.position.set(x, y + 0.42, z);
+        group.add(flame);
+    }
+
     static getRoofMaterial(style) {
         if (!WorldGenerator.roofMaterialCache) WorldGenerator.roofMaterialCache = new Map();
         const key = style || 'timber';
@@ -666,6 +757,32 @@ export class WorldGenerator {
         return WorldGenerator.doorAccentMaterialCache.get(key);
     }
 
+    static getDoorFrameMaterial(style) {
+        if (!WorldGenerator.doorFrameMaterialCache) WorldGenerator.doorFrameMaterialCache = new Map();
+        const key = style || 'timber';
+        if (!WorldGenerator.doorFrameMaterialCache.has(key)) {
+            WorldGenerator.doorFrameMaterialCache.set(key, new THREE.MeshStandardMaterial({
+                color: key === 'stone' ? 0x8e99a2 : 0x6a3d24,
+                roughness: 0.84,
+                metalness: 0.02
+            }));
+        }
+        return WorldGenerator.doorFrameMaterialCache.get(key);
+    }
+
+    static getFloorAccentMaterial(style) {
+        if (!WorldGenerator.floorAccentMaterialCache) WorldGenerator.floorAccentMaterialCache = new Map();
+        const key = style || 'timber';
+        if (!WorldGenerator.floorAccentMaterialCache.has(key)) {
+            WorldGenerator.floorAccentMaterialCache.set(key, new THREE.MeshStandardMaterial({
+                color: key === 'stone' ? 0xb9c1c8 : 0xb4875e,
+                roughness: 0.9,
+                metalness: 0.01
+            }));
+        }
+        return WorldGenerator.floorAccentMaterialCache.get(key);
+    }
+
     static getFurnitureMaterial(style) {
         if (!WorldGenerator.furnitureMaterialCache) WorldGenerator.furnitureMaterialCache = new Map();
         const key = style || 'timber';
@@ -692,10 +809,50 @@ export class WorldGenerator {
         return WorldGenerator.blanketMaterialCache.get(key);
     }
 
+    static getRugMaterial(style) {
+        if (!WorldGenerator.rugMaterialCache) WorldGenerator.rugMaterialCache = new Map();
+        const key = style || 'timber';
+        if (!WorldGenerator.rugMaterialCache.has(key)) {
+            WorldGenerator.rugMaterialCache.set(key, new THREE.MeshStandardMaterial({
+                color: key === 'stone' ? 0x7d4055 : 0x355f68,
+                roughness: 0.92,
+                metalness: 0.01
+            }));
+        }
+        return WorldGenerator.rugMaterialCache.get(key);
+    }
+
+    static getShelfItemMaterial(style) {
+        if (!WorldGenerator.shelfItemMaterialCache) WorldGenerator.shelfItemMaterialCache = new Map();
+        const key = style || 'timber';
+        if (!WorldGenerator.shelfItemMaterialCache.has(key)) {
+            WorldGenerator.shelfItemMaterialCache.set(key, new THREE.MeshStandardMaterial({
+                color: key === 'stone' ? 0xc6b06d : 0x8fa96a,
+                roughness: 0.75,
+                metalness: 0.03
+            }));
+        }
+        return WorldGenerator.shelfItemMaterialCache.get(key);
+    }
+
+    static getHearthFireMaterial() {
+        if (!WorldGenerator.hearthFireMaterial) {
+            WorldGenerator.hearthFireMaterial = new THREE.MeshStandardMaterial({
+                color: 0xff8a32,
+                emissive: 0xff5a1d,
+                emissiveIntensity: 0.45,
+                roughness: 0.55,
+                metalness: 0.01
+            });
+        }
+        return WorldGenerator.hearthFireMaterial;
+    }
+
     updateBuildingVisibility(playerX, playerY) {
         const active = this.getBuildingAt(playerX, playerY);
         for (const state of this.buildingStates.values()) {
             this.setBuildingOpen(state, active?.id === state.id);
+            this.updateDoorTargetsForPlayer(state, playerX, playerY);
         }
         return active;
     }
@@ -713,14 +870,32 @@ export class WorldGenerator {
         if (state.isOpen === isOpen) return;
         state.isOpen = isOpen;
         if (state.wallDecorations) state.wallDecorations.visible = true;
-        this.setDoorOpen(state, isOpen);
     }
 
-    setDoorOpen(state, isOpen) {
+    updateDoorTargetsForPlayer(state, playerX, playerY) {
         for (const door of state.doors || []) {
-            const direction = door.edge === 'north' || door.edge === 'west' ? -1 : 1;
-            door.pivot.rotation.y = isOpen ? direction * Math.PI * 0.58 : 0;
-            door.pivot.visible = true;
+            const distance = Math.hypot(playerX - door.worldX, playerY - door.worldY);
+            this.setDoorOpen(door, distance <= 1.18);
+        }
+    }
+
+    setDoorOpen(door, isOpen) {
+        if (!door?.pivot) return;
+        door.targetRotation = isOpen ? door.openRotation : door.closedRotation;
+        door.pivot.visible = true;
+    }
+
+    updateDoorAnimations(deltaSeconds = 1 / 60) {
+        const smoothing = Math.min(1, deltaSeconds * 12);
+        for (const state of this.buildingStates.values()) {
+            for (const door of state.doors || []) {
+                if (!door?.pivot) continue;
+                door.currentRotation += (door.targetRotation - door.currentRotation) * smoothing;
+                if (Math.abs(door.currentRotation - door.targetRotation) < 0.002) {
+                    door.currentRotation = door.targetRotation;
+                }
+                door.pivot.rotation.y = door.currentRotation;
+            }
         }
     }
 
@@ -789,9 +964,8 @@ export class WorldGenerator {
                 if (dot < 0.36 || cross > 1.6) continue;
                 if (!this.shouldHideTileForSightCutaway(surface, playerSurface)) continue;
 
-                const firstCutElevation = Math.max(1, playerSurface.z + 1);
-                for (let z = firstCutElevation; z <= surface.z; z++) {
-                    const terrainTile = this.getTileAt(surface.x, surface.y, z);
+                for (const voxel of this.getTerrainCutawayVoxels(surface, playerSurface)) {
+                    const terrainTile = this.getTileAt(surface.x, surface.y, voxel.z);
                     if (!terrainTile || terrainTile.element === ELEMENTS.STRUCTURE) continue;
                     terrainTile.hiddenBySightCutaway = true;
                     this.sightCutawayTiles.add(terrainTile);
@@ -801,7 +975,7 @@ export class WorldGenerator {
         }
 
         const activeBuilding = this.getBuildingAt(center.gridX, center.gridY);
-        if (activeBuilding && activeBuilding.floorZ === playerSurface.z) {
+        if (activeBuilding && playerSurface.z >= activeBuilding.floorZ) {
             this.cutAwayActiveBuilding(activeBuilding, camera, playerSurface);
         } else {
             this.cutAwayBuildingsInFrontOfPlayer(center.gridX, center.gridY, camera, playerSurface);
@@ -911,12 +1085,36 @@ export class WorldGenerator {
         return false;
     }
 
+    getTerrainCutawayVoxels(surface, playerSurface) {
+        const column = this.getVoxelColumnAt(surface.x, surface.y) || [];
+        const firstCutElevation = Math.max(1, playerSurface.z + 1);
+        return column.filter((voxel) => {
+            if (voxel.z < firstCutElevation || voxel.z > surface.z) return false;
+            if (voxel.element === ELEMENTS.STRUCTURE) return false;
+            return voxel.element === ELEMENTS.ANEMO ||
+                voxel.element === ELEMENTS.GEO ||
+                voxel.element === ELEMENTS.CRYO;
+        });
+    }
+
     canUseStairsBetween(fromX, fromY, toX, toY, isDiagonal = false) {
         const fromSurface = this.getSurfaceAt(fromX, fromY);
         const toSurface = this.getSurfaceAt(toX, toY);
         const elevationDiff = (toSurface?.z ?? 0) - (fromSurface?.z ?? 0);
         if (elevationDiff === 0) return true;
-        return Math.abs(elevationDiff) === 1;
+        if (Math.abs(elevationDiff) === 1) return true;
+        return Math.abs(elevationDiff) === 2 &&
+            (this.isStairSurface(fromSurface) || this.isStairSurface(toSurface));
+    }
+
+    isStairSurface(surface) {
+        return [
+            BUILDING_PARTS.STAIRS,
+            BUILDING_PARTS.STAIRS_NORTH,
+            BUILDING_PARTS.STAIRS_SOUTH,
+            BUILDING_PARTS.STAIRS_WEST,
+            BUILDING_PARTS.STAIRS_EAST
+        ].includes(surface?.building);
     }
 
     syncTileVisibility(tile) {
@@ -937,11 +1135,15 @@ export class WorldGenerator {
         const fromZ = this.getElevation(fromX, fromY);
         const toZ = this.getElevation(toX, toY);
         const elevationDiff = toZ - fromZ;
-        if (elevationDiff >= 2) return Infinity;
+        const fromSurface = this.getSurfaceAt(fromX, fromY);
+        const toSurface = this.getSurfaceAt(toX, toY);
+        if (Math.abs(elevationDiff) >= 2 &&
+            !(Math.abs(elevationDiff) === 2 && (this.isStairSurface(fromSurface) || this.isStairSurface(toSurface)))) {
+            return Infinity;
+        }
 
-        const surface = this.getSurfaceAt(toX, toY);
         const baseCost = isDiagonal ? 1.414 : 1.0;
-        const terrainCost = surface?.definition?.moveCost || 1;
+        const terrainCost = toSurface?.definition?.moveCost || 1;
         const climbCost = elevationDiff > 0 ? elevationDiff * 0.5 : elevationDiff * 0.15;
         return Math.max(0.1, baseCost * terrainCost + climbCost);
     }
@@ -983,12 +1185,14 @@ export class WorldGenerator {
      * Modifies a specific tile's element and variant.
      */
     modifyTile(x, y, z, element, textureValue = 0, effect = 0, building = 0) {
+        const voxel = this.setVoxelAt(x, y, z, { element, texture: textureValue, effect, building });
         const tile = this.getTileAt(x, y, z);
         if (tile) {
             console.log(`[WorldGenerator] Modifying tile at ${x},${y},${z} to Element:${element}, Var:${textureValue}`);
             tile.setElementalType(element, textureValue, effect, building);
+            this.rebuildSurfaceFromColumn(x, y);
         } else {
-            this.addTile(x, y, z, element, textureValue, effect, building);
+            this.addTile(x, y, z, voxel.element, voxel.textureValue, voxel.effect, voxel.building);
         }
     }
 
@@ -1010,36 +1214,55 @@ export class WorldGenerator {
             this.tileMap.delete(key);
             this.tiles = this.tiles.filter(t => t !== tile);
             this.unregisterTileFromChunk(x, y, key);
-            
-            // Re-calculate elevation for this x,y
-            let newMaxZ = -1;
-            let topTile = null;
-            for (let currentZ = z + 10; currentZ >= 0; currentZ--) {
-                const candidate = this.tileMap.get(this.getTileKey(x, y, currentZ));
-                if (candidate) {
-                    newMaxZ = currentZ;
-                    topTile = candidate;
-                    break;
-                }
+            const column = this.getVoxelColumnAt(x, y);
+            if (column) {
+                const voxelIndex = column.findIndex((voxel) => voxel.z === z);
+                if (voxelIndex >= 0) column.splice(voxelIndex, 1);
             }
-            const columnKey = this.getColumnKey(x, y);
-            if (newMaxZ === -1) {
-                this.elevationMap.delete(columnKey);
-                this.surfaceMap.delete(columnKey);
-            } else {
-                this.elevationMap.set(columnKey, newMaxZ);
-                this.surfaceMap.set(columnKey, {
-                    x,
-                    y,
-                    z: newMaxZ,
-                    element: topTile.element,
-                    textureValue: topTile.textureValue,
-                    effect: topTile.effect,
-                    building: topTile.building,
-                    definition: getTileDefinition(topTile.element, topTile.textureValue)
-                });
-            }
+            this.rebuildSurfaceFromColumn(x, y);
         }
+    }
+
+    setVoxelAt(x, y, z, attributes) {
+        const columnKey = this.getColumnKey(x, y);
+        let column = this.voxelColumnMap.get(columnKey);
+        if (!column) {
+            column = [];
+            this.voxelColumnMap.set(columnKey, column);
+        }
+
+        const voxel = createVoxelBlock({ ...attributes, z });
+        const existingIndex = column.findIndex((candidate) => candidate.z === z);
+        if (existingIndex >= 0) {
+            column[existingIndex] = voxel;
+        } else {
+            column.push(voxel);
+            column.sort((a, b) => a.z - b.z);
+        }
+        return voxel;
+    }
+
+    rebuildSurfaceFromColumn(x, y) {
+        const columnKey = this.getColumnKey(x, y);
+        const topVoxel = getTopVoxel(this.voxelColumnMap.get(columnKey));
+        if (!topVoxel) {
+            this.elevationMap.delete(columnKey);
+            this.surfaceMap.delete(columnKey);
+            return;
+        }
+
+        this.elevationMap.set(columnKey, topVoxel.z);
+        this.surfaceMap.set(columnKey, {
+            x,
+            y,
+            z: topVoxel.z,
+            element: topVoxel.element,
+            textureValue: topVoxel.textureValue,
+            effect: topVoxel.effect,
+            building: topVoxel.building,
+            definition: topVoxel.definition,
+            voxel: topVoxel
+        });
     }
 
     clear() {
@@ -1051,6 +1274,8 @@ export class WorldGenerator {
         this.elevationMap.clear();
         this.surfaceMap.clear();
         this.chunkMap.clear();
+        this.voxelMatrix = null;
+        this.voxelColumnMap.clear();
         this.lastVisibilityCenter = null;
     }
 

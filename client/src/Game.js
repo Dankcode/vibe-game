@@ -6,7 +6,7 @@ import { Pathfinder } from './systems/Pathfinder.js';
 import { WildlifeSystem } from './systems/WildlifeSystem.js';
 import { AdminPanel } from './ui/AdminPanel.js';
 import { CombatScene } from './scenes/CombatScene.js';
-import { MAIN_MAP, MAP_CHUNK_SIZE, MAP_LEGEND, WILDLIFE_SPAWNS } from './data/MapData.js';
+import { createFantasyWorldRowsAt, MAIN_MAP, MAP_CHUNK_SIZE, MAP_LEGEND, WILDLIFE_SPAWNS } from './data/MapData.js';
 import * as Colyseus from 'colyseus.js';
 
 export class Game {
@@ -63,10 +63,14 @@ export class Game {
         this.wildlifeReadout = document.getElementById('wildlife-readout');
         this.playerCountReadout = document.getElementById('player-count-readout');
         this.adminPanel = new AdminPanel({
-            onApplyMap: (rows) => this.applyWorldMap(rows, 'custom'),
-            onRandomizeMap: (rows) => this.applyWorldMap(rows, 'random'),
+            onTeleport: ({ worldX, worldY, location }) => this.teleportToWorld(worldX, worldY, location),
             onStartCombat: () => this.startCombatScene(),
             onToggleCollisionDebug: (isEnabled) => this.setCollisionDebugVisible(isEnabled)
+        });
+        this.inputManager.onKeyDown('KeyM', (event) => {
+            if (this.shouldIgnoreGlobalShortcut(event)) return;
+            event.preventDefault();
+            this.adminPanel.toggle();
         });
         this.updateHud('Connecting');
 
@@ -212,6 +216,13 @@ export class Game {
         this.updateHud();
     }
 
+    teleportToWorld(worldX, worldY, location = null) {
+        const rows = createFantasyWorldRowsAt(worldX, worldY);
+        this.applyWorldMap(rows, 'world-teleport');
+        const label = location?.name || `${Math.round(worldX)}, ${Math.round(worldY)}`;
+        this.adminPanel?.setMessage(`Arrived at ${label}.`, 'success');
+    }
+
     repositionPlayerForCurrentWorld() {
         const preferredSpawn = this.currentMapRows.spawn || { x: this.player.gridX, y: this.player.gridY };
         const fallbackSpawn = this.worldGenerator.findNearestWalkable(preferredSpawn.x, preferredSpawn.y, 16) ||
@@ -241,6 +252,7 @@ export class Game {
             height: this.currentMapRows.length,
             chunkSize: MAP_CHUNK_SIZE,
             spawn: this.currentMapRows.spawn,
+            world: this.currentMapRows.world,
             rows: this.currentMapRows
         });
     }
@@ -329,6 +341,7 @@ export class Game {
             const targetPos = this.player.group.position;
             this.threeManager.updateCamera(targetPos);
             this.worldGenerator.updateBuildingVisibility(this.player.gridX, this.player.gridY);
+            this.worldGenerator.updateDoorAnimations(deltaSeconds);
             this.worldGenerator.updateVisibleTilesAround(this.player.gridX, this.player.gridY);
             this.worldGenerator.updatePlayerSightCutaway(this.player.gridX, this.player.gridY, this.threeManager.camera);
 
@@ -336,6 +349,12 @@ export class Game {
         }
 
         this.threeManager.render();
+    }
+
+    shouldIgnoreGlobalShortcut(event) {
+        const tagName = event?.target?.tagName?.toLowerCase();
+        return tagName === 'input' || tagName === 'textarea' || tagName === 'select' ||
+            event?.target?.isContentEditable;
     }
 
     updateHud(status) {

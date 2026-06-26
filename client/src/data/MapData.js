@@ -3,14 +3,22 @@ import {
     applyBuildingStoriesToTileRows,
     stampBuildingsOnRows
 } from './BuildingData.js';
-import { SMALL_TOWN_TEMPLATE } from './SmallTownTemplate.js';
 import { MAP_LEGEND, symbolRowsToTileCells } from './TileLibrary.js';
-import { generateAzgaarTownPlan } from '../generation/AzgaarTownGenerator.js';
+import {
+    createFantasyWorldPlanAt,
+    FANTASY_WORLD,
+    getDefaultWorldLocation,
+    getWorldMapLocations,
+    WORLD_VIEW_HEIGHT,
+    WORLD_VIEW_WIDTH
+} from './FantasyWorldData.js';
 
 export const MAP_CHUNK_SIZE = 16;
 export { MAP_LEGEND };
+export { FANTASY_WORLD, getWorldMapLocations };
 
-export const MAIN_MAP = createTownTileRows(SMALL_TOWN_TEMPLATE);
+const DEFAULT_WORLD_LOCATION = getDefaultWorldLocation();
+export const MAIN_MAP = createFantasyWorldRowsAt(DEFAULT_WORLD_LOCATION.x, DEFAULT_WORLD_LOCATION.y);
 
 export const WILDLIFE_SPAWNS = [
     {
@@ -23,8 +31,11 @@ export const WILDLIFE_SPAWNS = [
     }
 ];
 
-export function createRandomMapRows(width = 40, height = 32, seed = Date.now(), mapHints = {}) {
-    const townPlan = generateAzgaarTownPlan({ width, height, seed, ...mapHints });
+export function createFantasyWorldRowsAt(worldX, worldY, options = {}) {
+    const townPlan = createFantasyWorldPlanAt(worldX, worldY, {
+        width: options.width || WORLD_VIEW_WIDTH,
+        height: options.height || WORLD_VIEW_HEIGHT
+    });
     return createTownTileRows(townPlan);
 }
 
@@ -32,7 +43,7 @@ export function createTownTileRows(townPlan) {
     const buildings = townPlan.buildings || [];
     const buildingRows = stampBuildingsOnRows(townPlan.rows, buildings, {
         villageCenter: townPlan.center,
-        connectDoors: false
+        connectDoors: townPlan.connectDoors ?? false
     });
     const tileRows = symbolRowsToTileCells(buildingRows);
     applyBuildingStoriesToTileRows(tileRows, buildings);
@@ -46,6 +57,7 @@ export function createTownTileRows(townPlan) {
         y: townPlan.center.y - Math.floor(townPlan.height / 2)
     };
     tileRows.generator = 'azgaar-inspired-small-town-v1';
+    if (townPlan.world) tileRows.world = townPlan.world;
     return tileRows;
 }
 

@@ -109,6 +109,15 @@ export class Tile {
         const material = Tile.getMaterials(this.element, this.textureValue, this.effect, this.elevation, this.building);
         const stepDepth = 0.3;
 
+        const well = new THREE.Mesh(
+            new THREE.BoxGeometry(0.82, 0.035, 0.82),
+            Tile.getStairwellMaterial()
+        );
+        well.position.y = -0.49;
+        well.raycast = () => {};
+        this.mesh.add(well);
+        this.objects.push(well);
+
         for (let i = 0; i < 3; i++) {
             const height = (i + 1) * 0.32;
             const step = new THREE.Mesh(new THREE.BoxGeometry(0.9, height, stepDepth), material);
@@ -120,6 +129,23 @@ export class Tile {
             step.raycast = () => {};
             this.mesh.add(step);
             this.objects.push(step);
+        }
+
+        const railMaterial = Tile.getStairRailMaterial();
+        const rails = [
+            { size: [0.82, 0.12, 0.05], x: 0, z: -0.43 },
+            { size: [0.82, 0.12, 0.05], x: 0, z: 0.43 },
+            { size: [0.05, 0.12, 0.82], x: -0.43, z: 0 },
+            { size: [0.05, 0.12, 0.82], x: 0.43, z: 0 }
+        ];
+        for (const railData of rails) {
+            const rail = new THREE.Mesh(new THREE.BoxGeometry(...railData.size), railMaterial);
+            rail.position.set(railData.x, 0.08, railData.z);
+            rail.castShadow = true;
+            rail.receiveShadow = true;
+            rail.raycast = () => {};
+            this.mesh.add(rail);
+            this.objects.push(rail);
         }
     }
 
@@ -207,6 +233,28 @@ export class Tile {
             });
         }
         return Tile.windowGlassMaterial;
+    }
+
+    static getStairwellMaterial() {
+        if (!Tile.stairwellMaterial) {
+            Tile.stairwellMaterial = new THREE.MeshStandardMaterial({
+                color: 0x1f211c,
+                roughness: 0.96,
+                metalness: 0.02
+            });
+        }
+        return Tile.stairwellMaterial;
+    }
+
+    static getStairRailMaterial() {
+        if (!Tile.stairRailMaterial) {
+            Tile.stairRailMaterial = new THREE.MeshStandardMaterial({
+                color: 0x65422b,
+                roughness: 0.82,
+                metalness: 0.03
+            });
+        }
+        return Tile.stairRailMaterial;
     }
 
     static getInvisibleMaterial() {

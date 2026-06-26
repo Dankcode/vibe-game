@@ -83,7 +83,7 @@ export const TILE_SYMBOL_LIBRARY = {
     V: { element: ELEMENTS.STRUCTURE, texture: TEXTURE_IDS.TIMBER_BUILDING_WALL, effect: TILE_EFFECTS.STRUCTURE, building: BUILDING_PARTS.WINDOW_LOWER_SOUTH, height: 2 },
     Y: { element: ELEMENTS.STRUCTURE, texture: TEXTURE_IDS.TIMBER_BUILDING_WALL, effect: TILE_EFFECTS.STRUCTURE, building: BUILDING_PARTS.WINDOW_LOWER_WEST, height: 2 },
     Z: { element: ELEMENTS.STRUCTURE, texture: TEXTURE_IDS.TIMBER_BUILDING_WALL, effect: TILE_EFFECTS.STRUCTURE, building: BUILDING_PARTS.WINDOW_LOWER_EAST, height: 2 },
-    D: { element: ELEMENTS.STRUCTURE, texture: TEXTURE_IDS.DOOR, effect: TILE_EFFECTS.STRUCTURE, building: BUILDING_PARTS.DOOR, height: 0 },
+    D: { element: ELEMENTS.STRUCTURE, texture: TEXTURE_IDS.BUILDING_FLOOR, effect: TILE_EFFECTS.STRUCTURE, building: BUILDING_PARTS.DOOR, height: 0 },
     E: { element: ELEMENTS.STRUCTURE, texture: TEXTURE_IDS.BUILDING_FLOOR, effect: TILE_EFFECTS.STRUCTURE, building: BUILDING_PARTS.FLOOR, height: 0 },
     U: { element: ELEMENTS.STRUCTURE, texture: TEXTURE_IDS.STAIRS, effect: TILE_EFFECTS.STRUCTURE, building: BUILDING_PARTS.STAIRS, height: 0 },
     1: { element: ELEMENTS.STRUCTURE, texture: TEXTURE_IDS.STONE_STAIRS, effect: TILE_EFFECTS.STRUCTURE, building: BUILDING_PARTS.STAIRS_NORTH, height: 0 },
@@ -105,6 +105,20 @@ export function createTileCell({ element = ELEMENTS.VOID, texture = 0, effect = 
         effect: clampInteger(effect, TILE_EFFECTS.NONE),
         building: clampInteger(building, BUILDING_PARTS.NONE),
         height: clampInteger(height, 0)
+    };
+}
+
+export function createVoxelBlock({ element = ELEMENTS.VOID, texture = 0, effect = TILE_EFFECTS.NONE, building = BUILDING_PARTS.NONE, z = 0 } = {}) {
+    const textureValue = clampInteger(texture, 0);
+    const blockElement = clampInteger(element, ELEMENTS.VOID);
+    return {
+        z: clampInteger(z, 0),
+        element: blockElement,
+        texture: textureValue,
+        textureValue,
+        effect: clampInteger(effect, TILE_EFFECTS.NONE),
+        building: clampInteger(building, BUILDING_PARTS.NONE),
+        definition: getTileDefinition(blockElement, textureValue)
     };
 }
 
@@ -148,6 +162,91 @@ export function tileCellToBlockInfo(rawCell) {
     };
 }
 
+export function tileCellToVoxelColumn(rawCell) {
+    const cell = normalizeTileCell(rawCell);
+    const maxZ = Math.max(0, cell.height);
+    const column = [];
+
+    if (isStackedBuildingWall(cell)) {
+        column.push(createVoxelBlock({
+            z: 0,
+            element: ELEMENTS.GEO,
+            texture: TEXTURE_IDS.DEFAULT,
+            effect: TILE_EFFECTS.EARTH,
+            building: BUILDING_PARTS.NONE
+        }));
+        for (let z = 1; z <= maxZ; z++) {
+            column.push(createVoxelBlock({
+                z,
+                element: cell.element,
+                texture: cell.texture,
+                effect: cell.effect,
+                building: getBuildingPartAtElevation(cell.building, z)
+            }));
+        }
+        return column;
+    }
+
+    if (isStackedWalkableStructure(cell)) {
+        column.push(createVoxelBlock({
+            z: 0,
+            element: cell.element,
+            texture: cell.texture,
+            effect: cell.effect,
+            building: cell.building
+        }));
+        if (maxZ > 0) {
+            column.push(createVoxelBlock({
+                z: maxZ,
+                element: cell.element,
+                texture: cell.texture,
+                effect: cell.effect,
+                building: cell.building
+            }));
+        }
+        return column;
+    }
+
+    for (let z = 0; z <= maxZ; z++) {
+        const isSurface = z === maxZ;
+        column.push(createVoxelBlock({
+            z,
+            element: isSurface ? cell.element : ELEMENTS.GEO,
+            texture: isSurface ? cell.texture : TEXTURE_IDS.DEFAULT,
+            effect: isSurface ? cell.effect : TILE_EFFECTS.EARTH,
+            building: isSurface ? cell.building : BUILDING_PARTS.NONE
+        }));
+    }
+
+    return column;
+}
+
+export function createVoxelMatrix(rows, legend = {}) {
+    const normalizedRows = normalizeTileRowsWithLegend(rows, legend);
+    const height = normalizedRows.length;
+    const width = normalizedRows[0]?.length || 0;
+    return {
+        encoding: 'voxel-matrix-v1',
+        width,
+        height,
+        offsetX: Math.floor(width / 2),
+        offsetY: Math.floor(height / 2),
+        columns: normalizedRows.map((row) => row.map((cell) => tileCellToVoxelColumn(cell)))
+    };
+}
+
+export function getVoxelColumn(matrix, gridX, gridY) {
+    if (!matrix?.columns) return null;
+    const x = gridX + matrix.offsetX;
+    const y = gridY + matrix.offsetY;
+    return matrix.columns[y]?.[x] || null;
+}
+
+export function getTopVoxel(column) {
+    if (!Array.isArray(column) || column.length === 0) return null;
+    return column.reduce((top, block) => block.z > top.z ? block : top, column[0]);
+}
+
 export function symbolRowsToTileCells(rows) {
     return rows.map((row) => [...String(row)].map((symbol) => createTileCellFromSymbol(symbol)));
 }
@@ -158,6 +257,22 @@ export function normalizeTileRows(rows) {
         .filter((row) => Array.isArray(row) || typeof row === 'string')
         .map((row) => {
             if (typeof row === 'string') return [...row.trim().toUpperCase()].map((symbol) => createTileCellFromSymbol(symbol));
+            return row.map((cell) => normalizeTileCell(cell));
+        })
+        .filter((row) => row.length > 0);
+}
+
+export function normalizeTileRowsWithLegend(rows, legend = {}) {
+    if (!Array.isArray(rows)) return [];
+    return rows
+        .filter((row) => Array.isArray(row) || typeof row === 'string')
+        .map((row) => {
+            if (typeof row === 'string') {
+                return [...row.trim().toUpperCase()].map((symbol) => {
+                    const legendCell = legend[symbol] || legend[symbol.toUpperCase?.()];
+                    return normalizeTileCell(legendCell || symbol);
+                });
+            }
             return row.map((cell) => normalizeTileCell(cell));
         })
         .filter((row) => row.length > 0);
@@ -188,6 +303,48 @@ export function tileRowsToSymbolRows(rows) {
 export const MAP_LEGEND = Object.fromEntries(
     Object.entries(TILE_SYMBOL_LIBRARY).map(([symbol, cell]) => [symbol, tileCellToBlockInfo(cell)])
 );
+
+function isStackedBuildingWall(cell) {
+    return cell.element === ELEMENTS.STRUCTURE &&
+        cell.height >= 2 &&
+        (cell.building === BUILDING_PARTS.WALL || isLowerWindowPart(cell.building));
+}
+
+function isStackedWalkableStructure(cell) {
+    return cell.element === ELEMENTS.STRUCTURE &&
+        cell.height > 0 &&
+        [
+            BUILDING_PARTS.FLOOR,
+            BUILDING_PARTS.STAIRS,
+            BUILDING_PARTS.STAIRS_NORTH,
+            BUILDING_PARTS.STAIRS_SOUTH,
+            BUILDING_PARTS.STAIRS_WEST,
+            BUILDING_PARTS.STAIRS_EAST
+        ].includes(cell.building);
+}
+
+function isLowerWindowPart(buildingPart) {
+    return [
+        BUILDING_PARTS.WINDOW_LOWER_NORTH,
+        BUILDING_PARTS.WINDOW_LOWER_SOUTH,
+        BUILDING_PARTS.WINDOW_LOWER_WEST,
+        BUILDING_PARTS.WINDOW_LOWER_EAST
+    ].includes(buildingPart);
+}
+
+function getUpperWindowPart(buildingPart) {
+    return {
+        [BUILDING_PARTS.WINDOW_LOWER_NORTH]: BUILDING_PARTS.WINDOW_UPPER_NORTH,
+        [BUILDING_PARTS.WINDOW_LOWER_SOUTH]: BUILDING_PARTS.WINDOW_UPPER_SOUTH,
+        [BUILDING_PARTS.WINDOW_LOWER_WEST]: BUILDING_PARTS.WINDOW_UPPER_WEST,
+        [BUILDING_PARTS.WINDOW_LOWER_EAST]: BUILDING_PARTS.WINDOW_UPPER_EAST
+    }[buildingPart] || buildingPart;
+}
+
+function getBuildingPartAtElevation(buildingPart, elevation) {
+    if (!isLowerWindowPart(buildingPart)) return buildingPart;
+    return elevation % 2 === 0 ? getUpperWindowPart(buildingPart) : buildingPart;
+}
 
 function clampInteger(value, fallback) {
     const number = Number(value);

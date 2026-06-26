@@ -12,11 +12,11 @@
 ## Game Architecture Rules
 
 - Keep simulation state outside Three.js objects. Three.js meshes are render adapters.
-- Keep the map array-driven. The active map format is a 2D array of tile-cell objects; each cell represents one tile column and expands into stacked block arrays.
+- Keep the map array-driven and voxel-matrix-backed. The authoring format is a 2D array of tile-cell objects; gameplay systems must normalize that into `voxel-matrix-v1`, where each cell becomes a z-indexed voxel column.
 - A tile cell must use the hard magic data contract `{ element, texture, effect, building, height }`. Legacy row symbols may exist only as editor shorthand and must normalize through `TileLibrary.js` before gameplay systems use them.
 - Use `WorldGenerator` for block lookup, elevation, walkability, habitat, and chunk indexing.
 - Do not duplicate tile behavior inside players, wildlife, pathfinding, or UI. Add behavior to `TileRegistry.js`.
-- Use `surfaceMap` for movement and habitat decisions. Use `tileMap` only when a specific block at `x,y,z` is required.
+- Use voxel matrix helpers for tile-cell expansion, top-voxel extraction, and obstruction/cutaway math. `surfaceMap` is a derived top-voxel index for movement and habitat decisions. `tileMap` is a render/block lookup for a specific `x,y,z`.
 - Use chunk keys for scalable map work: `chunkX,chunkY`, with `MAP_CHUNK_SIZE` currently `16`.
 - Backend hot paths must avoid per-move spam logs and full-map payloads.
 - Backend player location authority must start from the player center point and derive the block/tile fields server-side.
@@ -27,7 +27,7 @@
 - Manual movement and click-to-path must both use `worldGenerator.canMoveBetween`; `isWalkable` is only a tile eligibility helper.
 - Keyboard movement should be camera-relative while collision remains grid/tile based.
 - Client-side avatar movement should also check a foot-radius footprint so the visible sprite and shadow do not clip over tile edges before the center point crosses.
-- A player cannot climb a target tile that is 2 or more blocks higher than the current tile.
+- A player cannot climb a target tile that is 2 or more blocks higher than the current tile unless either the source or target surface is a stair connector. Stair connectors may bridge exactly one building story, currently 2 voxels.
 - Diagonal movement cannot cut through blocked corners. Both adjacent orthogonal tiles must be occupiable.
 - Pointer/raycast coordinates must be calculated from the canvas bounds, not the window bounds.
 - Camera follow and zoom belong in `ThreeManager`; gameplay movement belongs in entity or simulation classes.
@@ -52,11 +52,11 @@
 ## Tile And Texture Rules
 
 - Add new terrain to `TileRegistry.js` with element id, label, walkability, habitats, color/material metadata, and texture pattern.
-- Add tile-cell ids and symbol shorthands to `TileLibrary.js`, not directly to render code.
+- Add tile-cell ids, symbol shorthands, and voxel-column expansion rules to `TileLibrary.js`, not directly to render code.
 - Keep `TileLibrary.js`, admin parsing, and server `WorldSurface` normalization in sync.
 - Current hard magic elements are limited to `0 VOID`, `1 GEO/Earth`, `2 HYDRO/Water`, `3 ANEMO/Wind`, `4 CRYO/Ice`, `5 PYRO/Fire`, and `6 STRUCTURE`.
 - Tile-cell fields are numeric: `element` controls magic/base behavior, `texture` selects the visual texture variant for that element, `effect` is the active elemental overlay/aura on the tile, `building` identifies building part semantics, and `height` is the top block elevation for that column.
-- Compact cells such as `[element, texture, effect, building, height]` may be used for future chunk/network payloads, but gameplay code should normalize them before use.
+- Compact cells such as `[element, texture, effect, building, height]` may be used for future chunk/network payloads, but gameplay code should normalize them into voxel matrices before use.
 - Current editor symbols are `W B S G F H M P I L R T X A C N O J K Q V Y Z D E U 1 2 3 4 5 6 7 8`; they are shorthand only.
 - Use rounded highlights, soft shadows, and clear blocked markings so players can read walkable and non-walkable tiles quickly.
 - Block side faces should be darker than top faces and include seams/edge contrast so stacked same-terrain blocks do not look like flat walkable floor.
@@ -66,20 +66,20 @@
 - Building data should enter through serializable blueprints in `BuildingData.js`; stamp those blueprints into tile-cell arrays through the library instead of hard-coding building meshes.
 - Seeded world generation must place buildings only when the full footprint and one-tile perimeter are on valid dry terrain, and runtime building blueprints must match the stamped rows.
 - Building wall floors are two structure blocks high. Window columns must pair lower-wall/upper-glass and lower-glass/upper-wall blocks using the same stone or timber texture as adjacent walls.
-- Building blueprints may define `stories` from `1` through `3`; wall height is exactly `stories * 2`. Repeat the paired window pattern for every floor and keep ground-level door surfaces walkable by adding upper door-facade blocks without updating `surfaceMap`.
+- Building blueprints may define `stories` from `1` through `3`; wall height is exactly `stories * 2`. Repeat the paired window pattern for every floor. Door cells are floor-height walkable openings; do not fill the doorway with upper wall blocks.
 - The default town must contain at least one three-floor building. Seeded random town generation must also produce a three-floor civic building and may assign one-to-three floors to additional buildings.
-- Building stairs are three-step tile-contained shapes. Direction controls their visual orientation only; movement may enter and leave the stair tile from any direction.
+- Building stairs are three-step tile-contained shapes with visible stairwell openings. Direction controls their visual orientation; movement may enter and leave the stair tile from any direction, and each stair connector may bridge one 2-voxel story.
 - Roofs must remain flat block grids with simple perimeter trim or parapets. Do not use triangular, gabled, or decorative floating slab stacks for the current building style.
 - Building walls and roofs should cut away when the player is on an interior/door/stair tile so interiors remain readable.
 - Always preserve the first wall block above a building floor during cutaways. It defines room boundaries and keeps door positions legible for the approximately two-block-tall player.
 - When the player enters a building, hide the entire roof and only the upper course of the two perimeter wall edges nearest the camera. Determine those edges mathematically from the camera position relative to the building center.
 - When an outside player walks fully behind a building, use a finite camera-to-player segment/footprint intersection to hide that building's entire roof and upper wall course across all edges. Restore it when the building no longer intervenes.
 - Generated towns must use coordinated non-overlapping lots with walkable foundations and a guaranteed road connection from every exterior door approach to the village center.
-- Small-town generation should follow the Azgaar-inspired data pipeline in `AzgaarTownGenerator.js`: score a dry settlement site, carve terrain-cost-aware routes, then emit serializable building blueprints for the voxel renderer.
-- Keep the default small town as a frozen fixture in `SmallTownTemplate.js`. Random worlds may change the seed, but must pass through the same town plan and tile normalization pipeline.
-- Building doors may use `oak`, `iron`, or `painted` styles. The blueprint door style, tile texture id, procedural tile pattern, and runtime door-panel material must agree.
+- Small-town generation should follow the Azgaar-inspired data pipeline in `AzgaarTownGenerator.js`: score a dry settlement site, carve terrain-cost-aware routes, then emit serializable building blueprints and tile-cell rows that normalize through the voxel matrix renderer.
+- Keep the active world map as the frozen fantasy-map-generator-style fixture in `FantasyWorldData.js`. Current map windows must be deterministic views into that same world data; do not reintroduce a randomize-map button.
+- Building doors may use `oak`, `iron`, or `painted` styles. The blueprint door style must drive the visible hinged panel material, accents, and frame while the underlying door tile remains a one-tile walkable floor opening.
 - Outdoor GEO, ANEMO, and CRYO blocks must use visible elevation lighting bands: base blocks darker, higher blocks progressively lighter. Do not apply elevation tones to structures, interiors, roofs, water, or lava.
-- Terrain sight cutaways must preserve elevation `0` and may hide only overlapping blocks at elevation `1` or higher. Apply this through normalized world block data so default, randomized, and imported generated maps behave consistently.
+- Terrain sight cutaways must preserve elevation `0` and may hide only overlapping voxels at elevation `1` or higher. Apply this through normalized voxel-column data so default, randomized, and imported generated maps behave consistently.
 - Obstruction handling should use the same visibility-flag style as building cutaways. Do not add persistent xray volumes or filled walkability highlights around the player.
 - Default/random maps should stay mostly flat for smoother travel: water, shore, grass, roads, doors, floors, and stairs share the base plane; only hills, mountains, peaks, walls, and special terrain should add meaningful height.
 - Large worlds must keep bounded render visibility around the player through `WorldGenerator.updateVisibleTilesAround()` or a future chunk-streaming equivalent.
@@ -96,15 +96,15 @@
 
 - Server-owned state should be compact and chunk-aware.
 - Send player movement as center coordinates; server derives tile and chunk coordinates.
-- Future chunk streaming should send compact tile-cell arrays or deltas by chunk, not full world snapshots.
+- Future chunk streaming should send compact tile-cell arrays, voxel matrix columns, or deltas by chunk, not full world snapshots. Teleporting through the Map panel should load a deterministic world window around the selected fantasy-map coordinate.
 - Future server-authoritative validation should use the same tile/chunk rules as the client.
 - Combat should remain separate from world movement until the first wildlife/NPC behavior is stable.
 
 ## Admin World Rules
 
-- Custom maps should use JSON tile-cell rows with `{ element, texture, effect, building, height }` objects. The admin panel may also accept compact numeric cells or legacy row-string symbols, but it must normalize them before applying.
+- Custom map editing is no longer part of the visible Map panel. If custom maps return later, use JSON tile-cell rows with `{ element, texture, effect, building, height }` objects and normalize them before applying.
 - Every row in a custom map must be the same width.
-- Applying or randomizing a map must rebuild the same `WorldGenerator` surface/chunk indexes used by normal play.
+- Teleporting to a map coordinate must rebuild the same `WorldGenerator` surface/chunk indexes used by normal play.
 - After world replacement, move the player to a valid walkable tile and respawn wildlife through `WildlifeSystem`.
 - Do not broadcast whole custom maps through hot world sync. Send metadata first; add chunk-array streaming when multiplayer map sharing is implemented.
 - If a custom map changes server-side movement authority, send rows once through the admin update path and let `WorldSurface` rebuild its surface map.

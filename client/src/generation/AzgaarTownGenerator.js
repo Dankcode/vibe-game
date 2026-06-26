@@ -1,13 +1,13 @@
-const DEFAULT_WIDTH = 40;
-const DEFAULT_HEIGHT = 32;
+const DEFAULT_WIDTH = 52;
+const DEFAULT_HEIGHT = 40;
 
 const BUILDING_TEMPLATES = [
-    { id: 'hall', role: 'Hall', dx: -9, dy: -8, width: 7, height: 6, doorEdge: 'south', stories: 3 },
-    { id: 'inn', role: 'Inn', dx: 3, dy: -7, width: 7, height: 5, doorEdge: 'south', stories: 2 },
-    { id: 'smithy', role: 'Smithy', dx: -11, dy: 2, width: 6, height: 5, doorEdge: 'east', stories: 1 },
-    { id: 'market', role: 'Market', dx: 4, dy: 2, width: 6, height: 5, doorEdge: 'west', stories: 2 },
-    { id: 'house', role: 'House', dx: -4, dy: 7, width: 6, height: 5, doorEdge: 'north', stories: 1 },
-    { id: 'watch', role: 'Watch House', dx: 11, dy: -1, width: 5, height: 5, doorEdge: 'west', stories: 2 }
+    { id: 'hall', role: 'Hall', dx: -12, dy: -11, width: 10, height: 8, doorEdge: 'south', stories: 3 },
+    { id: 'inn', role: 'Inn', dx: 4, dy: -11, width: 9, height: 7, doorEdge: 'south', stories: 2 },
+    { id: 'smithy', role: 'Smithy', dx: -17, dy: 1, width: 8, height: 7, doorEdge: 'east', stories: 2 },
+    { id: 'market', role: 'Market', dx: 5, dy: 2, width: 9, height: 7, doorEdge: 'west', stories: 2 },
+    { id: 'house', role: 'House', dx: -5, dy: 10, width: 8, height: 7, doorEdge: 'north', stories: 2 },
+    { id: 'watch', role: 'Watch House', dx: 16, dy: -2, width: 7, height: 7, doorEdge: 'west', stories: 3 }
 ];
 
 const NAME_STARTS = ['Ash', 'Alder', 'Briar', 'Dun', 'Elder', 'Fal', 'Green', 'High', 'Oak', 'Raven', 'Stone', 'Willow'];
@@ -107,21 +107,22 @@ function createTownBuildings(width, height, center, townName, random) {
 
     return BUILDING_TEMPLATES.map((template, index) => {
         const door = getCenteredDoor(template.width, template.height, template.doorEdge);
+        const rawX = centerWorldX + template.dx;
+        const rawY = centerWorldY + template.dy;
+        const x = clamp(rawX, -offsetX + 2, offsetX - template.width - 2);
+        const y = clamp(rawY, -offsetY + 2, offsetY - template.height - 2);
         return {
             id: `${template.id}-${index}`,
             name: template.role === 'Hall' ? `${townName} Hall` : `${townName} ${template.role}`,
-            x: centerWorldX + template.dx,
-            y: centerWorldY + template.dy,
+            x,
+            y,
             width: template.width,
             height: template.height,
             stories: template.stories,
             style: index % 3 === 0 || random() > 0.56 ? 'stone' : 'timber',
             doorStyle: DOOR_STYLES[index % DOOR_STYLES.length],
             door,
-            stairs: [{
-                ...getInteriorStairs(template.width, template.height, template.doorEdge, index),
-                direction: oppositeDirection(template.doorEdge)
-            }]
+            stairs: getStoryStairs(template.width, template.height, template.doorEdge, template.stories, index)
         };
     });
 }
@@ -242,8 +243,26 @@ function getInteriorStairs(width, height, edge, index) {
     return { x: 1, y: index % 2 ? height - 2 : 1 };
 }
 
+function getStoryStairs(width, height, edge, stories, index) {
+    const base = getInteriorStairs(width, height, edge, index);
+    const direction = oppositeDirection(edge);
+    const stairs = [];
+    for (let level = 0; level < Math.max(1, stories - 1); level++) {
+        stairs.push({
+            x: clamp(base.x + level * (base.x <= width / 2 ? 1 : -1), 1, width - 2),
+            y: clamp(base.y + level * (base.y <= height / 2 ? 1 : -1), 1, height - 2),
+            direction
+        });
+    }
+    return stairs;
+}
+
 function oppositeDirection(direction) {
     return { north: 'south', south: 'north', east: 'west', west: 'east' }[direction] || 'north';
+}
+
+function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
 }
 
 function generateTownName(random) {
