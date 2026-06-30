@@ -107,7 +107,15 @@ export class Tile {
         const direction = Tile.getBuildingPartDirection(this.building);
         const normal = Tile.getDirectionVector(direction);
         const material = Tile.getMaterials(this.element, this.textureValue, this.effect, this.elevation, this.building);
-        const stepDepth = 0.3;
+        const isWallStair = [
+            BUILDING_PARTS.CITY_WALL_STAIRS_NORTH,
+            BUILDING_PARTS.CITY_WALL_STAIRS_SOUTH,
+            BUILDING_PARTS.CITY_WALL_STAIRS_WEST,
+            BUILDING_PARTS.CITY_WALL_STAIRS_EAST
+        ].includes(this.building);
+        const stepCount = 3;
+        const stepDepth = 0.28;
+        const totalRise = isWallStair ? 1.18 : 1.48;
 
         const well = new THREE.Mesh(
             new THREE.BoxGeometry(0.82, 0.035, 0.82),
@@ -118,9 +126,10 @@ export class Tile {
         this.mesh.add(well);
         this.objects.push(well);
 
-        for (let i = 0; i < 3; i++) {
-            const height = (i + 1) * 0.32;
-            const step = new THREE.Mesh(new THREE.BoxGeometry(0.9, height, stepDepth), material);
+        for (let i = 0; i < stepCount; i++) {
+            const height = ((i + 1) / stepCount) * totalRise;
+            const width = Math.max(0.5, 0.9 - i * 0.05);
+            const step = new THREE.Mesh(new THREE.BoxGeometry(width, height, stepDepth), material);
             const offset = -0.3 + i * stepDepth;
             step.position.set(normal.x * offset, -0.48 + height / 2, normal.y * offset);
             step.rotation.y = direction === 'east' || direction === 'west' ? Math.PI / 2 : 0;
@@ -132,15 +141,19 @@ export class Tile {
         }
 
         const railMaterial = Tile.getStairRailMaterial();
-        const rails = [
-            { size: [0.82, 0.12, 0.05], x: 0, z: -0.43 },
-            { size: [0.82, 0.12, 0.05], x: 0, z: 0.43 },
-            { size: [0.05, 0.12, 0.82], x: -0.43, z: 0 },
-            { size: [0.05, 0.12, 0.82], x: 0.43, z: 0 }
-        ];
+        const railHeight = 0.28;
+        const rails = direction === 'east' || direction === 'west'
+            ? [
+                { size: [0.05, railHeight, 0.82], x: -0.43, z: 0 },
+                { size: [0.05, railHeight, 0.82], x: 0.43, z: 0 }
+            ]
+            : [
+                { size: [0.82, railHeight, 0.05], x: 0, z: -0.43 },
+                { size: [0.82, railHeight, 0.05], x: 0, z: 0.43 }
+            ];
         for (const railData of rails) {
             const rail = new THREE.Mesh(new THREE.BoxGeometry(...railData.size), railMaterial);
-            rail.position.set(railData.x, 0.08, railData.z);
+            rail.position.set(railData.x, railHeight / 2, railData.z);
             rail.castShadow = true;
             rail.receiveShadow = true;
             rail.raycast = () => {};
@@ -189,7 +202,11 @@ export class Tile {
             BUILDING_PARTS.STAIRS_NORTH,
             BUILDING_PARTS.STAIRS_SOUTH,
             BUILDING_PARTS.STAIRS_WEST,
-            BUILDING_PARTS.STAIRS_EAST
+            BUILDING_PARTS.STAIRS_EAST,
+            BUILDING_PARTS.CITY_WALL_STAIRS_NORTH,
+            BUILDING_PARTS.CITY_WALL_STAIRS_SOUTH,
+            BUILDING_PARTS.CITY_WALL_STAIRS_WEST,
+            BUILDING_PARTS.CITY_WALL_STAIRS_EAST
         ].includes(buildingPart);
     }
 
@@ -206,7 +223,11 @@ export class Tile {
             [BUILDING_PARTS.STAIRS_NORTH]: 'north',
             [BUILDING_PARTS.STAIRS_SOUTH]: 'south',
             [BUILDING_PARTS.STAIRS_WEST]: 'west',
-            [BUILDING_PARTS.STAIRS_EAST]: 'east'
+            [BUILDING_PARTS.STAIRS_EAST]: 'east',
+            [BUILDING_PARTS.CITY_WALL_STAIRS_NORTH]: 'north',
+            [BUILDING_PARTS.CITY_WALL_STAIRS_SOUTH]: 'south',
+            [BUILDING_PARTS.CITY_WALL_STAIRS_WEST]: 'west',
+            [BUILDING_PARTS.CITY_WALL_STAIRS_EAST]: 'east'
         }[buildingPart] || 'north';
     }
 
@@ -345,7 +366,8 @@ export class Tile {
         ctx.fillStyle = top;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        Tile.drawSoftTop(ctx, definition);
+        const isLiquidPattern = ['water', 'waterShallow', 'waterCoastal', 'marsh'].includes(definition.pattern);
+        if (!isLiquidPattern) Tile.drawSoftTop(ctx, definition);
 
         if (definition.pattern === 'grass') {
             Tile.drawGrass(ctx, top, side);
@@ -357,12 +379,28 @@ export class Tile {
             Tile.drawStone(ctx);
         } else if (definition.pattern === 'road') {
             Tile.drawRoad(ctx);
+        } else if (definition.pattern === 'villageGround') {
+            Tile.drawVillageGround(ctx);
+        } else if (definition.pattern === 'cityCobble') {
+            Tile.drawCityCobble(ctx);
+        } else if (definition.pattern === 'plazaStone') {
+            Tile.drawPlazaStone(ctx);
+        } else if (definition.pattern === 'gardenGround') {
+            Tile.drawGardenGround(ctx);
         } else if (definition.pattern === 'floor') {
             Tile.drawFloor(ctx);
+        } else if (definition.pattern === 'woodFloor') {
+            Tile.drawWoodFloor(ctx);
+        } else if (definition.pattern === 'stoneFloor') {
+            Tile.drawStoneFloor(ctx);
         } else if (definition.pattern === 'water') {
-            Tile.drawWaves(ctx, '#b7e6f4', 0.35);
+            Tile.drawWaterSurface(ctx, '#b9f2f0', 0.34);
+        } else if (definition.pattern === 'waterShallow') {
+            Tile.drawWaterSurface(ctx, '#d4f7ee', 0.22);
+        } else if (definition.pattern === 'waterCoastal') {
+            Tile.drawWaterSurface(ctx, '#a7e8e1', 0.3);
         } else if (definition.pattern === 'marsh') {
-            Tile.drawWaves(ctx, '#7c8b48', 0.28);
+            Tile.drawWaterSurface(ctx, '#8fa45f', 0.2);
             Tile.drawSpeckles(ctx, '#2f3b20', 22, 0.45);
         } else if (definition.pattern === 'sand') {
             Tile.drawSpeckles(ctx, '#f5dea0', 42, 0.45);
@@ -376,6 +414,11 @@ export class Tile {
             Tile.drawMasonry(ctx);
         } else if (definition.pattern === 'timber') {
             Tile.drawTimber(ctx);
+        } else if (definition.pattern === 'cityWallTop') {
+            Tile.drawCityWallTop(ctx);
+        } else if (definition.pattern === 'wallStairs') {
+            Tile.drawCityWallTop(ctx);
+            Tile.drawStairs(ctx);
         } else if (definition.pattern === 'doorOak') {
             Tile.drawDoor(ctx, 'oak');
         } else if (definition.pattern === 'doorIron') {
@@ -390,9 +433,9 @@ export class Tile {
             Tile.drawSpeckles(ctx, side, 28, 0.25);
         }
 
-        if (effect > 0) Tile.drawElementEffect(ctx, effect);
+        if (effect > 0 && !isLiquidPattern) Tile.drawElementEffect(ctx, effect);
         Tile.applyElevationTone(ctx, elevationTone);
-        Tile.drawRoundedFrame(ctx, definition.walkable);
+        if (!isLiquidPattern) Tile.drawRoundedFrame(ctx, definition.walkable);
 
         const texture = new THREE.CanvasTexture(canvas);
         texture.colorSpace = THREE.SRGBColorSpace;
@@ -616,6 +659,62 @@ export class Tile {
         Tile.drawSpeckles(ctx, '#fff1bd', 34, 0.38);
     }
 
+    static drawVillageGround(ctx) {
+        Tile.drawSpeckles(ctx, '#e5c887', 42, 0.34);
+        ctx.strokeStyle = 'rgba(106, 77, 38, 0.22)';
+        ctx.lineWidth = 3;
+        for (let y = 18; y < 92; y += 22) {
+            ctx.beginPath();
+            ctx.moveTo(6, y);
+            ctx.bezierCurveTo(28, y + 4, 52, y - 6, 90, y + 2);
+            ctx.stroke();
+        }
+    }
+
+    static drawCityCobble(ctx) {
+        Tile.drawSpeckles(ctx, '#d8ddda', 20, 0.16);
+        ctx.strokeStyle = 'rgba(72, 79, 80, 0.3)';
+        ctx.lineWidth = 2.5;
+        for (let y = 12; y < 96; y += 14) {
+            const offset = (Math.floor(y / 14) % 2) * 12;
+            for (let x = -10 + offset; x < 96; x += 24) {
+                ctx.beginPath();
+                ctx.ellipse(x + 12, y, 12, 7, 0, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+        }
+    }
+
+    static drawPlazaStone(ctx) {
+        ctx.strokeStyle = 'rgba(91, 86, 74, 0.32)';
+        ctx.lineWidth = 3;
+        for (let y = 0; y <= 96; y += 24) {
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(96, y);
+            ctx.stroke();
+        }
+        for (let x = 0; x <= 96; x += 24) {
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, 96);
+            ctx.stroke();
+        }
+        Tile.drawSpeckles(ctx, '#f1ead4', 16, 0.18);
+    }
+
+    static drawGardenGround(ctx) {
+        Tile.drawSpeckles(ctx, '#b8d787', 28, 0.34);
+        ctx.fillStyle = 'rgba(43, 123, 54, 0.28)';
+        for (let i = 0; i < 12; i++) {
+            const x = (i * 31) % 82 + 7;
+            const y = (i * 47) % 82 + 7;
+            ctx.beginPath();
+            ctx.ellipse(x, y, 7, 3, i * 0.7, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+
     static drawFloor(ctx) {
         ctx.strokeStyle = 'rgba(92, 58, 32, 0.26)';
         ctx.lineWidth = 3;
@@ -632,6 +731,53 @@ export class Tile {
             ctx.lineTo(x - 6, 88);
             ctx.stroke();
         }
+    }
+
+    static drawWoodFloor(ctx) {
+        ctx.strokeStyle = 'rgba(73, 43, 23, 0.36)';
+        ctx.lineWidth = 4;
+        for (let y = 12; y < 96; y += 14) {
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(96, y);
+            ctx.stroke();
+        }
+        ctx.strokeStyle = 'rgba(255, 221, 154, 0.24)';
+        ctx.lineWidth = 2;
+        for (let y = 7; y < 96; y += 14) {
+            ctx.beginPath();
+            ctx.moveTo(8, y);
+            ctx.bezierCurveTo(26, y - 3, 48, y + 4, 88, y - 1);
+            ctx.stroke();
+        }
+    }
+
+    static drawStoneFloor(ctx) {
+        ctx.strokeStyle = 'rgba(76, 84, 84, 0.34)';
+        ctx.lineWidth = 3;
+        for (let y = 16; y < 96; y += 20) {
+            ctx.beginPath();
+            ctx.moveTo(4, y);
+            ctx.lineTo(92, y);
+            ctx.stroke();
+        }
+        for (let x = 18; x < 96; x += 24) {
+            ctx.beginPath();
+            ctx.moveTo(x, 6);
+            ctx.lineTo(x - 4, 90);
+            ctx.stroke();
+        }
+        Tile.drawSpeckles(ctx, '#edf0ec', 18, 0.18);
+    }
+
+    static drawWaterSurface(ctx, color, alpha) {
+        const sheen = ctx.createLinearGradient(0, 0, 96, 96);
+        sheen.addColorStop(0, 'rgba(255, 255, 255, 0.14)');
+        sheen.addColorStop(0.45, 'rgba(255, 255, 255, 0.04)');
+        sheen.addColorStop(1, 'rgba(21, 78, 95, 0.2)');
+        ctx.fillStyle = sheen;
+        ctx.fillRect(0, 0, 96, 96);
+        Tile.drawWaves(ctx, color, alpha);
     }
 
     static drawWaves(ctx, color, alpha) {
@@ -710,6 +856,30 @@ export class Tile {
                 ctx.stroke();
             }
         }
+    }
+
+    static drawCityWallTop(ctx) {
+        ctx.strokeStyle = 'rgba(58, 64, 66, 0.38)';
+        ctx.lineWidth = 4;
+        for (let y = 12; y < 96; y += 18) {
+            ctx.beginPath();
+            ctx.moveTo(5, y);
+            ctx.lineTo(91, y);
+            ctx.stroke();
+        }
+        for (let y = 3; y < 96; y += 18) {
+            const offset = (Math.floor(y / 18) % 2) * 18;
+            for (let x = 10 + offset; x < 96; x += 36) {
+                ctx.beginPath();
+                ctx.moveTo(x, y);
+                ctx.lineTo(x, y + 18);
+                ctx.stroke();
+            }
+        }
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.16)';
+        ctx.fillRect(8, 8, 80, 7);
+        ctx.fillStyle = 'rgba(30, 34, 34, 0.14)';
+        ctx.fillRect(8, 78, 80, 8);
     }
 
     static drawMasonry(ctx) {

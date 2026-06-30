@@ -94,6 +94,18 @@ const VARIANT_OVERRIDES = {
         sideColor: 0x4a7145,
         pattern: 'marsh'
     },
+    [`${ELEMENTS.HYDRO}:1`]: {
+        label: 'Shallow Water',
+        topColor: 0x66d4dc,
+        sideColor: 0x328d9a,
+        pattern: 'waterShallow'
+    },
+    [`${ELEMENTS.HYDRO}:3`]: {
+        label: 'Coastal Water',
+        topColor: 0x4bbbc9,
+        sideColor: 0x236f87,
+        pattern: 'waterCoastal'
+    },
     [`${ELEMENTS.GEO}:1`]: {
         label: 'Forest Floor',
         topColor: 0x67c36f,
@@ -121,6 +133,34 @@ const VARIANT_OVERRIDES = {
         sideColor: 0x69745c,
         moveCost: 1.45,
         pattern: 'stone'
+    },
+    [`${ELEMENTS.GEO}:5`]: {
+        label: 'Village Ground',
+        topColor: 0xc7a45d,
+        sideColor: 0x8f7043,
+        moveCost: 0.96,
+        pattern: 'villageGround'
+    },
+    [`${ELEMENTS.GEO}:6`]: {
+        label: 'City Cobblestone',
+        topColor: 0xa8b0ad,
+        sideColor: 0x6f7778,
+        moveCost: 0.88,
+        pattern: 'cityCobble'
+    },
+    [`${ELEMENTS.GEO}:7`]: {
+        label: 'City Plaza Stone',
+        topColor: 0xc7c0aa,
+        sideColor: 0x898371,
+        moveCost: 0.86,
+        pattern: 'plazaStone'
+    },
+    [`${ELEMENTS.GEO}:8`]: {
+        label: 'Garden Ground',
+        topColor: 0x78b56b,
+        sideColor: 0x4e8148,
+        moveCost: 1.05,
+        pattern: 'gardenGround'
     },
     [`${ELEMENTS.CRYO}:1`]: {
         label: 'Ice Lake',
@@ -208,6 +248,38 @@ const VARIANT_OVERRIDES = {
         sideColor: 0x895936,
         moveCost: 1.05,
         pattern: 'timber'
+    },
+    [`${ELEMENTS.STRUCTURE}:11`]: {
+        label: 'Wood Floor Boards',
+        walkable: true,
+        topColor: 0xc1844d,
+        sideColor: 0x82512e,
+        moveCost: 0.94,
+        pattern: 'woodFloor'
+    },
+    [`${ELEMENTS.STRUCTURE}:12`]: {
+        label: 'Stone Floor Slabs',
+        walkable: true,
+        topColor: 0xbec4bf,
+        sideColor: 0x7b8582,
+        moveCost: 0.96,
+        pattern: 'stoneFloor'
+    },
+    [`${ELEMENTS.STRUCTURE}:13`]: {
+        label: 'Walkable City Wall',
+        walkable: true,
+        topColor: 0xaab1b2,
+        sideColor: 0x687173,
+        moveCost: 1,
+        pattern: 'cityWallTop'
+    },
+    [`${ELEMENTS.STRUCTURE}:14`]: {
+        label: 'City Wall Stairs',
+        walkable: true,
+        topColor: 0xb8b9ad,
+        sideColor: 0x70766f,
+        moveCost: 1.08,
+        pattern: 'wallStairs'
     }
 };
 

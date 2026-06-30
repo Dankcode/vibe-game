@@ -10,12 +10,17 @@ const ELEMENTS = {
 
 const MAP_LEGEND = {
     W: { element: ELEMENTS.HYDRO, texture: 2, effect: ELEMENTS.HYDRO, building: 0, maxZ: 0 },
+    '~': { element: ELEMENTS.HYDRO, texture: 1, effect: ELEMENTS.HYDRO, building: 0, maxZ: 0 },
     B: { element: ELEMENTS.HYDRO, texture: 4, effect: ELEMENTS.HYDRO, building: 0, maxZ: 0 },
     S: { element: ELEMENTS.ANEMO, texture: 0, effect: ELEMENTS.ANEMO, building: 0, maxZ: 0 },
     G: { element: ELEMENTS.GEO, texture: 0, effect: ELEMENTS.GEO, building: 0, maxZ: 0 },
     F: { element: ELEMENTS.GEO, texture: 1, effect: ELEMENTS.GEO, building: 0, maxZ: 0 },
     H: { element: ELEMENTS.GEO, texture: 3, effect: ELEMENTS.GEO, building: 0, maxZ: 1 },
     M: { element: ELEMENTS.GEO, texture: 4, effect: ELEMENTS.GEO, building: 0, maxZ: 2 },
+    '.': { element: ELEMENTS.GEO, texture: 5, effect: ELEMENTS.GEO, building: 0, maxZ: 0 },
+    ':': { element: ELEMENTS.GEO, texture: 6, effect: ELEMENTS.GEO, building: 0, maxZ: 0 },
+    ';': { element: ELEMENTS.GEO, texture: 7, effect: ELEMENTS.GEO, building: 0, maxZ: 0 },
+    ',': { element: ELEMENTS.GEO, texture: 8, effect: ELEMENTS.GEO, building: 0, maxZ: 0 },
     P: { element: ELEMENTS.CRYO, texture: 0, effect: ELEMENTS.CRYO, building: 0, maxZ: 2 },
     I: { element: ELEMENTS.CRYO, texture: 1, effect: ELEMENTS.CRYO, building: 0, maxZ: 0 },
     L: { element: ELEMENTS.PYRO, texture: 0, effect: ELEMENTS.PYRO, building: 0, maxZ: 2 },
@@ -42,7 +47,12 @@ const MAP_LEGEND = {
     5: { element: ELEMENTS.STRUCTURE, texture: 10, effect: ELEMENTS.STRUCTURE, building: 10, maxZ: 0, walkable: true },
     6: { element: ELEMENTS.STRUCTURE, texture: 10, effect: ELEMENTS.STRUCTURE, building: 11, maxZ: 0, walkable: true },
     7: { element: ELEMENTS.STRUCTURE, texture: 10, effect: ELEMENTS.STRUCTURE, building: 12, maxZ: 0, walkable: true },
-    8: { element: ELEMENTS.STRUCTURE, texture: 10, effect: ELEMENTS.STRUCTURE, building: 13, maxZ: 0, walkable: true }
+    8: { element: ELEMENTS.STRUCTURE, texture: 10, effect: ELEMENTS.STRUCTURE, building: 13, maxZ: 0, walkable: true },
+    9: { element: ELEMENTS.STRUCTURE, texture: 13, effect: ELEMENTS.STRUCTURE, building: 18, maxZ: 2, walkable: true },
+    '!': { element: ELEMENTS.STRUCTURE, texture: 14, effect: ELEMENTS.STRUCTURE, building: 19, maxZ: 2, walkable: true },
+    '@': { element: ELEMENTS.STRUCTURE, texture: 14, effect: ELEMENTS.STRUCTURE, building: 20, maxZ: 2, walkable: true },
+    '#': { element: ELEMENTS.STRUCTURE, texture: 14, effect: ELEMENTS.STRUCTURE, building: 21, maxZ: 2, walkable: true },
+    '$': { element: ELEMENTS.STRUCTURE, texture: 14, effect: ELEMENTS.STRUCTURE, building: 22, maxZ: 2, walkable: true }
 };
 
 const DEFAULT_MAP = [
@@ -122,7 +132,7 @@ class WorldSurface {
         const normalized = rows
             .map((row) => {
                 if (typeof row === 'string') {
-                    return row.trim().toUpperCase().replace(/[^WBSGFHMPILRTXACNOJKQVYZDEU12345678]/g, 'W');
+                    return row.trim().toUpperCase().replace(/[^~.,:;!@#$WBSGFHMPILRTXACNOJKQVYZDEU123456789]/g, 'W');
                 }
                 if (Array.isArray(row)) return row.map((cell) => this.normalizeCell(cell));
                 return null;
@@ -265,7 +275,7 @@ class WorldSurface {
     isStackedWalkableStructure(cell) {
         return cell.element === ELEMENTS.STRUCTURE &&
             cell.maxZ > 0 &&
-            [3, 4, 10, 11, 12, 13].includes(cell.building);
+            [3, 4, 10, 11, 12, 13, 18, 19, 20, 21, 22].includes(cell.building);
     }
 
     isLowerWindowPart(building) {
@@ -293,7 +303,7 @@ class WorldSurface {
 
     isWalkableBlock(element, texture) {
         if (element === ELEMENTS.STRUCTURE) {
-            return [2, 5, 6, 7, 8, 9, 10].includes(texture);
+            return [2, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].includes(texture);
         }
         return WALKABLE_ELEMENTS.has(element);
     }
@@ -306,14 +316,14 @@ class WorldSurface {
     resolveCenter(centerX, centerY, previous) {
         const tileX = Math.round(this.clampNumber(centerX, previous?.centerX ?? 0));
         const tileY = Math.round(this.clampNumber(centerY, previous?.centerY ?? 0));
-        const surface = this.getSurfaceAt(tileX, tileY);
+        const surface = this.getReachableSurfaceAt(tileX, tileY, previous?.centerZ);
 
         if (!surface || !surface.walkable) {
             return this.resolveFallback(previous);
         }
 
         if (previous) {
-            if (!this.canMoveBetween(previous.tileX, previous.tileY, tileX, tileY)) {
+            if (!this.canOccupyTile(tileX, tileY, previous.tileX, previous.tileY, previous.centerZ)) {
                 return this.resolveFallback(previous);
             }
         }
@@ -382,12 +392,44 @@ class WorldSurface {
         return best || this.findNearestWalkable(0, 0);
     }
 
-    canOccupyTile(x, y, fromX = x, fromY = y) {
-        const surface = this.getSurfaceAt(x, y);
+    getReachableSurfaceAt(x, y, fromZ = null) {
+        const column = this.getVoxelColumnAt(x, y);
+        if (!Array.isArray(column) || column.length === 0) return this.getSurfaceAt(x, y);
+        const walkable = column.filter((voxel) => voxel.walkable).sort((a, b) => a.z - b.z);
+        if (!walkable.length) return null;
+        const top = walkable[walkable.length - 1];
+        if (!Number.isFinite(fromZ)) return this.toSurfaceRecord(x, y, top);
+        const topSurface = this.toSurfaceRecord(x, y, top);
+        if (this.isStairSurface(topSurface) && top.z > fromZ && top.z - fromZ <= 2) return topSurface;
+        const exact = walkable.find((voxel) => voxel.z === fromZ);
+        if (exact) return this.toSurfaceRecord(x, y, exact);
+        const nearest = walkable
+            .filter((voxel) => Math.abs(voxel.z - fromZ) <= 1)
+            .sort((a, b) => Math.abs(a.z - fromZ) - Math.abs(b.z - fromZ))[0];
+        return this.toSurfaceRecord(x, y, nearest || top);
+    }
+
+    toSurfaceRecord(x, y, voxel) {
+        return {
+            x,
+            y,
+            z: voxel.z,
+            element: voxel.element,
+            texture: voxel.texture,
+            effect: voxel.effect,
+            building: voxel.building,
+            walkable: voxel.walkable
+        };
+    }
+
+    canOccupyTile(x, y, fromX = x, fromY = y, fromZOverride = null) {
+        const fromSurface = Number.isFinite(fromZOverride)
+            ? this.getReachableSurfaceAt(fromX, fromY, fromZOverride)
+            : this.getReachableSurfaceAt(fromX, fromY);
+        const fromZ = Number.isFinite(fromZOverride) ? fromZOverride : (fromSurface?.z ?? 0);
+        const surface = this.getReachableSurfaceAt(x, y, fromZ);
         if (!surface?.walkable) return false;
 
-        const fromSurface = this.getSurfaceAt(fromX, fromY);
-        const fromZ = fromSurface?.z ?? surface.z;
         const elevationDiff = surface.z - fromZ;
         if (Math.abs(elevationDiff) <= 1) return true;
         return Math.abs(elevationDiff) === 2 &&
@@ -396,10 +438,12 @@ class WorldSurface {
 
     canMoveBetween(fromX, fromY, toX, toY) {
         if (fromX === toX && fromY === toY) {
-            return this.canOccupyTile(toX, toY, fromX, fromY);
+            const fromSurface = this.getReachableSurfaceAt(fromX, fromY);
+            return this.canOccupyTile(toX, toY, fromX, fromY, fromSurface?.z);
         }
 
-        if (!this.canOccupyTile(toX, toY, fromX, fromY)) return false;
+        const fromSurface = this.getReachableSurfaceAt(fromX, fromY);
+        if (!this.canOccupyTile(toX, toY, fromX, fromY, fromSurface?.z)) return false;
 
         const dx = toX - fromX;
         const dy = toY - fromY;
@@ -412,7 +456,7 @@ class WorldSurface {
     }
 
     isStairSurface(surface) {
-        return [4, 10, 11, 12, 13].includes(surface?.building);
+        return [4, 10, 11, 12, 13, 19, 20, 21, 22].includes(surface?.building);
     }
 
     getSurfaceAt(x, y) {

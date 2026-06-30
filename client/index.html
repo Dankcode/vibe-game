@@ -253,48 +253,63 @@
 
         .world-map-card {
             position: relative;
-            aspect-ratio: 16 / 10;
+            aspect-ratio: 16 / 9;
             border: 1px solid rgba(205, 221, 181, 0.18);
             border-radius: 8px;
-            background:
-                linear-gradient(90deg, rgba(154, 209, 123, 0.08) 1px, transparent 1px),
-                linear-gradient(0deg, rgba(154, 209, 123, 0.08) 1px, transparent 1px),
-                radial-gradient(circle at 48% 48%, rgba(76, 130, 82, 0.55), rgba(20, 47, 42, 0.72) 55%, rgba(24, 39, 51, 0.86));
-            background-size: 32px 32px, 32px 32px, auto;
+            background: rgba(15, 23, 20, 0.92);
             overflow: hidden;
         }
 
-        .world-route {
+        .world-map-image,
+        .world-route-overlay {
             position: absolute;
-            height: 2px;
-            border-radius: 999px;
-            background: rgba(244, 198, 109, 0.48);
-            transform-origin: 0 50%;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        .world-map-image {
+            object-fit: cover;
+        }
+
+        .world-route-overlay {
             pointer-events: none;
+        }
+
+        .world-route-line {
+            fill: none;
+            stroke: rgba(255, 245, 190, 0.42);
+            stroke-width: 1.2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            vector-effect: non-scaling-stroke;
         }
 
         .world-point {
             position: absolute;
             min-width: 0;
-            width: 16px;
-            height: 16px;
+            width: 12px;
+            height: 12px;
             padding: 0;
             border-radius: 50%;
-            border-color: rgba(238, 246, 223, 0.72);
-            background: rgba(154, 209, 123, 0.86);
+            border: 1px solid rgba(22, 27, 22, 0.82);
+            background: rgba(255, 245, 190, 0.92);
+            box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.42), 0 2px 6px rgba(0, 0, 0, 0.42);
             transform: translate(-50%, -50%);
         }
 
         .world-point.is-major {
-            width: 20px;
-            height: 20px;
-            background: rgba(244, 198, 109, 0.9);
+            width: 16px;
+            height: 16px;
+            background: rgba(245, 138, 75, 0.96);
         }
 
         .world-location-list {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 8px;
+            max-height: 180px;
+            overflow: auto;
         }
 
         .world-location-list button {
@@ -319,6 +334,69 @@
             color: var(--text);
             font: inherit;
             font-size: 12px;
+        }
+
+        .burg-map-card {
+            position: relative;
+            aspect-ratio: 4 / 3;
+            border: 1px solid rgba(205, 221, 181, 0.18);
+            border-radius: 8px;
+            background: rgba(9, 13, 11, 0.88);
+            overflow: hidden;
+        }
+
+        .burg-map-grid {
+            position: absolute;
+            inset: 0;
+            display: grid;
+        }
+
+        .burg-map-cell {
+            min-width: 0;
+            min-height: 0;
+        }
+
+        .burg-map-cell.water { background: #206d83; }
+        .burg-map-cell.ground { background: #557e45; }
+        .burg-map-cell.road { background: #a79a72; }
+        .burg-map-cell.wall { background: #717b7d; }
+        .burg-map-cell.building { background: #9a7652; }
+        .burg-map-cell.door { background: #d7b85f; }
+        .burg-map-cell.stair { background: #d9d0bb; }
+
+        .burg-player-point {
+            position: absolute;
+            z-index: 2;
+            width: 10px;
+            height: 10px;
+            border: 2px solid rgba(7, 10, 8, 0.88);
+            border-radius: 50%;
+            background: #7df0a4;
+            box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.26);
+            transform: translate(-50%, -50%);
+        }
+
+        .burg-player-point.remote {
+            width: 8px;
+            height: 8px;
+            background: #82c7ff;
+        }
+
+        .burg-map-label {
+            position: absolute;
+            left: 8px;
+            bottom: 7px;
+            z-index: 3;
+            max-width: calc(100% - 16px);
+            padding: 4px 6px;
+            border-radius: 6px;
+            background: rgba(9, 13, 11, 0.72);
+            color: var(--muted);
+            font-size: 10px;
+            font-weight: 700;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .admin-message {
@@ -524,11 +602,12 @@
             <button id="admin-toggle" class="admin-toggle" type="button" aria-expanded="false" aria-controls="admin-panel" aria-keyshortcuts="M">Map</button>
             <aside id="admin-panel" class="admin-panel" aria-label="Admin panel">
                 <div class="admin-head">
-                    <span class="admin-title">Eldoria Map</span>
+                    <span class="admin-title">World Map</span>
                     <button id="admin-close-button" class="icon-button" type="button" aria-label="Close admin panel">X</button>
                 </div>
                 <div id="world-map-panel" class="world-map-panel">
                     <div id="world-map-card" class="world-map-card" aria-label="World map"></div>
+                    <div id="burg-map-card" class="burg-map-card" aria-label="Burg map"></div>
                     <div id="world-location-list" class="world-location-list"></div>
                     <div class="world-coordinate-row">
                         <input id="world-map-x-input" type="number" min="0" step="1" aria-label="World X">

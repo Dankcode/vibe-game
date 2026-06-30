@@ -107,9 +107,9 @@ export class PlayerGirl2 {
                 
                 const repX = Math.round(nextX);
                 const repY = Math.round(nextY);
-                const nextElevation = this.worldGenerator.getElevation(repX, repY);
+                const nextElevation = this.worldGenerator.getMovementElevation(repX, repY, this.gridZ);
                 
-                if (this.worldGenerator.isWalkable(repX, repY) && nextElevation - this.gridZ < 2) {
+                if (this.worldGenerator.canMoveFootprintBetween(this.gridX, this.gridY, nextX, nextY, 0.32, this.gridZ)) {
                     this.gridX = nextX;
                     this.gridY = nextY;
                     this.gridZ = nextElevation;

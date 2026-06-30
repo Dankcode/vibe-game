@@ -1,4 +1,4 @@
-import { DOOR_STYLE_TEXTURES } from './TileLibrary.js';
+import { BUILDING_PARTS, DOOR_STYLE_TEXTURES, TEXTURE_IDS } from './TileLibrary.js';
 
 export const BUILDING_SYMBOLS = {
     stoneWall: 'A',
@@ -135,26 +135,26 @@ export function applyBuildingStoriesToTileRows(tileRows, buildings = []) {
 
     for (const building of buildings) {
         const stories = Math.max(1, Math.min(3, Math.floor(building.stories || 1)));
-        const wallHeight = stories * 2;
+        const baseElevation = Math.max(0, Math.floor(building.baseElevation || 0));
+        const wallHeight = baseElevation + stories * 2;
         const upperFloorMap = createUpperFloorElevationMap(building, stories);
-        for (let localY = 0; localY < building.height; localY++) {
-            for (let localX = 0; localX < building.width; localX++) {
-                const isEdge = localX === 0 || localY === 0 ||
-                    localX === building.width - 1 || localY === building.height - 1;
+        const footprint = getBuildingFootprint(building);
+        for (const { x: localX, y: localY } of footprint.cells) {
+                const isEdge = isBuildingEdgeCell(footprint.set, localX, localY);
                 const isDoor = building.door?.x === localX && building.door?.y === localY;
                 const row = building.y + localY + offsetY;
                 const col = building.x + localX + offsetX;
                 const cell = tileRows[row]?.[col];
                 if (!cell) continue;
+                cell.height = baseElevation;
                 if (isEdge && !isDoor) {
                     cell.height = wallHeight;
                     continue;
                 }
                 if (!isEdge && stories > 1) {
                     const upperElevation = upperFloorMap.get(`${localX},${localY}`) || 0;
-                    if (upperElevation > 0) cell.height = upperElevation;
+                    if (upperElevation > 0) cell.height = baseElevation + upperElevation;
                 }
-            }
         }
     }
     return tileRows;
@@ -171,9 +171,50 @@ export function applyBuildingDoorTexturesToTileRows(tileRows, buildings = []) {
         const col = building.x + building.door.x + offsetX;
         const doorCell = tileRows[row]?.[col];
         if (!doorCell) continue;
+        if ([
+            BUILDING_PARTS.STAIRS,
+            BUILDING_PARTS.STAIRS_NORTH,
+            BUILDING_PARTS.STAIRS_SOUTH,
+            BUILDING_PARTS.STAIRS_WEST,
+            BUILDING_PARTS.STAIRS_EAST
+        ].includes(doorCell.building)) continue;
         doorCell.texture = DOOR_STYLE_TEXTURES[building.doorStyle] || DOOR_STYLE_TEXTURES.oak;
         doorCell.doorStyleTexture = doorCell.texture;
         doorCell.texture = 2;
+    }
+
+    return tileRows;
+}
+
+export function applyBuildingFloorTexturesToTileRows(tileRows, buildings = []) {
+    if (!Array.isArray(tileRows) || tileRows.length === 0) return tileRows;
+    const offsetX = Math.floor((tileRows[0]?.length || 0) / 2);
+    const offsetY = Math.floor(tileRows.length / 2);
+
+    for (const building of buildings) {
+        const floorTexture = building.style === 'stone'
+            ? TEXTURE_IDS.STONE_FLOOR
+            : TEXTURE_IDS.WOOD_FLOOR;
+        const stairTexture = building.style === 'stone'
+            ? TEXTURE_IDS.STONE_STAIRS
+            : TEXTURE_IDS.TIMBER_STAIRS;
+        for (const { x: localX, y: localY } of getBuildingFootprint(building).cells) {
+                const row = building.y + localY + offsetY;
+                const col = building.x + localX + offsetX;
+                const cell = tileRows[row]?.[col];
+                if (!cell) continue;
+                if (cell.building === BUILDING_PARTS.FLOOR) {
+                    cell.texture = floorTexture;
+                } else if ([
+                    BUILDING_PARTS.STAIRS,
+                    BUILDING_PARTS.STAIRS_NORTH,
+                    BUILDING_PARTS.STAIRS_SOUTH,
+                    BUILDING_PARTS.STAIRS_WEST,
+                    BUILDING_PARTS.STAIRS_EAST
+                ].includes(cell.building)) {
+                    cell.texture = stairTexture;
+                }
+        }
     }
 
     return tileRows;
@@ -188,6 +229,9 @@ export function stampBuildingsOnRows(rows, buildings = DEFAULT_BUILDINGS, option
     const offsetX = Math.floor(width / 2);
     const offsetY = Math.floor(height / 2);
 
+    if (options.normalizeDoors !== false) {
+        normalizeBuildingEntrances(mutable, buildings, offsetX, offsetY);
+    }
     prepareTownLots(mutable, buildings, offsetX, offsetY, options);
     for (const building of buildings) {
         stampBuilding(mutable, building, offsetX, offsetY);
@@ -195,6 +239,66 @@ export function stampBuildingsOnRows(rows, buildings = DEFAULT_BUILDINGS, option
     }
 
     return mutable.map((row) => row.join(''));
+}
+
+function normalizeBuildingEntrances(mutable, buildings, offsetX, offsetY) {
+    for (const building of buildings) {
+        const safeDoor = findSafeDoor(building, mutable, offsetX, offsetY);
+        if (safeDoor) building.door = safeDoor;
+    }
+}
+
+function findSafeDoor(building, mutable, offsetX, offsetY) {
+    const candidates = [];
+    for (let x = 1; x < building.width - 1; x++) {
+        candidates.push({ x, y: 0, edge: 'north' });
+        candidates.push({ x, y: building.height - 1, edge: 'south' });
+    }
+    for (let y = 1; y < building.height - 1; y++) {
+        candidates.push({ x: 0, y, edge: 'west' });
+        candidates.push({ x: building.width - 1, y, edge: 'east' });
+    }
+
+    let best = null;
+    for (const candidate of candidates) {
+        const direction = getEdgeDirection(candidate.edge);
+        const outsideRow = building.y + candidate.y + direction.y + offsetY;
+        const outsideCol = building.x + candidate.x + direction.x + offsetX;
+        const outsideSymbol = mutable[outsideRow]?.[outsideCol];
+        const outsidePassable = canStampDoorApproach(outsideSymbol);
+        const roadScore = getRoadAdjacencyScore(mutable, outsideCol, outsideRow);
+        const originalDistance = building.door
+            ? Math.abs(candidate.x - building.door.x) + Math.abs(candidate.y - building.door.y)
+            : 0;
+        const centerDistance = Math.abs(candidate.x - (building.width - 1) / 2) +
+            Math.abs(candidate.y - (building.height - 1) / 2);
+        const score = (outsidePassable ? 120 : -120) +
+            roadScore * 18 -
+            originalDistance * 2 -
+            centerDistance;
+
+        if (!best || score > best.score) best = { ...candidate, score };
+    }
+
+    if (!best) return getCenteredDoor(building.width, building.height, getDoorEdge(building));
+    return { x: best.x, y: best.y };
+}
+
+function getRoadAdjacencyScore(mutable, col, row) {
+    let score = isRoadLike(mutable[row]?.[col]) ? 2 : 0;
+    for (const offset of [
+        { x: 1, y: 0 },
+        { x: -1, y: 0 },
+        { x: 0, y: 1 },
+        { x: 0, y: -1 }
+    ]) {
+        if (isRoadLike(mutable[row + offset.y]?.[col + offset.x])) score++;
+    }
+    return score;
+}
+
+function isRoadLike(symbol) {
+    return ['R', '.', ':', ';'].includes(symbol);
 }
 
 function prepareTownLots(mutable, buildings, offsetX, offsetY, options) {
@@ -255,32 +359,30 @@ function stampBuilding(mutable, building, offsetX, offsetY) {
         ? BUILDING_SYMBOLS.stoneWall
         : BUILDING_SYMBOLS.timberWall;
     const stairKeys = new Set((building.stairs || []).map((stair) => `${stair.x},${stair.y}`));
+    const footprint = getBuildingFootprint(building);
 
-    for (let localY = 0; localY < building.height; localY++) {
-        for (let localX = 0; localX < building.width; localX++) {
+    for (const { x: localX, y: localY } of footprint.cells) {
             const row = building.y + localY + offsetY;
             const col = building.x + localX + offsetX;
             if (!mutable[row]?.[col]) continue;
-            if (!canStampOver(mutable[row][col])) continue;
+            if (!canStampOver(mutable[row][col]) && !building.footprintCells?.length) continue;
 
-            const isEdge = localX === 0 || localY === 0 ||
-                localX === building.width - 1 || localY === building.height - 1;
+            const isEdge = isBuildingEdgeCell(footprint.set, localX, localY);
             const isDoor = building.door?.x === localX && building.door?.y === localY;
             const isStairs = stairKeys.has(`${localX},${localY}`);
 
-            const edge = getEdge(building, localX, localY);
+            const edge = getEdge(building, localX, localY, footprint.set);
 
-            if (isDoor) {
-                mutable[row][col] = BUILDING_SYMBOLS.door;
-            } else if (isStairs) {
+            if (isStairs) {
                 const stair = (building.stairs || []).find((candidate) => candidate.x === localX && candidate.y === localY);
                 mutable[row][col] = getStairSymbol(stair?.direction, building.style);
+            } else if (isDoor) {
+                mutable[row][col] = BUILDING_SYMBOLS.door;
             } else if (isWindowCandidate(building, localX, localY, edge)) {
                 mutable[row][col] = getWindowSymbol(building.style, edge);
             } else {
                 mutable[row][col] = isEdge ? wallSymbol : BUILDING_SYMBOLS.floor;
             }
-        }
     }
 }
 
@@ -293,7 +395,7 @@ function createUpperFloorElevationMap(building, stories) {
     stairs.forEach((stair, index) => {
         const elevation = (index + 1) * 2;
         map.set(`${stair.x},${stair.y}`, elevation);
-        for (const point of getUpperFloorZone(building, stair, index)) {
+        for (const point of getUpperFloorZone(building, stairs, stair, index)) {
             if (stairKeys.has(`${point.x},${point.y}`)) continue;
             map.set(`${point.x},${point.y}`, Math.max(map.get(`${point.x},${point.y}`) || 0, elevation));
         }
@@ -304,37 +406,58 @@ function createUpperFloorElevationMap(building, stories) {
 
 function getStoryStairs(building, stories) {
     const baseStair = building.stairs?.[0] || getInteriorStairs(building.width, building.height, getDoorEdge(building), () => 0.25);
+    if ((building.stairs || []).length >= stories - 1) {
+        const minX = building.width > 2 ? 1 : 0;
+        const maxX = building.width > 2 ? building.width - 2 : building.width - 1;
+        const minY = building.height > 2 ? 1 : 0;
+        const maxY = building.height > 2 ? building.height - 2 : building.height - 1;
+        return building.stairs.slice(0, stories - 1).map((stair, level) => ({
+            ...stair,
+            x: clamp(stair.x, minX, maxX),
+            y: clamp(stair.y, minY, maxY),
+            level
+        }));
+    }
+
     const stairs = [];
+    const doorEdge = getDoorEdge(building);
+    const landingBias = getLandingBias(doorEdge);
     for (let level = 0; level < stories - 1; level++) {
+        const offset = level * 3;
         stairs.push({
             ...baseStair,
             x: clamp(
-                baseStair.x + level * (baseStair.x <= building.width / 2 ? 1 : -1),
-                1,
-                building.width - 2
+                baseStair.x + landingBias.x * offset,
+                building.width > 2 ? 1 : 0,
+                building.width > 2 ? building.width - 2 : building.width - 1
             ),
             y: clamp(
-                baseStair.y + level * (baseStair.y <= building.height / 2 ? 1 : -1),
-                1,
-                building.height - 2
-            )
+                baseStair.y + landingBias.y * offset,
+                building.height > 2 ? 1 : 0,
+                building.height > 2 ? building.height - 2 : building.height - 1
+            ),
+            level
         });
     }
     return stairs;
 }
 
-function getUpperFloorZone(building, stair, levelIndex) {
+function getUpperFloorZone(building, stairs, stair, levelIndex) {
     const zone = [];
-    const radiusX = building.width >= 9 ? 3 : 2;
-    const radiusY = building.height >= 7 ? 2 : 1;
-    const biasX = stair.x <= building.width / 2 ? 1 : -1;
-    const biasY = stair.y <= building.height / 2 ? 1 : -1;
-    const centerX = clamp(stair.x + biasX * levelIndex, 1, building.width - 2);
-    const centerY = clamp(stair.y + biasY * levelIndex, 1, building.height - 2);
+    const footprint = getBuildingFootprint(building);
+    const radiusX = Math.max(2, Math.min(4, Math.floor((building.width - 2) / 2)));
+    const radiusY = Math.max(1, Math.min(3, Math.floor((building.height - 2) / 2)));
+    const nextStair = stairs[levelIndex + 1];
+    const directionBias = nextStair
+        ? { x: Math.sign(stair.x - nextStair.x), y: Math.sign(stair.y - nextStair.y) }
+        : getLandingBias(getDoorEdge(building));
+    const centerX = clamp(stair.x + directionBias.x, 1, building.width - 2);
+    const centerY = clamp(stair.y + directionBias.y, 1, building.height - 2);
 
     for (let y = centerY - radiusY; y <= centerY + radiusY; y++) {
         for (let x = centerX - radiusX; x <= centerX + radiusX; x++) {
-            if (x <= 0 || y <= 0 || x >= building.width - 1 || y >= building.height - 1) continue;
+            if (!footprint.set.has(`${x},${y}`)) continue;
+            if (isBuildingEdgeCell(footprint.set, x, y)) continue;
             if (building.door?.x === x && building.door?.y === y) continue;
             zone.push({ x, y });
         }
@@ -342,9 +465,18 @@ function getUpperFloorZone(building, stair, levelIndex) {
     return zone;
 }
 
+function getLandingBias(doorEdge) {
+    return {
+        north: { x: 0, y: 1 },
+        south: { x: 0, y: -1 },
+        west: { x: 1, y: 0 },
+        east: { x: -1, y: 0 }
+    }[doorEdge] || { x: 0, y: -1 };
+}
+
 function getDoorEdge(building) {
     if (!building?.door) return 'south';
-    return getEdge(building, building.door.x, building.door.y) || 'south';
+    return building.door.edge || getEdge(building, building.door.x, building.door.y, getBuildingFootprint(building).set) || 'south';
 }
 
 function stampDoorApproach(mutable, building, offsetX, offsetY) {
@@ -371,7 +503,37 @@ function isWindowCandidate(building, localX, localY, edge) {
     return (localX + localY + building.id.length) % 2 === 0;
 }
 
-function getEdge(building, localX, localY) {
+function getBuildingFootprint(building) {
+    const cells = Array.isArray(building.footprintCells) && building.footprintCells.length > 0
+        ? building.footprintCells
+            .map((cell) => ({ x: Math.floor(cell.x), y: Math.floor(cell.y) }))
+            .filter((cell) => cell.x >= 0 && cell.y >= 0 && cell.x < building.width && cell.y < building.height)
+        : Array.from({ length: building.height }, (_, y) =>
+            Array.from({ length: building.width }, (_, x) => ({ x, y }))
+        ).flat();
+    const set = new Set(cells.map((cell) => `${cell.x},${cell.y}`));
+    return { cells, set };
+}
+
+function isBuildingEdgeCell(cellSet, localX, localY) {
+    return !cellSet.has(`${localX},${localY - 1}`) ||
+        !cellSet.has(`${localX + 1},${localY}`) ||
+        !cellSet.has(`${localX},${localY + 1}`) ||
+        !cellSet.has(`${localX - 1},${localY}`);
+}
+
+function getEdge(building, localX, localY, footprintSet = null) {
+    if (building?.door?.x === localX && building?.door?.y === localY && building.door.edge) return building.door.edge;
+    if (footprintSet) {
+        const candidates = [
+            ['north', `${localX},${localY - 1}`],
+            ['east', `${localX + 1},${localY}`],
+            ['south', `${localX},${localY + 1}`],
+            ['west', `${localX - 1},${localY}`]
+        ];
+        const exposed = candidates.find(([, key]) => !footprintSet.has(key));
+        if (exposed) return exposed[0];
+    }
     if (localY === 0) return 'north';
     if (localY === building.height - 1) return 'south';
     if (localX === 0) return 'west';
@@ -436,9 +598,9 @@ function clamp(value, min, max) {
 }
 
 function canStampOver(symbol) {
-    return ['G', 'F', 'S', 'H', 'R', BUILDING_SYMBOLS.floor].includes(symbol);
+    return ['G', 'F', 'S', 'H', 'R', '.', ':', ';', ',', BUILDING_SYMBOLS.floor].includes(symbol);
 }
 
 function canStampDoorApproach(symbol) {
-    return ['G', 'F', 'S', 'H', 'R'].includes(symbol);
+    return ['G', 'F', 'S', 'H', 'R', '.', ':', ';', ','].includes(symbol);
 }

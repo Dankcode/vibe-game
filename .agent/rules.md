@@ -13,6 +13,9 @@
 
 - Keep simulation state outside Three.js objects. Three.js meshes are render adapters.
 - Keep the map array-driven and voxel-matrix-backed. The authoring format is a 2D array of tile-cell objects; gameplay systems must normalize that into `voxel-matrix-v1`, where each cell becomes a z-indexed voxel column.
+- The high-performance streaming format is `magic-voxel-chunk-v1`. Treat tile cells and `voxel-matrix-v1` as authoring/normalization inputs, then compile runtime chunks into dense `16 x 16 x 256` Magic Voxel buffers.
+- A Magic Voxel chunk stores three column-contiguous typed arrays indexed as `((localY * 16) + localX) * 256 + z`: `blockId: Uint16Array`, `elementalMatrix: Uint8Array`, and `metadataFlags: Uint8Array`. Serialized chunk payloads must use base64 buffers so the client can hydrate typed arrays without per-voxel JSON parsing.
+- `elementalMatrix` is a bit mask for localized Fire, Water, Earth, Wind, Holy, and Dark traits. `metadataFlags` is a bit mask for physical/runtime behavior and must reserve `OBSTRUCTION_HIDING` for upper terrain, wall, and roof layers that can dynamically cull when an entity enters lower bounds.
 - A tile cell must use the hard magic data contract `{ element, texture, effect, building, height }`. Legacy row symbols may exist only as editor shorthand and must normalize through `TileLibrary.js` before gameplay systems use them.
 - Use `WorldGenerator` for block lookup, elevation, walkability, habitat, and chunk indexing.
 - Do not duplicate tile behavior inside players, wildlife, pathfinding, or UI. Add behavior to `TileRegistry.js`.
@@ -76,7 +79,13 @@
 - When an outside player walks fully behind a building, use a finite camera-to-player segment/footprint intersection to hide that building's entire roof and upper wall course across all edges. Restore it when the building no longer intervenes.
 - Generated towns must use coordinated non-overlapping lots with walkable foundations and a guaranteed road connection from every exterior door approach to the village center.
 - Small-town generation should follow the Azgaar-inspired data pipeline in `AzgaarTownGenerator.js`: score a dry settlement site, carve terrain-cost-aware routes, then emit serializable building blueprints and tile-cell rows that normalize through the voxel matrix renderer.
-- Keep the active world map as the frozen fantasy-map-generator-style fixture in `FantasyWorldData.js`. Current map windows must be deterministic views into that same world data; do not reintroduce a randomize-map button.
+- Keep the active world map as the imported Andia fantasy-map-generator package exposed through `FantasyWorldData.js` and compacted in `ActiveWorldData.js`. Current map windows must be deterministic views into the provided borough/town JSON data; do not reintroduce a randomize-map button.
+- The Map panel must use the exported active-world PNG as the clickable world-map image, with borough marker positions coming from the manifest/world JSON coordinate space. Use the SVG only as source/reference unless vector-specific interaction is required.
+- Local borough generation must stay bounded to the town JSON grid that is actually present, currently `80 x 60` runtime tiles, and should not inflate the full `640 x 360` world into renderable tiles.
+- Imported roads must not inherit building scale. Ordinary narrow streets should stay one tile wide, dock roads may be two tiles wide, and main roads may be three tiles wide or wider only when the source explicitly marks them as main.
+- Imported buildings must preserve source interior/floor/room metadata and scale source rectangles by `3x` inside the bounded town grid so the roughly `1 x 1 x 2` player can move through interiors. Do not shrink imported buildings back to the raw generator footprint.
+- Imported city walls should use elevated town-wall cells and local terrain elevation should come from the map package's town/world elevation data, not a flat placeholder.
+- The Magic Voxel compiler lives at `tools/compile_magic_voxels.mjs`. It writes `layout.magic-voxel.json`, `manifest.magic-voxel.json`, and chunk JSON files under `shared/magic-voxels/`. The layout file is the standard JSON template API for macro continental data, heightmaps, burg coordinates, and route metadata.
 - Building doors may use `oak`, `iron`, or `painted` styles. The blueprint door style must drive the visible hinged panel material, accents, and frame while the underlying door tile remains a one-tile walkable floor opening.
 - Outdoor GEO, ANEMO, and CRYO blocks must use visible elevation lighting bands: base blocks darker, higher blocks progressively lighter. Do not apply elevation tones to structures, interiors, roofs, water, or lava.
 - Terrain sight cutaways must preserve elevation `0` and may hide only overlapping voxels at elevation `1` or higher. Apply this through normalized voxel-column data so default, randomized, and imported generated maps behave consistently.
@@ -96,7 +105,7 @@
 
 - Server-owned state should be compact and chunk-aware.
 - Send player movement as center coordinates; server derives tile and chunk coordinates.
-- Future chunk streaming should send compact tile-cell arrays, voxel matrix columns, or deltas by chunk, not full world snapshots. Teleporting through the Map panel should load a deterministic world window around the selected fantasy-map coordinate.
+- Future chunk streaming should prefer Magic Voxel base64 typed-buffer chunks or compact deltas by chunk, not full world snapshots. Teleporting through the Map panel should load a deterministic world window around the selected fantasy-map coordinate.
 - Future server-authoritative validation should use the same tile/chunk rules as the client.
 - Combat should remain separate from world movement until the first wildlife/NPC behavior is stable.
 

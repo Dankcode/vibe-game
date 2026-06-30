@@ -30,8 +30,14 @@ Vibe Game is a 3.5D isometric MMORPG prototype. The client renders a voxel-like 
 - `client/src/data/TileRegistry.js`: tile definitions, element ids, walkability, habitats, and material metadata.
 - `client/src/data/TileLibrary.js`: tile-cell object contract, texture/building ids, shorthand symbol conversion, map legend compatibility, normalization helpers, and `voxel-matrix-v1` column expansion.
 - `client/src/data/MapData.js`: array-authored main map generation, chunk size, wildlife spawns.
-- `client/src/data/FantasyWorldData.js`: frozen fantasy-map-generator-style world export used as the stable map source for all current world windows.
+- `client/src/data/FantasyWorldData.js`: compatibility API for the active fantasy-world source. It adapts the imported active map package into deterministic borough/town map windows.
+- `client/src/data/ActiveWorldData.js`: generated compact Andia data module created from the provided map package manifest, world JSON, and `towns/burg-*.json` files.
+- `client/public/assets/maps/active-world-map.png`: exported Andia PNG used by the Map panel as the clickable world-map image.
+- `tools/import_world_map_package.mjs`: generic map-package importer. It copies the PNG map asset, compacts all borough JSON into `ActiveWorldData.js`, preserves the `80 x 60` local town grid, scales building footprints by `3x`, keeps ordinary roads narrow, preserves building interior/floor/room metadata, and emits compact elevation rows.
+- `tools/import_hodinia_map.mjs`: older Hodinia-specific importer retained for reference/backfill only; new active imports should use `tools/import_world_map_package.mjs`.
 - `client/src/generation/AzgaarTownGenerator.js`: deterministic small-town site scoring, route carving, names, and building blueprints.
+- `tools/compile_magic_voxels.mjs`: Node.js Magic Voxel compiler. It creates the standard world layout JSON, compiles deterministic local windows, and writes base64 `Uint16Array`/`Uint8Array` chunk payloads for client streaming.
+- `shared/magic-voxels/`: generated Magic Voxel layout, manifest, and chunk payload output directory.
 - `server/src/rooms/WorldRoom.js`: multiplayer room, player movement sync, chunk-entry tracking and chunk message contract.
 - `server/src/systems/WorldSurface.js`: backend voxel-matrix surface resolver. Converts player center coordinates into authoritative block/tile coordinates.
 - `server/src/rooms/CombatRoom.js`: co-op turn-based combat room; all party members submit actions before round resolution.
@@ -79,6 +85,15 @@ The map must remain array-authored so it can scale by chunks:
 - `WorldGenerator.chunkMap` groups block keys by chunk key `"chunkX,chunkY"`.
 - `MAP_CHUNK_SIZE` is currently `16`.
 
+The streaming/runtime target is the Magic Voxel format:
+
+- `magic-voxel-layout-v1` is the JSON template API for the world generator. It contains macro continental metadata, a base64 `Uint16Array` heightmap, burg coordinates, route metadata, and the chunk/memory specification.
+- The village generator ingests that layout payload through `tools/compile_magic_voxels.mjs`, chooses a burg or world coordinate, scales the selected map window at `1 world coordinate = 1 local tile`, and compiles the resulting tile rows into `1:1` local voxel matrices.
+- `magic-voxel-chunk-v1` chunks are dense `16 x 16 x 256` buffers. The memory index is `((localY * 16) + localX) * 256 + z`, keeping every vertical column contiguous for fast Three.js instancing and obstruction checks.
+- Each compiled chunk stores `blockId` as `Uint16Array`, plus `elementalMatrix` and `metadataFlags` as `Uint8Array`. All three are serialized as base64 strings so clients can hydrate typed arrays directly.
+- `blockId` maps through the chunk `blockRegistry`; `0` is air. The registry records element, texture, building part, label, walkability, and material pattern for each structural/visual assignment.
+- `elementalMatrix` packs Fire, Water, Earth, Wind, Holy, and Dark traits. `metadataFlags` packs solid, walkable surface, liquid, stair connector, interior, roof, and `OBSTRUCTION_HIDING` bits. `OBSTRUCTION_HIDING` is the canonical marker for upper terrain, wall, and roof voxels that may be culled around lower-bound entity positions.
+
 Current editor shorthand symbols:
 
 - `W`: deep water, non-walkable.
@@ -106,11 +121,11 @@ Current editor shorthand symbols:
 
 Future large maps should add or stream more chunk arrays instead of building one huge monolithic world payload. The backend should send chunk metadata, compact tile-cell arrays, voxel matrix columns, or deltas, not every block for every connected player on every tick.
 
-World generation stays mathematical and deterministic from the static fantasy-map data. The active compact pipeline is inspired by Azgaar's Fantasy Map Generator: keep map-level places and routes as data, convert a selected world-coordinate window into terrain/roads/settlements, stamp serializable voxel building blueprints, then normalize the tile-cell rows into voxel matrices. `FantasyWorldData.js` is the current frozen test-world source; every current map window should come from that same world data.
+World generation stays deterministic from the imported Andia fantasy-map data. The active compact pipeline is inspired by Azgaar's Fantasy Map Generator: keep map-level places and routes as data, output a standardized Magic Voxel layout JSON, convert a selected borough from its provided `80 x 60` source town grid into the same bounded `80 x 60` runtime grid, stamp serializable voxel building blueprints from the town JSON, normalize the tile-cell rows into voxel matrices, then compile dense Magic Voxel chunks for runtime streaming. `FantasyWorldData.js` is the compatibility source; `ActiveWorldData.js` is the generated compact data payload.
 
 The default world should remain mostly flat for smoother travel. Water, shore, grass, forest floor, roads, doors, floors, and stairs share the base plane so water can sit directly beside sand without needing to be one block lower. `H`, `M`, and `P` still create elevation, but generation should keep them sparse and smoothed rather than scattered as spotted single-tile bumps.
 
-The Map panel no longer edits or randomizes tile arrays. It shows the frozen fantasy world, lets the user choose known locations or enter world coordinates, then teleports by rebuilding a deterministic voxel window around that coordinate.
+The Map panel no longer edits or randomizes tile arrays. It shows the exported active-world PNG, overlays route polylines and clickable borough markers from the map package coordinate space, then teleports by rebuilding the selected borough's deterministic town JSON voxel window.
 
 Building stamping lives in `client/src/data/BuildingData.js`. The town generator emits varied stone/timber blueprints on coordinated dry lots around the selected plaza. `stampBuildingsOnRows()` stamps congruent walls, directional window columns, reachable doors, floors, and style-matched stairs before `TileLibrary.js` converts the result into tile-cell arrays. Generated tile-row arrays carry their building blueprints so `Game` can register matching runtime roofs, furniture, and cutaway state.
 
@@ -124,7 +139,9 @@ Building stairs are three-step block wedges contained inside one tile with a vis
 
 Building cutaways preserve the first wall course at all times because the player is approximately two blocks tall and needs a visible boundary/door frame. Door panels open while the player is close to the doorway and close again after the player has moved through. When the player is inside, the entire roof hides together with only the upper course of the two perimeter edges nearest the camera. When a whole building lies between the camera and an outside player, its entire roof and upper wall course hide across all four edges. Floors and lower wall blocks never hide.
 
-Settlements come from fantasy-world locations rather than one repeated town template. Building lots are flattened to walkable road/foundation tiles, buildings use role-specific offsets around the selected map location, and each exterior door approach receives an orthogonal road path back to the local settlement roads.
+Settlements come from Andia borough JSON rather than one repeated town template. Streets, walls, farms, terrain, elevation bands, and building rectangles come from each `towns/burg-*.json` file. Runtime building blueprints keep the current house format: rectangular stone/timber walls, door cells, story counts, optional interior stairs, and flat roof/cutaway behavior. Source building rectangles are scaled by `3x` so small `2 x 2` generator houses become walkable `6 x 6` interiors for the roughly `1 x 1 x 2` player. Ordinary roads remain narrow and are not globally scaled with buildings.
+
+Imported town elevation is carried as compact digit rows. `MapData.js` decodes those rows into tile-cell heights before story expansion, and `BuildingData.js` adds walls and upper floors on top of each building's `baseElevation`. This lets some city buildings sit on higher terraces while others stay lower, while keeping the full world bounded to the selected town grid.
 
 Outdoor ground blocks use elevation-banded texture lighting. Base-level GEO, ANEMO, and CRYO blocks receive a darker tone, while blocks at increasing world height become significantly lighter. This is encoded in cached tile materials and must not affect structure, furniture, roof, water, lava, or interior building tiles.
 

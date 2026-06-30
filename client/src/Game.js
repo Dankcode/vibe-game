@@ -19,7 +19,8 @@ export class Game {
         this.currentMapRows = MAIN_MAP;
         this.currentBuildings = MAIN_MAP.buildings || [];
         this.worldGenerator.generateFromChunkedArray(MAIN_MAP, MAP_LEGEND, MAP_CHUNK_SIZE, {
-            buildings: this.currentBuildings
+            buildings: this.currentBuildings,
+            decorations: MAIN_MAP.decorations || []
         });
         this.pathfinder = new Pathfinder(this.worldGenerator);
         this.userId = this.generateUserId();
@@ -67,6 +68,7 @@ export class Game {
             onStartCombat: () => this.startCombatScene(),
             onToggleCollisionDebug: (isEnabled) => this.setCollisionDebugVisible(isEnabled)
         });
+        this.updateBurgMapPanel();
         this.inputManager.onKeyDown('KeyM', (event) => {
             if (this.shouldIgnoreGlobalShortcut(event)) return;
             event.preventDefault();
@@ -206,7 +208,8 @@ export class Game {
         this.currentMapRows = rows;
         this.currentBuildings = source === 'custom' ? [] : (rows.buildings || []);
         this.worldGenerator.generateFromChunkedArray(rows, MAP_LEGEND, MAP_CHUNK_SIZE, {
-            buildings: this.currentBuildings
+            buildings: this.currentBuildings,
+            decorations: rows.decorations || []
         });
         this.repositionPlayerForCurrentWorld();
         this.wildlifeSystem = new WildlifeSystem(this.threeManager, this.worldGenerator, WILDLIFE_SPAWNS);
@@ -214,6 +217,7 @@ export class Game {
         this.syncCurrentMapToServer(source);
 
         this.updateHud();
+        this.updateBurgMapPanel();
     }
 
     teleportToWorld(worldX, worldY, location = null) {
@@ -346,6 +350,7 @@ export class Game {
             this.worldGenerator.updatePlayerSightCutaway(this.player.gridX, this.player.gridY, this.threeManager.camera);
 
             this.updateHud();
+            if (this.adminPanel?.panel?.classList.contains('is-open')) this.updateBurgMapPanel();
         }
 
         this.threeManager.render();
@@ -386,5 +391,27 @@ export class Game {
         if (this.playerCountReadout) {
             this.playerCountReadout.textContent = `${this.room?.state?.players?.size || 1}`;
         }
+    }
+
+    updateBurgMapPanel() {
+        if (!this.adminPanel?.renderBurgMap || !this.currentMapRows) return;
+        const players = [];
+        if (this.player) {
+            players.push({
+                x: this.player.gridX,
+                y: this.player.gridY,
+                local: true,
+                label: 'You'
+            });
+        }
+        for (const [sessionId, remoteAvatar] of this.remotePlayers || []) {
+            players.push({
+                x: remoteAvatar.gridX,
+                y: remoteAvatar.gridY,
+                local: false,
+                label: remoteAvatar.userId || sessionId
+            });
+        }
+        this.adminPanel.renderBurgMap(this.currentMapRows, players);
     }
 }

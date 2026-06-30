@@ -386,9 +386,9 @@ export class PlayerAvatar {
         const fromY = Math.round(this.gridY);
         const repX = Math.round(nextX);
         const repY = Math.round(nextY);
-        const nextElevation = this.worldGenerator.getElevation(repX, repY);
+        const nextElevation = this.worldGenerator.getMovementElevation(repX, repY, this.gridZ);
 
-        if (this.worldGenerator.canMoveFootprintBetween(this.gridX, this.gridY, nextX, nextY, this.footRadius)) {
+        if (this.worldGenerator.canMoveFootprintBetween(this.gridX, this.gridY, nextX, nextY, this.footRadius, this.gridZ)) {
             this.gridX = nextX;
             this.gridY = nextY;
             this.gridZ = nextElevation;

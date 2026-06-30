@@ -1,9 +1,10 @@
 import {
     applyBuildingDoorTexturesToTileRows,
+    applyBuildingFloorTexturesToTileRows,
     applyBuildingStoriesToTileRows,
     stampBuildingsOnRows
 } from './BuildingData.js';
-import { MAP_LEGEND, symbolRowsToTileCells } from './TileLibrary.js';
+import { MAP_LEGEND, TILE_EFFECTS, TEXTURE_IDS, symbolRowsToTileCells } from './TileLibrary.js';
 import {
     createFantasyWorldPlanAt,
     FANTASY_WORLD,
@@ -12,6 +13,7 @@ import {
     WORLD_VIEW_HEIGHT,
     WORLD_VIEW_WIDTH
 } from './FantasyWorldData.js';
+import { ELEMENTS } from './TileRegistry.js';
 
 export const MAP_CHUNK_SIZE = 16;
 export { MAP_LEGEND };
@@ -43,22 +45,120 @@ export function createTownTileRows(townPlan) {
     const buildings = townPlan.buildings || [];
     const buildingRows = stampBuildingsOnRows(townPlan.rows, buildings, {
         villageCenter: townPlan.center,
-        connectDoors: townPlan.connectDoors ?? false
+        connectDoors: townPlan.connectDoors ?? false,
+        normalizeDoors: !townPlan.sourceTown
     });
     const tileRows = symbolRowsToTileCells(buildingRows);
+    applyTownElevationsToTileRows(tileRows, townPlan.elevationRows, buildings);
     applyBuildingStoriesToTileRows(tileRows, buildings);
+    applyBuildingFloorTexturesToTileRows(tileRows, buildings);
     applyBuildingDoorTexturesToTileRows(tileRows, buildings);
     tileRows.buildings = buildings;
+    tileRows.decorations = townPlan.decorations || [];
     tileRows.seed = townPlan.seed;
     tileRows.townName = townPlan.townName;
     tileRows.townCenter = townPlan.center;
-    tileRows.spawn = {
-        x: townPlan.center.x - Math.floor(townPlan.width / 2),
-        y: townPlan.center.y - Math.floor(townPlan.height / 2)
-    };
-    tileRows.generator = 'azgaar-inspired-small-town-v1';
+    tileRows.spawn = findGroundSpawn(tileRows, townPlan.center);
+    tileRows.generator = townPlan.sourceTown
+        ? 'active-world-town-json-v2'
+        : 'azgaar-inspired-small-town-v1';
+    if (townPlan.sourceTown) tileRows.sourceTown = townPlan.sourceTown;
     if (townPlan.world) tileRows.world = townPlan.world;
     return tileRows;
+}
+
+function applyTownElevationsToTileRows(tileRows, elevationRows = [], buildings = []) {
+    if (!Array.isArray(tileRows) || tileRows.length === 0 || !Array.isArray(elevationRows)) return tileRows;
+
+    for (let y = 0; y < tileRows.length; y++) {
+        for (let x = 0; x < (tileRows[y]?.length || 0); x++) {
+            const baseElevation = clampElevation(elevationRows[y]?.[x]);
+            const cell = tileRows[y][x];
+            if (!cell || cell.element === ELEMENTS.HYDRO || cell.element === ELEMENTS.PYRO) {
+                if (cell) cell.height = 0;
+                continue;
+            }
+            cell.height = Math.max(cell.height || 0, baseElevation);
+        }
+    }
+
+    const offsetX = Math.floor((tileRows[0]?.length || 0) / 2);
+    const offsetY = Math.floor(tileRows.length / 2);
+    for (const building of buildings) {
+        const baseElevation = clampElevation(building.baseElevation);
+        for (let localY = 0; localY < building.height; localY++) {
+            for (let localX = 0; localX < building.width; localX++) {
+                const row = building.y + localY + offsetY;
+                const col = building.x + localX + offsetX;
+                const cell = tileRows[row]?.[col];
+                if (!cell) continue;
+                cell.height = baseElevation;
+            }
+        }
+    }
+
+    return tileRows;
+}
+
+function clampElevation(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return 0;
+    return Math.max(0, Math.min(2, Math.floor(number)));
+}
+
+function findGroundSpawn(tileRows, center = {}) {
+    const height = tileRows.length;
+    const width = tileRows[0]?.length || 0;
+    const offsetX = Math.floor(width / 2);
+    const offsetY = Math.floor(height / 2);
+    const centerX = Math.max(0, Math.min(width - 1, Math.round(center.x ?? offsetX)));
+    const centerY = Math.max(0, Math.min(height - 1, Math.round(center.y ?? offsetY)));
+    let best = null;
+
+    for (let row = 0; row < height; row++) {
+        for (let col = 0; col < width; col++) {
+            const cell = tileRows[row][col];
+            if (!isGroundSpawnCell(cell)) continue;
+            const distance = Math.hypot(col - centerX, row - centerY);
+            const roadBias = cell.texture === 2 ? -3 : 0;
+            const score = distance + roadBias + (cell.height || 0) * 0.2;
+            if (!best || score < best.score) {
+                best = {
+                    x: col - offsetX,
+                    y: row - offsetY,
+                    score
+                };
+            }
+        }
+    }
+
+    if (best) return { x: best.x, y: best.y };
+
+    carveFallbackSpawnPlaza(tileRows, centerX, centerY);
+    return {
+        x: centerX - offsetX,
+        y: centerY - offsetY
+    };
+}
+
+function isGroundSpawnCell(cell) {
+    return cell &&
+        cell.element === ELEMENTS.GEO &&
+        cell.building === 0;
+}
+
+function carveFallbackSpawnPlaza(tileRows, centerX, centerY) {
+    for (let row = centerY - 1; row <= centerY + 1; row++) {
+        for (let col = centerX - 1; col <= centerX + 1; col++) {
+            const cell = tileRows[row]?.[col];
+            if (!cell) continue;
+            cell.element = ELEMENTS.GEO;
+            cell.texture = TEXTURE_IDS.ROAD;
+            cell.effect = TILE_EFFECTS.EARTH;
+            cell.building = 0;
+            cell.height = Math.max(0, cell.height || 0);
+        }
+    }
 }
 
 export function createLegacyRandomMapRows(width = 40, height = 32, seed = Date.now(), mapHints = {}) {
@@ -82,6 +182,7 @@ export function createLegacyRandomMapRows(width = 40, height = 32, seed = Date.n
     const buildings = mapHints.buildings || [];
     const buildingRows = stampBuildingsOnRows(finalRows, buildings, { villageCenter });
     const tileRows = applyBuildingStoriesToTileRows(symbolRowsToTileCells(buildingRows), buildings);
+    applyBuildingFloorTexturesToTileRows(tileRows, buildings);
     applyBuildingDoorTexturesToTileRows(tileRows, buildings);
     tileRows.buildings = buildings;
     tileRows.seed = seed;
@@ -178,7 +279,7 @@ function smoothTerrainRows(rows, iterations = 1, options = {}) {
         for (let y = 1; y < current.length - 1; y++) {
             for (let x = 1; x < current[y].length - 1; x++) {
                 const symbol = current[y][x];
-                if (options.keepSettlements && ['R', 'T', 'A', 'C', 'D', 'E', 'U'].includes(symbol)) continue;
+        if (options.keepSettlements && ['R', 'T', '9', '!', '@', '#', '$', 'A', 'C', 'D', 'E', 'U', '.', ':', ';', ','].includes(symbol)) continue;
                 const replacement = getDominantNeighborSymbol(current, x, y, symbol);
                 if (replacement) mutable[y][x] = replacement;
             }

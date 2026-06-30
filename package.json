@@ -5,7 +5,11 @@
   "scripts": {
     "dev": "concurrently \"npm run dev --workspace=client\" \"npm start --workspace=server\"",
     "client": "npm run dev --workspace=client",
-    "server": "npm start --workspace=server"
+    "server": "npm start --workspace=server",
+    "compile:magic-voxels": "node tools/compile_magic_voxels.mjs",
+    "import:hodinia-map": "node tools/import_hodinia_map.mjs",
+    "import:world-map": "node tools/import_world_map_package.mjs",
+    "generate:combined-buildings": "node tools/import_world_map_package.mjs"
   },
   "workspaces": [
     "client",
