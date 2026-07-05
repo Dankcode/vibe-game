@@ -102,12 +102,16 @@ function cloneBuildings(buildings = []) {
         ...building,
         door: building.door ? { ...building.door } : undefined,
         stairs: (building.stairs || []).map((stair) => ({ ...stair })),
+        stairCells: (building.stairCells || []).map((cell) => ({ ...cell })),
+        footprintCells: (building.footprintCells || []).map((cell) => ({ ...cell })),
+        matrix: building.matrix ? cloneBuildingMatrix(building.matrix) : null,
         interior: building.interior ? { ...building.interior } : undefined,
         floors: (building.floors || []).map((floor) => ({
             ...floor,
             rooms: (floor.rooms || []).map((room) => ({
                 ...room,
                 gridRect: room.gridRect ? { ...room.gridRect } : null,
+                tiles: (room.tiles || []).map((tile) => Array.isArray(tile) ? [...tile] : tile),
                 doors: (room.doors || []).map((door) => ({
                     ...door,
                     grid: Array.isArray(door.grid) ? [...door.grid] : null
@@ -120,6 +124,25 @@ function cloneBuildings(buildings = []) {
         })),
         sourceColors: building.sourceColors ? { ...building.sourceColors } : undefined
     }));
+}
+
+function cloneBuildingMatrix(matrix) {
+    return {
+        ...matrix,
+        vertical: matrix.vertical ? {
+            ...matrix.vertical,
+            levelTags: (matrix.vertical.levelTags || []).map((level) => ({ ...level })),
+            roof: matrix.vertical.roof ? { ...matrix.vertical.roof } : null
+        } : null,
+        levels: (matrix.levels || []).map((level) => ({ ...level })),
+        cells: (matrix.cells || []).map((cell) => ({
+            ...cell,
+            ground: cell.ground ? { ...cell.ground } : null,
+            floors: (cell.floors || []).map((floor) => ({ ...floor })),
+            roof: cell.roof ? { ...cell.roof } : null,
+            stair: cell.stair ? { ...cell.stair } : null
+        }))
+    };
 }
 
 function cloneElevationRows(rows = []) {

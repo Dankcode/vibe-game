@@ -1,4 +1,14 @@
 import { BUILDING_PARTS, DOOR_STYLE_TEXTURES, TEXTURE_IDS } from './TileLibrary.js';
+import {
+    BUILDING_FLOOR_HEIGHT,
+    BUILDING_PART_TAGS,
+    BUILDING_PLACEMENT_TAGS,
+    createBuildingLevelReferences,
+    createDoorClearanceLevels,
+    enforceStructuralShellClosure,
+    getBuildingLevelReferenceForZ,
+    validateStaircaseRouting
+} from './StructuralMatrixRules.js';
 
 export const BUILDING_SYMBOLS = {
     stoneWall: 'A',
@@ -28,6 +38,7 @@ export const BUILDING_SYMBOLS = {
 export const DEFAULT_BUILDINGS = [
     {
         id: 'guild-hall',
+        obstructionTag: 'building:default:guild-hall',
         name: 'Guild Hall',
         x: -11,
         y: -8,
@@ -41,6 +52,7 @@ export const DEFAULT_BUILDINGS = [
     },
     {
         id: 'village-inn',
+        obstructionTag: 'building:default:village-inn',
         name: 'Village Inn',
         x: 3,
         y: -8,
@@ -54,6 +66,7 @@ export const DEFAULT_BUILDINGS = [
     },
     {
         id: 'craft-house',
+        obstructionTag: 'building:default:craft-house',
         name: 'Craft House',
         x: -10,
         y: 3,
@@ -67,6 +80,7 @@ export const DEFAULT_BUILDINGS = [
     },
     {
         id: 'general-store',
+        obstructionTag: 'building:default:general-store',
         name: 'General Store',
         x: 3,
         y: 3,
@@ -80,6 +94,7 @@ export const DEFAULT_BUILDINGS = [
     },
     {
         id: 'watch-house',
+        obstructionTag: 'building:default:watch-house',
         name: 'Watch House',
         x: 12,
         y: -2,
@@ -110,8 +125,10 @@ export function createGeneratedBuildings(width, height, seed, villageCenter) {
         const stories = template.stories || (random() > 0.78 ? 3 : random() > 0.48 ? 2 : 1);
         const door = getCenteredDoor(template.width, template.height, template.doorEdge);
         const stairs = getInteriorStairs(template.width, template.height, template.doorEdge, random);
+        const id = `${template.id}-${Math.abs(Math.floor(seed))}-${index}`;
         return {
-            id: `${template.id}-${Math.abs(Math.floor(seed))}-${index}`,
+            id,
+            obstructionTag: `building:generated:${id}`,
             name: template.name,
             x: clamp(template.dx + centerX, -Math.floor(width / 2) + 2, Math.floor(width / 2) - template.width - 2),
             y: clamp(template.dy + centerY, -Math.floor(height / 2) + 2, Math.floor(height / 2) - template.height - 2),
@@ -137,27 +154,178 @@ export function applyBuildingStoriesToTileRows(tileRows, buildings = []) {
         const stories = Math.max(1, Math.min(3, Math.floor(building.stories || 1)));
         const baseElevation = Math.max(0, Math.floor(building.baseElevation || 0));
         const wallHeight = baseElevation + stories * 2;
-        const upperFloorMap = createUpperFloorElevationMap(building, stories);
+        const upperFloorLevels = createUpperFloorLevels(baseElevation, stories);
+        const buildingFloorLevels = createBuildingFloorLevels(baseElevation, stories);
+        const buildingFloorRefs = createBuildingLevelReferences(baseElevation, stories);
+        const stairCellMap = getBuildingStairCellMap(building);
+        const stairHeadroom = createStairHeadroomCutoutMap(building, baseElevation, stories);
         const footprint = getBuildingFootprint(building);
         for (const { x: localX, y: localY } of footprint.cells) {
                 const isEdge = isBuildingEdgeCell(footprint.set, localX, localY);
                 const isDoor = building.door?.x === localX && building.door?.y === localY;
+                const stairCell = stairCellMap.get(`${localX},${localY}`);
                 const row = building.y + localY + offsetY;
                 const col = building.x + localX + offsetX;
                 const cell = tileRows[row]?.[col];
                 if (!cell) continue;
+                delete cell.structuralFloorLevels;
+                delete cell.buildingBaseElevation;
+                delete cell.buildingGroundElevation;
+                delete cell.buildingGroundFloorZ;
+                delete cell.buildingFloorHeight;
+                delete cell.buildingFloorLevels;
+                delete cell.buildingFloorRefs;
+                delete cell.buildingMatrixTag;
+                delete cell.buildingLevelIndex;
+                delete cell.buildingLevelTag;
+                delete cell.buildingLevelKind;
+                delete cell.buildingPartTag;
+                delete cell.buildingAnchorZ;
+                delete cell.buildingPlacementZ;
+                delete cell.buildingPlacementTag;
+                delete cell.stairRole;
+                delete cell.stairLevel;
+                delete cell.stairBaseElevation;
+                delete cell.stairDestinationElevation;
+                delete cell.doorWallTexture;
+                delete cell.doorBaseElevation;
+                delete cell.doorClearanceLevels;
                 cell.height = baseElevation;
-                if (isEdge && !isDoor) {
+                cell.buildingBaseElevation = baseElevation;
+                cell.buildingGroundElevation = baseElevation;
+                cell.buildingGroundFloorZ = baseElevation;
+                cell.buildingFloorHeight = BUILDING_FLOOR_HEIGHT;
+                cell.buildingFloorLevels = buildingFloorLevels;
+                cell.buildingMatrixTag = isEdge ? 'building-shell' : 'building-interior';
+                applyBuildingPartReference(cell, {
+                    levelRefs: buildingFloorRefs,
+                    groundFloorZ: baseElevation,
+                    levelZ: baseElevation,
+                    partTag: isEdge ? BUILDING_PART_TAGS.WALL : BUILDING_PART_TAGS.GROUND_FLOOR,
+                    placementTag: isEdge ? BUILDING_PLACEMENT_TAGS.NONE : BUILDING_PLACEMENT_TAGS.FLOOR_SURFACE
+                });
+                if (isDoor) {
                     cell.height = wallHeight;
+                    cell.buildingMatrixTag = 'building-door';
+                    applyBuildingPartReference(cell, {
+                        levelRefs: buildingFloorRefs,
+                        groundFloorZ: baseElevation,
+                        levelZ: baseElevation,
+                        partTag: BUILDING_PART_TAGS.DOOR,
+                        placementTag: BUILDING_PLACEMENT_TAGS.NONE
+                    });
+                    cell.doorBaseElevation = baseElevation;
+                    cell.doorClearanceLevels = createDoorClearanceLevels(baseElevation, stories);
+                    cell.doorWallTexture = building.style === 'stone'
+                        ? TEXTURE_IDS.STONE_BUILDING_WALL
+                        : TEXTURE_IDS.TIMBER_BUILDING_WALL;
                     continue;
                 }
-                if (!isEdge && stories > 1) {
-                    const upperElevation = upperFloorMap.get(`${localX},${localY}`) || 0;
-                    if (upperElevation > 0) cell.height = baseElevation + upperElevation;
+                if (stairCell) {
+                    const stairLevel = Math.max(0, Math.floor(stairCell.level || 0));
+                    const stairOrigin = baseElevation + stairLevel * 2;
+                    const stairSurfaceZ = stairOrigin + Math.max(0, Math.floor(stairCell.height || 0));
+                    cell.stairRole = stairCell.role;
+                    cell.stairLevel = stairLevel;
+                    cell.stairBaseElevation = stairOrigin;
+                    cell.stairDestinationElevation = Math.min(baseElevation + stories * 2, stairOrigin + 2);
+                    cell.buildingMatrixTag = `building-stair-${stairCell.role}`;
+                    applyBuildingPartReference(cell, {
+                        levelRefs: buildingFloorRefs,
+                        groundFloorZ: baseElevation,
+                        levelZ: stairCell.role === 'upper-stair' ? cell.stairDestinationElevation : stairOrigin,
+                        partTag: getStairRolePartTag(stairCell.role),
+                        anchorZ: stairOrigin,
+                        placementZ: isWalkableStairRole(stairCell.role) ? stairSurfaceZ : stairOrigin,
+                        placementTag: isWalkableStairRole(stairCell.role)
+                            ? BUILDING_PLACEMENT_TAGS.STAIR_SURFACE
+                            : BUILDING_PLACEMENT_TAGS.NONE
+                    });
+                    if (stairCell.role === 'support') {
+                        cell.height = wallHeight;
+                        continue;
+                    }
+                    if (stairCell.role === 'air') {
+                        // Top-left air shaft: keep the origin floor walkable, leave the column open
+                        // through the destination floor slab, keep any floors above the destination.
+                        cell.height = baseElevation;
+                        cell.buildingFloorLevels = buildingFloorLevels
+                            .filter((level) => level <= stairOrigin || level > stairOrigin + 2);
+                        applyBuildingPartReference(cell, {
+                            levelRefs: buildingFloorRefs,
+                            groundFloorZ: baseElevation,
+                            levelZ: stairOrigin,
+                            partTag: BUILDING_PART_TAGS.STAIR_AIR_SHAFT,
+                            placementTag: BUILDING_PLACEMENT_TAGS.VERTICAL_CLEARANCE
+                        });
+                        cell.structuralFloorLevels = createStructuralFloorLevels(baseElevation, stories)
+                            .filter((level) => level <= stairOrigin || level > stairOrigin + 2)
+                            .filter((level) => !hasStairHeadroomCutout(stairHeadroom, localX, localY, level));
+                        continue;
+                    }
+                    cell.height = stairSurfaceZ;
+                    if (!isEdge) {
+                        cell.structuralFloorLevels = createStructuralFloorLevels(baseElevation, stories)
+                            .filter((level) => level >= cell.height)
+                            .filter((level) => !hasStairHeadroomCutout(stairHeadroom, localX, localY, level));
+                    }
+                    continue;
+                }
+                if (isEdge) {
+                    cell.height = wallHeight;
+                    applyBuildingPartReference(cell, {
+                        levelRefs: buildingFloorRefs,
+                        groundFloorZ: baseElevation,
+                        levelZ: baseElevation,
+                        partTag: BUILDING_PART_TAGS.WALL,
+                        placementTag: BUILDING_PLACEMENT_TAGS.NONE
+                    });
+                    continue;
+                }
+                if (stories > 1) {
+                    cell.structuralFloorLevels = createStructuralFloorLevels(baseElevation, stories)
+                        .filter((level) => !hasStairHeadroomCutout(stairHeadroom, localX, localY, level));
+                    cell.height = Math.max(cell.height, upperFloorLevels[upperFloorLevels.length - 1] || baseElevation);
+                    applyBuildingPartReference(cell, {
+                        levelRefs: buildingFloorRefs,
+                        groundFloorZ: baseElevation,
+                        levelZ: baseElevation,
+                        partTag: BUILDING_PART_TAGS.GROUND_FLOOR,
+                        placementTag: BUILDING_PLACEMENT_TAGS.FLOOR_SURFACE
+                    });
                 }
         }
     }
     return tileRows;
+}
+
+function applyBuildingPartReference(cell, {
+    levelRefs = [],
+    groundFloorZ = 0,
+    levelZ = groundFloorZ,
+    partTag = BUILDING_PART_TAGS.GROUND_FLOOR,
+    placementTag = BUILDING_PLACEMENT_TAGS.NONE,
+    anchorZ = levelZ,
+    placementZ = levelZ
+} = {}) {
+    const level = getBuildingLevelReferenceForZ(levelRefs, levelZ, groundFloorZ);
+    cell.buildingGroundFloorZ = Math.max(0, Math.floor(groundFloorZ || 0));
+    cell.buildingFloorHeight = BUILDING_FLOOR_HEIGHT;
+    cell.buildingLevelIndex = level.index;
+    cell.buildingLevelTag = level.tag;
+    cell.buildingLevelKind = level.kind;
+    cell.buildingPartTag = partTag;
+    cell.buildingAnchorZ = Math.max(0, Math.floor(anchorZ || 0));
+    cell.buildingPlacementZ = Math.max(0, Math.floor(placementZ || 0));
+    cell.buildingPlacementTag = placementTag;
+}
+
+function getStairRolePartTag(role) {
+    if (role === 'lower-stair') return BUILDING_PART_TAGS.STAIR_LOWER;
+    if (role === 'upper-stair') return BUILDING_PART_TAGS.STAIR_UPPER;
+    if (role === 'support') return BUILDING_PART_TAGS.STAIR_SUPPORT;
+    if (role === 'air' || role === 'pass-through-air') return BUILDING_PART_TAGS.STAIR_AIR_SHAFT;
+    return BUILDING_PART_TAGS.STAIR_LOWER;
 }
 
 export function applyBuildingDoorTexturesToTileRows(tileRows, buildings = []) {
@@ -303,13 +471,11 @@ function isRoadLike(symbol) {
 
 function prepareTownLots(mutable, buildings, offsetX, offsetY, options) {
     for (const building of buildings) {
-        for (let localY = -1; localY <= building.height; localY++) {
-            for (let localX = -1; localX <= building.width; localX++) {
-                const row = building.y + localY + offsetY;
-                const col = building.x + localX + offsetX;
-                if (!mutable[row]?.[col]) continue;
-                mutable[row][col] = BUILDING_SYMBOLS.approach;
-            }
+        for (const { x: localX, y: localY } of getBuildingLotCells(building)) {
+            const row = building.y + localY + offsetY;
+            const col = building.x + localX + offsetX;
+            if (!mutable[row]?.[col]) continue;
+            mutable[row][col] = BUILDING_SYMBOLS.approach;
         }
 
         const approach = getDoorApproachPosition(building);
@@ -320,6 +486,33 @@ function prepareTownLots(mutable, buildings, offsetX, offsetY, options) {
             }, offsetX, offsetY);
         }
     }
+}
+
+function getBuildingLotCells(building) {
+    const footprint = getBuildingFootprint(building);
+    if (!building.footprintCells?.length) {
+        return expandRectCells(-1, -1, building.width + 1, building.height + 1);
+    }
+
+    const cells = new Map();
+    for (const cell of footprint.cells) {
+        for (let localY = cell.y - 1; localY <= cell.y + 1; localY++) {
+            for (let localX = cell.x - 1; localX <= cell.x + 1; localX++) {
+                cells.set(`${localX},${localY}`, { x: localX, y: localY });
+            }
+        }
+    }
+    return [...cells.values()];
+}
+
+function expandRectCells(minX, minY, maxX, maxY) {
+    const cells = [];
+    for (let y = minY; y <= maxY; y++) {
+        for (let x = minX; x <= maxX; x++) {
+            cells.push({ x, y });
+        }
+    }
+    return cells;
 }
 
 function stampRoadPath(mutable, from, to, offsetX, offsetY) {
@@ -358,7 +551,7 @@ function stampBuilding(mutable, building, offsetX, offsetY) {
     const wallSymbol = building.style === 'stone'
         ? BUILDING_SYMBOLS.stoneWall
         : BUILDING_SYMBOLS.timberWall;
-    const stairKeys = new Set((building.stairs || []).map((stair) => `${stair.x},${stair.y}`));
+    const stairCellMap = getBuildingStairCellMap(building);
     const footprint = getBuildingFootprint(building);
 
     for (const { x: localX, y: localY } of footprint.cells) {
@@ -369,13 +562,16 @@ function stampBuilding(mutable, building, offsetX, offsetY) {
 
             const isEdge = isBuildingEdgeCell(footprint.set, localX, localY);
             const isDoor = building.door?.x === localX && building.door?.y === localY;
-            const isStairs = stairKeys.has(`${localX},${localY}`);
+            const stairCell = stairCellMap.get(`${localX},${localY}`);
 
             const edge = getEdge(building, localX, localY, footprint.set);
 
-            if (isStairs) {
-                const stair = (building.stairs || []).find((candidate) => candidate.x === localX && candidate.y === localY);
-                mutable[row][col] = getStairSymbol(stair?.direction, building.style);
+            if (isWalkableStairRole(stairCell?.role)) {
+                mutable[row][col] = getStairSymbol(stairCell.direction, building.style);
+            } else if (stairCell?.role === 'support') {
+                mutable[row][col] = wallSymbol;
+            } else if (stairCell?.role === 'landing' || stairCell?.role === 'air') {
+                mutable[row][col] = BUILDING_SYMBOLS.floor;
             } else if (isDoor) {
                 mutable[row][col] = BUILDING_SYMBOLS.door;
             } else if (isWindowCandidate(building, localX, localY, edge)) {
@@ -384,24 +580,105 @@ function stampBuilding(mutable, building, offsetX, offsetY) {
                 mutable[row][col] = isEdge ? wallSymbol : BUILDING_SYMBOLS.floor;
             }
     }
+    enforceStructuralShellClosure(mutable, building, {
+        offsetX,
+        offsetY,
+        wallSymbol,
+        doorSymbol: BUILDING_SYMBOLS.door
+    });
 }
 
-function createUpperFloorElevationMap(building, stories) {
-    const map = new Map();
-    if (stories <= 1) return map;
+function createUpperFloorLevels(baseElevation, stories) {
+    return Array.from({ length: Math.max(0, stories - 1) }, (_, index) => baseElevation + (index + 1) * 2);
+}
 
-    const stairs = getStoryStairs(building, stories);
-    const stairKeys = new Set(stairs.map((stair) => `${stair.x},${stair.y}`));
-    stairs.forEach((stair, index) => {
-        const elevation = (index + 1) * 2;
-        map.set(`${stair.x},${stair.y}`, elevation);
-        for (const point of getUpperFloorZone(building, stairs, stair, index)) {
-            if (stairKeys.has(`${point.x},${point.y}`)) continue;
-            map.set(`${point.x},${point.y}`, Math.max(map.get(`${point.x},${point.y}`) || 0, elevation));
-        }
+function createBuildingFloorLevels(baseElevation, stories) {
+    return [
+        baseElevation,
+        ...createUpperFloorLevels(baseElevation, stories)
+    ];
+}
+
+function createStructuralFloorLevels(baseElevation, stories) {
+    return createBuildingFloorLevels(baseElevation, stories).filter((level) => level > 0);
+}
+
+function createStairHeadroomCutoutMap(building, baseElevation, stories) {
+    const validation = validateStaircaseRouting(building.stairs || [], {
+        baseElevation,
+        stories
     });
-
+    const map = new Map();
+    for (const cutout of validation.headroomCutouts || []) {
+        map.set(`${cutout.x},${cutout.y}`, new Set(cutout.levels || []));
+    }
     return map;
+}
+
+function hasStairHeadroomCutout(map, x, y, level) {
+    return map.get(`${x},${y}`)?.has(level) || false;
+}
+
+function getBuildingStairCellMap(building) {
+    const map = new Map();
+    for (const cell of getBuildingStairCells(building)) {
+        const key = `${cell.x},${cell.y}`;
+        const existing = map.get(key);
+        if (!existing || getStairCellPriority(cell) > getStairCellPriority(existing)) {
+            map.set(key, cell);
+        }
+    }
+    return map;
+}
+
+function getBuildingStairCells(building) {
+    if (Array.isArray(building.stairCells) && building.stairCells.length > 0) {
+        return building.stairCells
+            .map((cell) => ({
+                x: Math.floor(cell.x),
+                y: Math.floor(cell.y),
+                direction: cell.direction || 'north',
+                role: normalizeStairCellRole(cell.role),
+                sector: cell.sector,
+                module: Math.max(0, Math.floor(cell.module || 0)),
+                height: Math.max(0, Math.floor(cell.height || 0)),
+                level: Math.max(0, Math.floor(cell.level || 0))
+            }))
+            .filter((cell) => cell.x >= 0 && cell.y >= 0 && cell.x < building.width && cell.y < building.height);
+    }
+    return (building.stairs || []).map((stair) => ({
+        x: Math.floor(stair.x),
+        y: Math.floor(stair.y),
+        direction: stair.direction || 'north',
+        role: 'stair',
+        height: 2,
+        level: Math.max(0, Math.floor(stair.level || 0))
+    }));
+}
+
+function normalizeStairCellRole(role) {
+    if (role === 'support') return 'support';
+    if (role === 'air') return 'air';
+    if (role === 'lower-stair') return 'lower-stair';
+    if (role === 'upper-stair') return 'upper-stair';
+    return 'stair';
+}
+
+function isWalkableStairRole(role) {
+    return role === 'stair' || role === 'lower-stair' || role === 'upper-stair';
+}
+
+function getStairCellPriority(cell) {
+    const level = Math.max(0, Math.floor(cell?.level || 0));
+    const height = Math.max(0, Math.floor(cell?.height || 0));
+    const rolePriority = {
+        air: 0,
+        support: 1,
+        stair: 2,
+        'lower-stair': 3,
+        'upper-stair': 4
+    }[cell?.role] || 0;
+    return level * 100 + height * 10 + rolePriority;
 }
 
 function getStoryStairs(building, stories) {
@@ -442,29 +719,6 @@ function getStoryStairs(building, stories) {
     return stairs;
 }
 
-function getUpperFloorZone(building, stairs, stair, levelIndex) {
-    const zone = [];
-    const footprint = getBuildingFootprint(building);
-    const radiusX = Math.max(2, Math.min(4, Math.floor((building.width - 2) / 2)));
-    const radiusY = Math.max(1, Math.min(3, Math.floor((building.height - 2) / 2)));
-    const nextStair = stairs[levelIndex + 1];
-    const directionBias = nextStair
-        ? { x: Math.sign(stair.x - nextStair.x), y: Math.sign(stair.y - nextStair.y) }
-        : getLandingBias(getDoorEdge(building));
-    const centerX = clamp(stair.x + directionBias.x, 1, building.width - 2);
-    const centerY = clamp(stair.y + directionBias.y, 1, building.height - 2);
-
-    for (let y = centerY - radiusY; y <= centerY + radiusY; y++) {
-        for (let x = centerX - radiusX; x <= centerX + radiusX; x++) {
-            if (!footprint.set.has(`${x},${y}`)) continue;
-            if (isBuildingEdgeCell(footprint.set, x, y)) continue;
-            if (building.door?.x === x && building.door?.y === y) continue;
-            zone.push({ x, y });
-        }
-    }
-    return zone;
-}
-
 function getLandingBias(doorEdge) {
     return {
         north: { x: 0, y: 1 },
@@ -500,7 +754,20 @@ function isWindowCandidate(building, localX, localY, edge) {
     const isCorner = (localX === 0 || localX === building.width - 1) &&
         (localY === 0 || localY === building.height - 1);
     if (isCorner) return false;
-    return (localX + localY + building.id.length) % 2 === 0;
+    const along = edge === 'north' || edge === 'south' ? localX : localY;
+    const span = edge === 'north' || edge === 'south' ? building.width : building.height;
+    if (along <= 0 || along >= span - 1) return false;
+
+    const architecture = building.architectureStyle || building.sourceType || building.style || 'building';
+    const hash = hashString(`${building.id}:${architecture}:${building.facadeVariant || 0}:${edge}`);
+    const rhythms = architecture === 'tower'
+        ? [3, 4, 4]
+        : architecture === 'warehouse'
+            ? [3, 4, 5]
+            : [2, 3, 3, 4];
+    const period = rhythms[hash % rhythms.length];
+    const offset = Math.floor(hash / 11) % period;
+    return (along + offset) % period === 0;
 }
 
 function getBuildingFootprint(building) {
@@ -591,6 +858,16 @@ function seededBuildingRandom(seed) {
         state = (state * 1103515245 + 12345) % 2147483648;
         return state / 2147483648;
     };
+}
+
+function hashString(value) {
+    let hash = 2166136261;
+    const text = String(value || '');
+    for (let i = 0; i < text.length; i++) {
+        hash ^= text.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+    }
+    return hash >>> 0;
 }
 
 function clamp(value, min, max) {

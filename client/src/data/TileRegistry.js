@@ -115,8 +115,8 @@ const VARIANT_OVERRIDES = {
     },
     [`${ELEMENTS.GEO}:2`]: {
         label: 'Village Road',
-        topColor: 0xf8d98a,
-        sideColor: 0xd3a357,
+        topColor: 0xf0bd4d,
+        sideColor: 0x7e5528,
         moveCost: 0.9,
         pattern: 'road'
     },
@@ -143,15 +143,15 @@ const VARIANT_OVERRIDES = {
     },
     [`${ELEMENTS.GEO}:6`]: {
         label: 'City Cobblestone',
-        topColor: 0xa8b0ad,
-        sideColor: 0x6f7778,
+        topColor: 0xd0d8d6,
+        sideColor: 0x56656a,
         moveCost: 0.88,
         pattern: 'cityCobble'
     },
     [`${ELEMENTS.GEO}:7`]: {
         label: 'City Plaza Stone',
-        topColor: 0xc7c0aa,
-        sideColor: 0x898371,
+        topColor: 0xe1d7b9,
+        sideColor: 0x756d5d,
         moveCost: 0.86,
         pattern: 'plazaStone'
     },

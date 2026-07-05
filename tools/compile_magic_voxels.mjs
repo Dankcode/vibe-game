@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -12,12 +12,14 @@ import {
 } from '../client/src/data/MapData.js';
 import {
     BUILDING_PARTS,
-    createVoxelMatrix
+    createVoxelMatrix,
+    isBlockWalkable
 } from '../client/src/data/TileLibrary.js';
 import {
     ELEMENTS,
     getTileDefinition
 } from '../client/src/data/TileRegistry.js';
+import { createBlockRegistryCollision } from '../client/src/data/StructuralMatrixRules.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -75,7 +77,7 @@ const MAGIC_VOXEL_SPEC = Object.freeze({
             type: 'Uint8Array',
             bytesPerVoxel: 1,
             bits: METADATA_FLAGS,
-            description: 'Physical and runtime-render flags. OBSTRUCTION_HIDING marks upper layers that can cull when an entity enters lower bounds.'
+            description: 'Physical and runtime-render flags. OBSTRUCTION_HIDING marks structural voxels eligible for vertical Z-axis dual-zone viewport culling. Environment terrain must never carry this flag.'
         }
     },
     serialization: {
@@ -157,6 +159,7 @@ export async function main(argv = process.argv.slice(2)) {
     const templates = selectVillageTemplates(layout, options);
 
     await mkdir(options.outDir, { recursive: true });
+    await rm(path.join(options.outDir, 'chunks'), { recursive: true, force: true });
     const layoutPath = path.join(options.outDir, 'layout.magic-voxel.json');
     await writeJson(layoutPath, layout);
 
@@ -207,6 +210,7 @@ export async function main(argv = process.argv.slice(2)) {
 }
 
 export function createStandardLayoutPayload() {
+    const exportedMapDataName = FANTASY_WORLD.sourceName || 'map-data';
     const heightmap = createWorldHeightmap(FANTASY_WORLD.width, FANTASY_WORLD.height, FANTASY_WORLD.seed);
     const burgs = getWorldMapLocations().map((location) => ({
         id: location.id,
@@ -224,8 +228,8 @@ export function createStandardLayoutPayload() {
         schema: 'magic-voxel-layout-v1',
         spec: MAGIC_VOXEL_SPEC,
         world: {
-            id: FANTASY_WORLD.id,
-            name: FANTASY_WORLD.name,
+            id: exportedMapDataName,
+            name: exportedMapDataName,
             seed: FANTASY_WORLD.seed,
             width: FANTASY_WORLD.width,
             height: FANTASY_WORLD.height,
@@ -238,7 +242,7 @@ export function createStandardLayoutPayload() {
             }
         },
         macroContinentalLayout: {
-            source: 'static-fmg-test-world',
+            source: exportedMapDataName,
             description: 'Frozen fantasy-map-generator-style test world converted into deterministic Magic Voxel windows.',
             seaLevel: 0.12,
             mapScale: '1 world coordinate = 1 local tile before chunking'
@@ -379,8 +383,12 @@ export async function compileVillageWindow(template, layout, options = {}) {
                 height: building.height,
                 stories: building.stories,
                 style: building.style,
+                baseElevation: building.baseElevation ?? 0,
                 door: building.door,
-                stairs: building.stairs || []
+                stairs: building.stairs || [],
+                footprintCells: Array.isArray(building.footprintCells)
+                    ? building.footprintCells.map((cell) => ({ x: cell.x, y: cell.y }))
+                    : []
             }))
         },
         chunks
@@ -408,7 +416,8 @@ function createBlockRegistry() {
         building: BUILDING_PARTS.NONE,
         label: 'Air',
         walkable: false,
-        pattern: 'air'
+        pattern: 'air',
+        collision: { active: false, type: 'none', bounds: null }
     }];
     const idByKey = new Map([['air', 0]]);
 
@@ -420,16 +429,24 @@ function createBlockRegistry() {
             if (id > 65535) throw new Error('Magic Voxel block registry exceeded uint16 capacity.');
             const texture = block.textureValue ?? block.texture ?? 0;
             const definition = getTileDefinition(block.element, texture);
+            const building = block.building ?? BUILDING_PARTS.NONE;
+            const walkable = isBlockWalkable(block.element, texture, building);
             idByKey.set(key, id);
             entries.push({
                 id,
                 key,
                 element: block.element,
                 texture,
-                building: block.building ?? BUILDING_PARTS.NONE,
+                building,
                 label: definition.label,
-                walkable: Boolean(definition.walkable),
-                pattern: definition.pattern
+                walkable,
+                pattern: definition.pattern,
+                collision: createBlockRegistryCollision({
+                    element: block.element,
+                    texture,
+                    building,
+                    walkable
+                })
             });
             return id;
         },
@@ -550,8 +567,8 @@ function elementToMask(element) {
 
 function getMetadataFlags(block, topZ) {
     const texture = block.textureValue ?? block.texture ?? 0;
-    const definition = getTileDefinition(block.element, texture);
     const building = block.building ?? BUILDING_PARTS.NONE;
+    const walkable = isBlockWalkable(block.element, texture, building);
     const isTop = block.z === topZ;
     const isLiquid = block.element === ELEMENTS.HYDRO || block.element === ELEMENTS.PYRO;
     const isStairs = [
@@ -568,6 +585,7 @@ function getMetadataFlags(block, topZ) {
     const isInterior = [
         BUILDING_PARTS.DOOR,
         BUILDING_PARTS.FLOOR,
+        BUILDING_PARTS.GROUND_FLOOR,
         BUILDING_PARTS.STAIRS,
         BUILDING_PARTS.STAIRS_NORTH,
         BUILDING_PARTS.STAIRS_SOUTH,
@@ -580,16 +598,10 @@ function getMetadataFlags(block, topZ) {
         BUILDING_PARTS.CITY_WALL_STAIRS_EAST
     ].includes(building);
     const isRoof = building === BUILDING_PARTS.ROOF;
-    const canHideAsObstruction = block.z > 0 && (
-        block.element === ELEMENTS.STRUCTURE ||
-        block.element === ELEMENTS.GEO ||
-        block.element === ELEMENTS.CRYO ||
-        block.element === ELEMENTS.ANEMO ||
-        isRoof
-    );
+    const canHideAsObstruction = block.element === ELEMENTS.STRUCTURE || isRoof;
 
     let flags = METADATA_FLAGS.SOLID;
-    if (isTop && definition.walkable) flags |= METADATA_FLAGS.WALKABLE_SURFACE;
+    if (isTop && walkable) flags |= METADATA_FLAGS.WALKABLE_SURFACE;
     if (isLiquid) flags |= METADATA_FLAGS.LIQUID;
     if (isStairs) flags |= METADATA_FLAGS.STAIR_CONNECTOR;
     if (isInterior) flags |= METADATA_FLAGS.INTERIOR;

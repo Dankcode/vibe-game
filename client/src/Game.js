@@ -47,7 +47,8 @@ export class Game {
             if (this.hoveredTile && this.player) {
                 const freshPath = this.pathfinder.findPath(
                     this.player.gridX, this.player.gridY, 
-                    this.hoveredTile.gridX, this.hoveredTile.gridY
+                    this.hoveredTile.gridX, this.hoveredTile.gridY,
+                    this.player.gridZ
                 );
                 if (freshPath && freshPath.length > 0) {
                     this.player.setPath(freshPath);
@@ -91,6 +92,7 @@ export class Game {
                 y: this.player.gridY,
                 z: this.player.gridZ
             });
+            this.lastSyncedMapKey = null;
             console.log('[Game] Connected to room:', this.room.id);
             this.updateHud('Online');
 
@@ -214,7 +216,7 @@ export class Game {
         this.repositionPlayerForCurrentWorld();
         this.wildlifeSystem = new WildlifeSystem(this.threeManager, this.worldGenerator, WILDLIFE_SPAWNS);
 
-        this.syncCurrentMapToServer(source);
+        this.scheduleCurrentMapToServer(source);
 
         this.updateHud();
         this.updateBurgMapPanel();
@@ -250,6 +252,8 @@ export class Game {
 
     syncCurrentMapToServer(source) {
         if (!this.room || !this.currentMapRows?.length) return;
+        const mapKey = this.getCurrentMapSyncKey();
+        if (mapKey && this.lastSyncedMapKey === mapKey) return;
         this.room.send('world:admin:map_updated', {
             source,
             width: this.currentMapRows[0].length,
@@ -259,6 +263,29 @@ export class Game {
             world: this.currentMapRows.world,
             rows: this.currentMapRows
         });
+        if (mapKey) this.lastSyncedMapKey = mapKey;
+    }
+
+    scheduleCurrentMapToServer(source) {
+        if (this.pendingMapSync) {
+            if (typeof cancelIdleCallback === 'function') cancelIdleCallback(this.pendingMapSync);
+            else clearTimeout(this.pendingMapSync);
+        }
+
+        const send = () => {
+            this.pendingMapSync = null;
+            this.syncCurrentMapToServer(source);
+        };
+        this.pendingMapSync = typeof requestIdleCallback === 'function'
+            ? requestIdleCallback(send, { timeout: 900 })
+            : setTimeout(send, 50);
+    }
+
+    getCurrentMapSyncKey() {
+        if (!this.currentMapRows?.length) return null;
+        const townId = this.currentMapRows.sourceTown?.id || this.currentMapRows.townName || 'local';
+        const worldId = this.currentMapRows.world?.id || 'world';
+        return `${worldId}:${townId}:${this.currentMapRows[0]?.length || 0}x${this.currentMapRows.length}`;
     }
 
     setCollisionDebugVisible(isEnabled) {
@@ -320,7 +347,13 @@ export class Game {
                 this.hoveredTile.highlight(canStandHere ? 0x2f8f4e : 0x8f2630);
                 // Calculate Path from Player to Hovered Tile
                 if (this.player && canStandHere) {
-                   this.activePath = this.pathfinder.findPath(this.player.gridX, this.player.gridY, this.hoveredTile.gridX, this.hoveredTile.gridY);
+                   this.activePath = this.pathfinder.findPath(
+                       this.player.gridX,
+                       this.player.gridY,
+                       this.hoveredTile.gridX,
+                       this.hoveredTile.gridY,
+                       this.player.gridZ
+                   );
                    this.threeManager.renderPathLine(this.activePath, this.worldGenerator);
                 } else {
                    this.activePath = [];
@@ -341,13 +374,13 @@ export class Game {
             }
             this.wildlifeSystem.update(deltaSeconds);
 
-            // Make camera follow player before view-dependent building cutaways.
+            // Make camera follow player before updating visibility.
             const targetPos = this.player.group.position;
             this.threeManager.updateCamera(targetPos);
             this.worldGenerator.updateBuildingVisibility(this.player.gridX, this.player.gridY);
             this.worldGenerator.updateDoorAnimations(deltaSeconds);
             this.worldGenerator.updateVisibleTilesAround(this.player.gridX, this.player.gridY);
-            this.worldGenerator.updatePlayerSightCutaway(this.player.gridX, this.player.gridY, this.threeManager.camera);
+            this.worldGenerator.updateObstructionHiding(this.player.gridX, this.player.gridY, this.player.gridZ);
 
             this.updateHud();
             if (this.adminPanel?.panel?.classList.contains('is-open')) this.updateBurgMapPanel();

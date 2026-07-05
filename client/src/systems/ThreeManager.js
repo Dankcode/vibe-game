@@ -107,7 +107,7 @@ export class ThreeManager {
 
         const points = [];
         for (const node of pathNodes) {
-            const z = worldGenerator.getElevation(node.x, node.y) + 1.1; // float slightly above
+            const z = (Number.isFinite(node.z) ? node.z : worldGenerator.getElevation(node.x, node.y)) + 1.1; // float slightly above
             points.push(new THREE.Vector3(node.x, z, node.y)); 
         }
 

@@ -40,8 +40,6 @@
 - Avatar sprites should be foot-anchored. The bottom of the billboard, shadow, and collision footprint must agree visually.
 - Avatar sprites and shadows must respect tile depth. Foreground 3D blocks should cut off the 2D billboard and its shadow when the player is behind terrain; only admin collision debug overlays may ignore depth.
 - Avatar shadows, collision rings, and navigation overlays must sit on the visible tile top surface, not the elevation center. Use `worldGenerator.getSurfaceWorldY()` or `getTopSurfaceOffset()`.
-- When foreground terrain blocks the avatar, prefer cutting away the obstructing top block meshes near the player over adding xray/glow overlays.
-
 ## UI Rules
 
 - The browser game should fit inside the `.game-shell` viewport on desktop and fill the screen only on small/mobile viewports.
