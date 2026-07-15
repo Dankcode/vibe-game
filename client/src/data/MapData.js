@@ -25,22 +25,13 @@ const TOWN_ROWS_CACHE_LIMIT = 8;
 
 const DEFAULT_WORLD_LOCATION = getDefaultWorldLocation();
 export const MAIN_MAP = createFantasyWorldRowsAt(DEFAULT_WORLD_LOCATION.x, DEFAULT_WORLD_LOCATION.y);
-
-export const WILDLIFE_SPAWNS = [
-    {
-        id: 'meadow-hare-01',
-        species: 'meadowHare',
-        habitat: 'meadow',
-        x: -8,
-        y: -4,
-        leashRadius: 4
-    }
-];
+export const WILDLIFE_SPAWNS = createWildlifeSpawnsForMap(MAIN_MAP);
 
 export function createFantasyWorldRowsAt(worldX, worldY, options = {}) {
     const townPlan = createFantasyWorldPlanAt(worldX, worldY, {
         width: options.width || WORLD_VIEW_WIDTH,
-        height: options.height || WORLD_VIEW_HEIGHT
+        height: options.height || WORLD_VIEW_HEIGHT,
+        variant: options.variant || 0
     });
     const cacheKey = getTownRowsCacheKey(townPlan);
     if (!options.skipCache && TOWN_ROWS_CACHE.has(cacheKey)) {
@@ -62,7 +53,15 @@ export function createFantasyWorldRowsAt(worldX, worldY, options = {}) {
 
 function getTownRowsCacheKey(townPlan) {
     const townId = townPlan.sourceTown?.id || townPlan.townName || 'town';
-    return `${townPlan.world?.id || 'world'}:${townId}:${townPlan.width}x${townPlan.height}`;
+    return [
+        townPlan.world?.id || 'world',
+        townId,
+        townPlan.width,
+        townPlan.height,
+        townPlan.variant || 0,
+        townPlan.generationVersion || 'v1',
+        townPlan.contentHash || 'unhashed'
+    ].join(':');
 }
 
 export function createTownTileRows(townPlan) {
@@ -72,9 +71,11 @@ export function createTownTileRows(townPlan) {
     const buildingRows = stampBuildingsOnRows(terrainRows, buildings, {
         villageCenter: townPlan.center,
         connectDoors: townPlan.connectDoors ?? false,
-        normalizeDoors: !townPlan.sourceTown
+        normalizeDoors: townPlan.procedural !== false
     });
     const tileRows = symbolRowsToTileCells(buildingRows);
+    applyVisualVariantRowsToTileRows(tileRows, townPlan.visualVariantRows);
+    applyPaletteRowsToTileRows(tileRows, townPlan.paletteRows);
     applyTownElevationsToTileRows(tileRows, townPlan.elevationRows, buildings);
     applyBuildingStoriesToTileRows(tileRows, buildings);
     applyBuildingFloorTexturesToTileRows(tileRows, buildings);
@@ -82,15 +83,100 @@ export function createTownTileRows(townPlan) {
     tileRows.buildings = buildings;
     tileRows.decorations = townPlan.decorations || [];
     tileRows.seed = townPlan.seed;
+    tileRows.variant = townPlan.variant || 0;
+    tileRows.generationVersion = townPlan.generationVersion;
+    tileRows.contentHash = townPlan.contentHash;
+    tileRows.visualVariantRows = (townPlan.visualVariantRows || []).slice();
+    tileRows.paletteRows = (townPlan.paletteRows || []).map((row) => row.slice());
     tileRows.townName = townPlan.townName;
     tileRows.townCenter = townPlan.center;
-    tileRows.spawn = findGroundSpawn(tileRows, townPlan.center);
-    tileRows.generator = townPlan.sourceTown
-        ? 'active-world-town-json-v2'
-        : 'azgaar-inspired-small-town-v1';
+    tileRows.theme = townPlan.theme ? { ...townPlan.theme } : undefined;
+    tileRows.generation = townPlan.generation ? { ...townPlan.generation } : undefined;
+    tileRows.spawn = findGroundSpawn(tileRows, townPlan.center, {
+        buildings,
+        decorations: tileRows.decorations
+    });
+    tileRows.generator = townPlan.generation?.mode || 'geographic-wfc';
     if (townPlan.sourceTown) tileRows.sourceTown = townPlan.sourceTown;
     if (townPlan.world) tileRows.world = townPlan.world;
     return tileRows;
+}
+
+export function applyVisualVariantRowsToTileRows(tileRows, variantRows = []) {
+    if (!Array.isArray(tileRows) || tileRows.length === 0) return tileRows;
+    for (let y = 0; y < tileRows.length; y++) {
+        const variantRow = variantRows[y];
+        for (let x = 0; x < (tileRows[y]?.length || 0); x++) {
+            const raw = typeof variantRow === 'string' ? variantRow[x] : variantRow?.[x];
+            const parsed = typeof raw === 'string' ? Number.parseInt(raw, 36) : Number(raw);
+            tileRows[y][x].visualVariant = Number.isFinite(parsed)
+                ? Math.max(0, Math.min(35, Math.floor(parsed)))
+                : 0;
+        }
+    }
+    return tileRows;
+}
+
+export function applyPaletteRowsToTileRows(tileRows, paletteRows = []) {
+    if (!Array.isArray(tileRows) || tileRows.length === 0) return tileRows;
+    for (let y = 0; y < tileRows.length; y++) {
+        for (let x = 0; x < (tileRows[y]?.length || 0); x++) {
+            const paletteId = paletteRows[y]?.[x];
+            tileRows[y][x].paletteId = typeof paletteId === 'string' && paletteId
+                ? paletteId
+                : 'meadow';
+        }
+    }
+    return tileRows;
+}
+
+export function createWildlifeSpawnsForMap(tileRows, options = {}) {
+    if (!Array.isArray(tileRows) || tileRows.length === 0) return [];
+    const height = tileRows.length;
+    const width = tileRows[0]?.length || 0;
+    const offsetX = Math.floor(width / 2);
+    const offsetY = Math.floor(height / 2);
+    const seed = options.seed ?? tileRows.seed ?? 1;
+    const candidates = [];
+    for (let row = 1; row < height - 1; row++) {
+        for (let col = 1; col < width - 1; col++) {
+            const cell = tileRows[row]?.[col];
+            if (!cell || cell.element !== ELEMENTS.GEO || cell.building !== BUILDING_PARTS.NONE) continue;
+            if (![TEXTURE_IDS.DEFAULT, TEXTURE_IDS.FOREST, TEXTURE_IDS.GARDEN_GROUND].includes(cell.texture)) continue;
+            const x = col - offsetX;
+            const y = row - offsetY;
+            const spawnDistance = tileRows.spawn ? Math.hypot(x - tileRows.spawn.x, y - tileRows.spawn.y) : Infinity;
+            if (spawnDistance < 5) continue;
+            candidates.push({ x, y, score: hashMapSeed(`${seed}:wildlife:${x}:${y}`) });
+        }
+    }
+    candidates.sort((a, b) => a.score - b.score || a.y - b.y || a.x - b.x);
+    const target = Math.max(2, Math.min(7, Math.floor(candidates.length / 450)));
+    const selected = [];
+    for (const candidate of candidates) {
+        if (selected.length >= target) break;
+        if (selected.some((other) => Math.hypot(other.x - candidate.x, other.y - candidate.y) < 9)) continue;
+        selected.push(candidate);
+    }
+    return selected.map((candidate, index) => ({
+        id: `meadow-hare-${String(index + 1).padStart(2, '0')}-${candidate.score.toString(16).slice(0, 4)}`,
+        species: 'meadowHare',
+        habitat: 'meadow',
+        x: candidate.x,
+        y: candidate.y,
+        leashRadius: 3 + (candidate.score % 3),
+        seed: candidate.score
+    }));
+}
+
+function hashMapSeed(value) {
+    let hash = 2166136261;
+    const text = String(value);
+    for (let index = 0; index < text.length; index++) {
+        hash ^= text.charCodeAt(index);
+        hash = Math.imul(hash, 16777619);
+    }
+    return hash >>> 0;
 }
 
 function assignBuildingObstructionTags(buildings, townTag) {
@@ -146,26 +232,43 @@ function isCityWallStairCell(cell) {
     ].includes(cell?.building);
 }
 
-function findGroundSpawn(tileRows, center = {}) {
+function findGroundSpawn(tileRows, center = {}, worldFeatures = {}) {
     const height = tileRows.length;
     const width = tileRows[0]?.length || 0;
     const offsetX = Math.floor(width / 2);
     const offsetY = Math.floor(height / 2);
     const centerX = Math.max(0, Math.min(width - 1, Math.round(center.x ?? offsetX)));
     const centerY = Math.max(0, Math.min(height - 1, Math.round(center.y ?? offsetY)));
+    const entranceY = Math.max(centerY, Math.round(height * 0.78));
+    const decorations = worldFeatures.decorations || [];
+    const buildings = worldFeatures.buildings || [];
     let best = null;
 
     for (let row = 0; row < height; row++) {
         for (let col = 0; col < width; col++) {
             const cell = tileRows[row][col];
             if (!isGroundSpawnCell(cell)) continue;
-            const distance = Math.hypot(col - centerX, row - centerY);
-            const roadBias = cell.texture === 2 ? -3 : 0;
-            const score = distance + roadBias + (cell.height || 0) * 0.2;
+            const worldX = col - offsetX;
+            const worldY = row - offsetY;
+            const distance = Math.hypot(col - centerX, row - entranceY);
+            const roadBias = [TEXTURE_IDS.ROAD, TEXTURE_IDS.CITY_COBBLE, TEXTURE_IDS.CITY_PLAZA].includes(cell.texture) ? -5 : 0;
+            const nearbyLife = decorations.reduce((count, decoration) => {
+                const decorDistance = Math.hypot(worldX - decoration.x, worldY - decoration.y);
+                return count + (decorDistance <= 8 ? (8 - decorDistance) / 8 : 0);
+            }, 0);
+            const buildingDistance = buildings.reduce((nearest, building) => {
+                const buildingX = building.x + (building.width || 1) / 2;
+                const buildingY = building.y + (building.height || 1) / 2;
+                return Math.min(nearest, Math.hypot(worldX - buildingX, worldY - buildingY));
+            }, Infinity);
+            const neighborhoodBias = Number.isFinite(buildingDistance)
+                ? Math.abs(Math.max(3, buildingDistance) - 7) * 0.55
+                : 0;
+            const score = distance * 0.85 + roadBias + neighborhoodBias - Math.min(6, nearbyLife) * 0.95 + (cell.height || 0) * 0.2;
             if (!best || score < best.score) {
                 best = {
-                    x: col - offsetX,
-                    y: row - offsetY,
+                    x: worldX,
+                    y: worldY,
                     score
                 };
             }

@@ -1,5 +1,8 @@
 # Context
 
+- Active generation mode (2026-07-14): `fmg-constrained-wfc-v2`. `tools/import_world_map_package.mjs` imports only FMG/global geography and explicitly excludes town/building payloads. `WorldConstraintField.js` converts those numeric signals into urbanization, wall confinement, hard-water, inhibitor, and terrain-variance fields. `GeographicWFCGenerator.js` uses the field for terrain collapse, parcel/building collapse, physical walls/gates, and area-aware baked landmark placement.
+- Enterable procedural buildings are validated against a free 2×3/3×2 interior after structural stairs and furniture. `ContextualBuildingWFC.js` owns parcel-scale building/terrain modules; `BakedBuildingLibrary.js` owns code-native market, civic, inn, clocktower, chapel, lighthouse, and cabin blueprints. Neither module reads source town/building JSON.
+- The default Trilza view currently resolves 17 enterable buildings: 13 contextual WFC buildings plus 4 baked landmarks across two qualifying settlement areas. Every constrained parcel resolves to a building, buildings cover 46.5% of developable urban cells, and generation has zero fallbacks or contradictions; `npm run validate:world` and the 50-location integration sweep enforce these invariants.
 - Active source map package: `map-data`, imported from the normalized `world-map-source/map-data.*` package. Runtime world id/name remain static as `auzoryia` / `Auzoryia` unless intentionally renamed.
 - The active world data is written to `client/src/data/ActiveWorldData.js`, and generated voxel chunks are written to `shared/magic-voxels/`.
 - `world-map-source/` is the dedicated active map package folder. It must contain the source package `manifest.json`, `map-data.json`, `map-data.png`, optional `map-data.svg`, and `towns/`. `npm run replace:world-map` imports that folder into `client/src/data/ActiveWorldData.js`, then recompiles all burg voxel windows.
@@ -13,7 +16,7 @@
 - Building door placement is validated against both sides of the doorway: the outside approach must be walkable, and the inside must have a non-edge landing cell.
 - Non-rectangular building footprints can be repaired with a small entry vestibule when the source matrix would otherwise force a corner door or a blocked interior.
 - Building stairs are represented as explicit stair/support cells, not a single stair marker. Downstream landing cells are not emitted because they expand the validated 2-by-4 stair footprint.
-- Doorway voxels are simplified entryway placeholders for this test build: complex door assets are not instantiated. Each exterior door column clamps to the building's ground/plateau base elevation, keeps a 1 x 1 horizontal footprint, creates a walkable floor at that base coordinate, carves exactly two vertical Z-axis air voxels above it for player passage, and resumes solid wall/window voxels above the clearance.
+- Doorway voxels remain simple structural pass-throughs: each exterior door column clamps to the building's ground/plateau base elevation, keeps a 1 x 1 horizontal footprint, creates a walkable floor at that base coordinate, carves exactly two vertical Z-axis air voxels above it, and resumes solid wall/window voxels above the clearance. Runtime animated door panels mount to this opening without changing its structural collision contract.
 - Structural matrix rules now live in `client/src/data/StructuralMatrixRules.js` and are shared by the building stamper, importer, tile voxel creation, and magic-voxel compiler registry.
 - Building shells are repaired after stamping so every perimeter cell is a wall or window voxel, with only validated doors allowed as openings.
 - Building elevation now matches the footprint plus a small apron to a plateau height before floors are placed, preventing floating or clipping floor slabs on uneven terrain.
@@ -21,7 +24,7 @@
 - Stair cells are spatially validated before export: each local 2-by-2 module can contain only one staircase module, generated stair runs cannot extend into six-block layouts, stair heights are offset by their source floor level, headroom is carved over the incline, and stair termini must land on a populated upper-floor or roof structural voxel.
 - Multi-story buildings now attach structural floor-level metadata to interior cells so every elevated floor layer is populated across the full interior footprint instead of only near stairs.
 - Door voxels carry a ground-relative base elevation and wall-cap metadata. The base is sampled from the terrain beneath the structure and stabilized to the same plateau used by the building footprint so door clearances do not float one Z layer above the foundation.
-- Excess road/town decoration is disabled until placement has a stronger plan tied to roads, doors, and usable negative space.
+- Road/town decoration is generated through deterministic road-shoulder and negative-space infill tied to roads, doors, buildings, and usable open corridors.
 - Window lower and upper parts are treated as wall collision parts. Hidden obstruction visual blocks must not change movement collision.
 - Every non-air voxel block now receives explicit AABB collision metadata at runtime and in compiled magic-voxel chunk registries.
 - Building obstruction hiding is tag-based. Runtime/imported building JSON must provide a stable `obstructionTag` per building, with `building:<town>:<building>` as the canonical form; older data may fall back to the building `id`.
@@ -41,7 +44,9 @@
 
 ---
 
-# PLAN — Vector→3D Congruence & Furniture Overhaul (2026-07-03, plan only, not yet implemented)
+# PLAN — Vector→3D Congruence & Furniture Overhaul (2026-07-03, partially implemented)
+
+STATUS (2026-07-08): Room-driven furniture planning is implemented in `client/src/systems/FurniturePlanner.js` and rendered by `WorldGenerator.createBuildingFurniture`; generated/synthesized rooms now feed those kits. Sub-minimal footprint repair and congruence auditing are live in `tools/import_world_map_package.mjs`. Remaining congruence work is the broader collision repair/merge path for legacy selected buildings; keep those notes as planning guidance until implemented.
 
 Scope: THIS repo only — the importer, compiler, and runtime. Map generation is a separate project; this game consumes any source package that conforms to the `vibe-game-town-matrix` schema contract (§B0). Where a bug's root cause is bad package data, the fix here is contract validation + repair at import — never editing the upstream generator from this repo. No town/burg JSON is ever parsed by hand — every fix is a formula over the matrix schema.
 
@@ -84,7 +89,9 @@ Placement rules per room:
 - Geometry: every item snaps to cell center, max 0.9×cell footprint per occupied cell, sizes quantized to 0.25 voxel.
 - Vertical: `floorY(level) = baseElevation + level · interior.floorHeightVoxels` (from the building record) — never `level * 2` and never a bare `+0.08`.
 
-## D. Function stubs to implement (game repo)
+## D. Function status and remaining importer notes (game repo)
+
+The furniture planner functions below are implemented in `client/src/systems/FurniturePlanner.js`; keep this contract for future changes.
 
 New file `client/src/systems/FurniturePlanner.js`:
 ```js
@@ -133,7 +140,7 @@ export function validateRoomWalkability(placedCells, roomCells, doorCell) {
 
 # PLAN 2 — Stairs, Town Infill & Map Elevation (2026-07-04)
 
-STATUS (2026-07-04): §G stairs IMPLEMENTED — `createStairFlight`/`assertStairFlightInvariants` replace `createTwoByFourStairRunCells`/`validateStairModuleCells`; air-shaft cells are exported in `stairCells` with role `air`; `validateStaircaseRouting` carves the shaft column; `WorldGenerator.canMoveBetween` allows the stair diagonal past the solid support when the air-shaft corner lane is clear. §I elevation IMPLEMENTED — `computeTownTilt` (plane fit over world `heightSamples`), `createTerraceBandGrid`/`applyTerracedElevation` (bands ≥ 6 cells, ≤ 3 tiers, 1-tier walkable steps), `enforceElevationClusterCoherence` (min cluster 8, plus a final pass after door approaches); city-wall works ride the local terrace band. §H infill PARTIALLY IMPLEMENTED — ground-variety clusters (`infillTownOpenSpaces`, `normalizeLooseSurfaceClusters`) and the road-shoulder decoration kit are live; the themed prop-region phase (§H.2–3 market/yard/crop/staging/green kits + corridor guarantee) is SCAFFOLDED ONLY as commented stubs: `planNegativeSpaceInfill`/`classifyInfillRegion`/`fillInfillRegion`/`regionStaysConnected` in `tools/import_world_map_package.mjs`, and `addDecorTree/Well/Stall/Woodpile/Boulder/Cart/Garden` mesh stubs in `client/src/systems/WorldGenerator.js`. Acceptance run: 50 towns / 402 buildings / 314 flights — 0 invalid flights, 0 duplicate-height flights, 0 routing failures; all 50 towns terraced; 0 exposed raised elevation islands (21 wall-enclosed courtyard pockets remain by design).
+STATUS (2026-07-08): §G stairs IMPLEMENTED — `createStairFlight`/`assertStairFlightInvariants` replace `createTwoByFourStairRunCells`/`validateStairModuleCells`; air-shaft cells are exported in `stairCells` with role `air`; `validateStaircaseRouting` carves the shaft column; `WorldGenerator.canMoveBetween` allows the stair diagonal past the solid support when the air-shaft corner lane is clear. §I elevation IMPLEMENTED — `computeTownTilt` (plane fit over world `heightSamples`), `createTerraceBandGrid`/`applyTerracedElevation` (bands ≥ 6 cells, ≤ 3 tiers, 1-tier walkable steps), `enforceElevationClusterCoherence` (min cluster 8, plus a final pass after door approaches); city-wall works ride the local terrace band. §H infill IMPLEMENTED — ground-variety clusters (`infillTownOpenSpaces`, `normalizeLooseSurfaceClusters`), road-shoulder decoration, and themed prop-region infill are live. `planNegativeSpaceInfill`/`classifyInfillRegion`/`fillInfillRegion`/`regionStaysConnected` now generate deterministic market/yard/crop/staging/green prop regions with a corridor guarantee, and `WorldGenerator` renders tree/well/stall/woodpile/boulder/cart/garden props. Acceptance run: 50 towns / 402 buildings / 314 flights; 8,325 generated decorations across all 50 towns; max 318 decorations in any one town; 0 duplicate decoration cells; 0 door-approach decoration conflicts.
 
 Scope: this repo only (`client/src/data/StructuralMatrixRules.js`, `tools/import_world_map_package.mjs`, `client/src/systems/WorldGenerator.js`). All deterministic formulas; no hand-inspection of generated JSON.
 
@@ -213,3 +220,65 @@ Replace `applyMatrixOpenGroundRelief`'s per-cell noise (`:320`) with a town-wide
 - Stairs: for every imported building with stories > 1, assert per-flight invariants (one tier-1 + one tier-2 per module, no duplicate coordinates/heights, air shaft aligns with floor hole); a pathfinding probe can reach every floor and return.
 - Elevation: histogram of elevation islands shows zero clusters < 6 cells (terraces) / < 8 cells (relief); at least one town visibly tilts along its world gradient.
 - Infill: every region ≥ 12 cells has ≥ 1 prop and a preserved corridor (flood-fill from each adjacent road/door still reaches all free cells).
+
+---
+
+# PLAN 4 — Stair Fit & Coverage, Minecraft-Inspired Terrain Layers, Coordinate-Seeded Interiors (2026-07-08, IMPLEMENTED)
+
+- Stair tile mesh redone to voxel ratio (`Tile.addStairObjects`): a Minecraft-style half-stair filling the unit block — full-footprint bottom slab + ascent-side quarter block, each half a voxel tall, 0.98 footprint like neighbor blocks. The floating 3-step platform, foundation, and rails are gone.
+- Stair-top landings are guaranteed at generation time: `normalizeBuildingStairs` only accepts flight candidates with ≥ 1 open interior exit cell beyond the upper stair (`getCandidateExitCells`) and RESERVES one landing per flight so later flights can never occupy it. No more missing floor blocks where stairs lead.
+- Stairway coverage is now an invariant: flights are kept as a longest-valid prefix instead of all-or-nothing, and `reconcileStoriesWithStairCoverage`/`applyStairCoverageToBuilding` clamp `stories`/`interior.floorCount` to what the stairs can reach (blueprint + both entrance aligners). A building can no longer have an upper floor without a stairway — footprints that cannot host a flight become single-story. Verified: 226/226 multi-story buildings fully covered, 0 flights missing exit landings.
+- Terrain: added `applyFractalReliefPatches` (2-octave smooth-stepped value noise, +1 tier max, quantized and cluster-coherence-cleaned) and `applyBiomeGroundLayers` (clustered sand shorelines, rocky accents on tiers ≥ 3) on top of the terrace tilt. Techniques studied from github.com/mattzh72/minecraftlm's terrain package (octave heightmaps, biome layers, beach masks); that project is GPLv3 so NO code was copied — implementations are original over this repo's hashString lattice.
+- Interiors: `ensureFloorsWithRooms`/`synthesizeFloorRooms`/`splitRoomRect` give every storey typed rooms. Source-package rooms are preserved verbatim; missing floors get a deterministic BSP split (seeded by town/building key, so identical coordinates regenerate identical interiors) into hall/kitchen/workshop/storage (ground) and bedroom/study/storage (upper), feeding FurniturePlanner's room kits. Approach inspired by GDMC settlement generators (github.com/ScholliYT/MGAIA-Minecraft-GDMC: coordinate-driven houses with typed furnished interiors); implementation original. Verified: 402/402 buildings have rooms on every floor (1389 rooms).
+- Acceptance (2026-07-08 run): 50 towns / 402 buildings / 226 flights — 0 invalid flights, 0 duplicate-height flights, 0 routing failures, 0 multi-story buildings lacking flights, 0 exposed raised elevation islands; 1364 chunks compiled.
+
+---
+
+# PLAN 5 — Wave Function Collapse Facades & Persistent Shared World (2026-07-08, IMPLEMENTED)
+
+- New shared module `client/src/data/WaveFunctionCollapse.js`: a generic, dependency-free WFC solver (minimum-entropy collapse + AC-3 constraint propagation, salted-seed restarts, guaranteed-termination fallback). Technique per Maxim Gumin's WFC and its GDMC settlement applications (github.com/ScholliYT/MGAIA-Minecraft-GDMC assembles buildings from modules under adjacency constraints); implementation is original. The solver is graph-generic (`nodes`/`tiles`/`compatible`/`fixed`/`seed`) so future passes (massing, districts, interiors) can reuse it.
+- First applied tileset: building facades. `resolveFacadeWindows` (importer) turns each building's perimeter shell into a ring of wall slots, pre-collapses corners plus the door column and its flanks to wall panels, and collapses the rest under the contract "window never touches window". Exported as `building.facadeWindows`; re-collapsed whenever door relocation re-plans a building (`applyStairCoverageToBuilding`). Runtime `BuildingData.isWindowCandidate` consumes the baked plan (legacy hash rhythm remains only as fallback for planless data).
+- Persistence contract: every WFC seed derives purely from imported map data (`town.seed + town + building id`), and the resolved world is baked into `ActiveWorldData.js` + magic-voxel chunks — all players load the identical world. `payload.world.contentHash` (hash of all resolved towns) is exported so any client/server can assert it is walking the same world build.
+- Acceptance (2026-07-08 run): two consecutive imports produce byte-identical `ActiveWorldData.js` (sha256 match); 402/402 buildings carry WFC facade plans (2,461 windows, avg 6.1/building), 0 window-adjacency violations, 0 door-flank violations, 0 buildings with zero windows; contentHash `e858385`; 1,364 chunks compiled.
+
+---
+
+# PLAN 6 — WFC-First Building Generation & Exterior Prop Removal (2026-07-08, IMPLEMENTED)
+
+- The baked source JSON is now only the town SKELETON: footprints, doors, positions, roads, terrain. Building identity is resolved by a town-level wave-function collapse (`applyBuildingArchetypeWave`, importer): nodes are buildings linked to their ≤ 4 nearest neighbors within 10 cells; tiles are 7 archetypes (cottage/bayfront/townhouse/workshop/hall/manor/tower), each defining architecture styles, storey range, wall material, and roof palette. Footprint span restricts each building's domain; the source JSON `type` only multiplies tile weights (soft prior — a CHURCH is likely, not forced, to collapse into a hall); the adjacency contract forbids two identical landmark archetypes (tower/hall/manor) from collapsing next to each other, so landmarks spread across the town.
+- Solver upgrades (`WaveFunctionCollapse.js`): per-node weight priors (`nodeWeights`) and per-node restricted domains (`domains`) so partial source data biases without dictating; entropy and weighted picks are per-node.
+- Downstream order preserved: the wave runs before entrance alignment, so stair planning, storey clamping (`applyStairCoverageToBuilding` now also re-syncs `floors`/rooms to the collapsed storey count), facade wave, and room synthesis all follow the collapsed archetype.
+- Exterior decoration props fully disabled via `ENABLE_EXTERIOR_DECORATIONS = false` (clean gate; planner, road-shoulder kit, and runtime rendering kept for re-enable). Interior furniture pipeline untouched.
+- Acceptance (2026-07-09 run): byte-identical double import, `ActiveWorldData.js` sha256 `131ff41651e9305fbdd3f580a96dd804c2e83284e61ed72e955fc1936d679f25`, contentHash `1012e019`; archetype histogram bayfront 86 / cottage 23 / hall 42 / workshop 90 / townhouse 125 / manor 33 / tower 3 across 9 architecture styles, timber 199 / stone 203, storeys 1:178 / 2:208 / 3:16; 0 same-landmark pairs within 10 cells; 0 multi-story buildings lacking flights; 0 facade adjacency violations; 0 floors/storey mismatches; 0 exterior decorations; 1,364 chunks compiled.
+
+---
+
+# PLAN 7 — Visible WFC Massing & Lot Offsets (2026-07-09, IMPLEMENTED)
+
+- WFC is no longer only semantic/material metadata. After the town-level archetype wave resolves, `applyWaveMassingAndPlacement` turns each building into an archetype-specific footprint: bayfront recesses, workshop L-shapes, stepped rows, manor crosswings, hall courtyards/market courts, compact tower cores, and chamfered cottages.
+- The same pass tries deterministic nonzero lot offsets within a small radius, validated against current building occupancy, terrain, roads, walls, water, and map bounds. This keeps the source town JSON as a read-only skeleton while making the baked runtime town visibly different from the original source placement.
+- Old matrix building-floor skeleton cells are cleared when a WFC building moves or changes shape (`reconcileBuildingSkeletonGround`), preventing ghost floor tiles at the original source footprint.
+- Downstream order remains: WFC archetype + massing + safe lot shift → stale skeleton cleanup → door alignment → stair planning/coverage → facade WFC → room/floor sync → structural matrix export.
+- Acceptance (2026-07-09 run): byte-identical double import, `ActiveWorldData.js` sha256 `c5764109a07fc8db601c73070504f95e03ec02bdc35d3ac431110ffa4ea50dd3`, contentHash `143bd574`; 402/402 buildings non-rectangular, 331/402 shifted from source skeleton positions, 0 stale skeleton floor cells, 0 footprint overlaps, 0 multi-story buildings lacking flights, 0 floors/storey mismatches, 0 missing rooms; 1,364 chunks compiled.
+
+---
+
+# PLAN 8 — Hierarchical Town WFC & Living Auzoryia World (2026-07-11, IMPLEMENTED)
+
+- `WaveFunctionCollapse.js` is now a deterministic exact constraint solver: canonical node/tile ordering, Shannon entropy, bidirectional propagation, keyed weighted choices, and exhaustive backtracking. Invalid domains and unsatisfiable waves throw explicit errors; there is no greedy invalid fallback. Set/Array domains, fixed assignments, disconnected-graph stability, reordered-input stability, odd-cycle failure, and facade constraints are covered by 11 passing tests.
+- `TownWavePlanner.js` converts arbitrary validated town matrices into numeric feature fields (multi-source Manhattan distances to water, roads, plazas, walls, and edges plus compactness, elevation, and graph centrality). A bounded spatial graph feeds two linked waves: six districts (`civic`, `residential`, `harbor`, `market`, `garden`, `artisan`) followed by building archetypes/palettes/activities. Source JSON types are soft priors only.
+- The importer validates matrix shape and legends instead of depending on hand-inspected town files. A hash-ranked mathematical lot sampler fills sparse settlements while respecting buildable terrain, slopes, roads, walls, water, bounds, and occupied footprints. This adds 204 deterministic lots, bringing all 50 towns to at least five buildings and 606 total.
+- Negative-space regions now produce corridor-safe market, crop, staging, yard, garden, and green infill. The runtime renders seeded flowers, varied foliage, larger canopies, roofs that reflect WFC archetypes, habitat-based wildlife, and a broad isometric camera. A replay variant changes palettes and living details while preserving the shared walkable layout and collision map.
+- World identity is `auzoryia`; generation metadata uses `hierarchical-town-wfc-v2` plus a SHA-256 content hash and is carried through maps and multiplayer sync. Runtime default-town selection is a vitality score rather than a hard-coded JSON entry.
+- Acceptance (2026-07-11 run): byte-identical double import, `ActiveWorldData.js` sha256 `f443344a38773de2c6d307ec1e8ef246164598ab963de194a238ec41c9fe39b8`, contentHash `8c5c4d324b25e5b7ddb508ca542bf78f3f786735519ca0aacdb17b4368af189a`; 50 towns / 606 buildings / 204 synthesized buildings / 7,584 exterior decorations / 3,000 facade windows / 0 validation violations; 1,364 magic-voxel chunks compiled; production Vite build passed.
+
+---
+
+# PLAN 9 — Topographic Variant Matrix & Vibrant Vertical World (2026-07-12, IMPLEMENTED)
+
+- Generation is now `hierarchical-town-wfc-v3-topography`. Every town gets a deterministic continuous terrain field combining world-gradient tilt, broad hills/basins, low-frequency value noise, percentile terraces, and coherence cleanup. Building footprints remain plateaus and all adjacent walkable/road cells differ by at most one elevation tier.
+- Each town exports a rectangular base36 `visualVariantRows` matrix. `floor(code / 6)` is the stable topographic/material zone and `code % 6` is the replayable color variant. Replay changes the micro-palette and living detail while preserving tile identity, elevation, walkability, and the topographic zone.
+- The renderer consumes that matrix through the full tile→voxel path. Twenty-three palette families provide 119 deterministic variants across terrain, cliffs, roads, water, masonry, timber, roofs, doors, floors, and jewel windows. Layered rock strata, grass lips, moss, shallow-water gradients, larger faceted foliage, richer roofs/facades, atmospheric motes, and seeded waterfalls increase depth without changing collision.
+- Landmark grammar expanded to fountains, overlooks, waterfalls, windmills, banners, lantern clusters, archways, and clock towers. Placement remains matrix-ranked and corridor-safe; the map panel exposes every landmark type and elevation tier.
+- Multiplayer map handoff now uses `palette-height-v1`: a deterministic collision palette plus two compact character matrices. Murgena's 80×60 server payload falls from 672,697 bytes to 10,484 bytes, while preserving collision/material semantics and elevation. The server acknowledges acceptance before its authoritative surface can replace the authored town spawn.
+- Acceptance (2026-07-12 run): byte-identical re-import, `ActiveWorldData.js` sha256 `460bed01cb0262534498d2e6978b4ad7c17a6149cc15593718521650b0860641`, contentHash `43421c9007bb7843ccb9fd4401681de589399dd3f7d2d71e0b3a20ea68bec7c5`; 50 towns / 603 buildings / 201 generated buildings / 10,074 decorations / 3,011 facade windows / 389 matrix landmarks; all 36 variant codes exercised; average town elevation depth 4.3; 22,878 walkable ramps and 10,384 road ramps with zero steep walkable edges. Fifteen tests, world validation, production build, and 1,364 magic-voxel chunks pass.

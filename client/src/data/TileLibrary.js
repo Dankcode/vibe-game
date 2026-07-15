@@ -133,13 +133,23 @@ export const TILE_SYMBOL_LIBRARY = {
 
 export const TILE_SYMBOLS = Object.keys(TILE_SYMBOL_LIBRARY);
 
-export function createTileCell({ element = ELEMENTS.VOID, texture = 0, effect = TILE_EFFECTS.NONE, building = BUILDING_PARTS.NONE, height = 0 } = {}) {
+export function createTileCell({
+    element = ELEMENTS.VOID,
+    texture = 0,
+    effect = TILE_EFFECTS.NONE,
+    building = BUILDING_PARTS.NONE,
+    height = 0,
+    visualVariant = 0,
+    paletteId = 'meadow'
+} = {}) {
     return {
         element: clampInteger(element, ELEMENTS.VOID),
         texture: clampInteger(texture, 0),
         effect: clampInteger(effect, TILE_EFFECTS.NONE),
         building: clampInteger(building, BUILDING_PARTS.NONE),
-        height: clampInteger(height, 0)
+        height: clampInteger(height, 0),
+        visualVariant: Math.max(0, Math.min(35, clampInteger(visualVariant, 0))),
+        paletteId: normalizePaletteId(paletteId)
     };
 }
 
@@ -157,12 +167,15 @@ export function createVoxelBlock({
     buildingPartTag,
     buildingAnchorZ,
     buildingPlacementZ,
-    buildingPlacementTag
+    buildingPlacementTag,
+    visualVariant = 0,
+    paletteId = 'meadow'
 } = {}) {
     const textureValue = clampInteger(texture, 0);
     const blockElement = clampInteger(element, ELEMENTS.VOID);
     const buildingPart = clampInteger(building, BUILDING_PARTS.NONE);
-    const definition = getTileDefinition(blockElement, textureValue);
+    const normalizedPaletteId = normalizePaletteId(paletteId);
+    const definition = getTileDefinition(blockElement, textureValue, normalizedPaletteId);
     const walkable = isBlockWalkable(blockElement, textureValue, buildingPart);
     const block = {
         z: clampInteger(z, 0),
@@ -171,6 +184,8 @@ export function createVoxelBlock({
         textureValue,
         effect: clampInteger(effect, TILE_EFFECTS.NONE),
         building: buildingPart,
+        visualVariant: Math.max(0, Math.min(35, clampInteger(visualVariant, 0))),
+        paletteId: normalizedPaletteId,
         walkable,
         definition: {
             ...definition,
@@ -206,7 +221,9 @@ export function normalizeTileCell(rawCell) {
             texture: rawCell[1],
             effect: rawCell[2],
             building: rawCell[3],
-            height: rawCell[4]
+            height: rawCell[4],
+            visualVariant: rawCell[5],
+            paletteId: rawCell[6]
         });
     }
     if (rawCell && typeof rawCell === 'object') {
@@ -215,7 +232,9 @@ export function normalizeTileCell(rawCell) {
         const effect = rawCell.effect ?? rawCell.fx;
         const building = rawCell.building ?? rawCell.b;
         const height = rawCell.height ?? rawCell.maxZ ?? rawCell.h;
-        const cell = createTileCell({ element, texture, effect, building, height });
+        const visualVariant = rawCell.visualVariant ?? rawCell.variantCode ?? rawCell.v;
+        const paletteId = rawCell.paletteId ?? rawCell.palette ?? rawCell.p;
+        const cell = createTileCell({ element, texture, effect, building, height, visualVariant, paletteId });
         if (Array.isArray(rawCell.structuralFloorLevels)) {
             cell.structuralFloorLevels = normalizeStructuralLevels(rawCell.structuralFloorLevels);
         }
@@ -253,13 +272,15 @@ export function normalizeTileCell(rawCell) {
 
 export function tileCellToBlockInfo(rawCell) {
     const cell = normalizeTileCell(rawCell);
-    const definition = getTileDefinition(cell.element, cell.texture);
+    const definition = getTileDefinition(cell.element, cell.texture, cell.paletteId);
     const walkable = isBlockWalkable(cell.element, cell.texture, cell.building);
     return {
         element: cell.element,
         textureValue: cell.texture,
         effect: cell.effect,
         building: cell.building,
+        visualVariant: cell.visualVariant,
+        paletteId: cell.paletteId,
         maxZ: cell.height,
         walkable,
         definition: { ...definition, walkable }
@@ -271,6 +292,8 @@ export function tileCellToVoxelColumn(rawCell) {
     const maxZ = Math.max(0, cell.height);
     const column = [];
     const pushBlock = (block) => mergeVoxelBlock(column, createVoxelBlock({
+        visualVariant: cell.visualVariant,
+        paletteId: cell.paletteId,
         ...block,
         ...createVoxelBuildingReference(cell, block)
     }));
@@ -373,13 +396,13 @@ export function tileCellToVoxelColumn(rawCell) {
                 });
                 continue;
             }
-            pushBlock({
-                z,
-                element: ELEMENTS.STRUCTURE,
-                texture: isCityWallStair ? TEXTURE_IDS.TOWN_WALL : cell.texture,
-                effect: TILE_EFFECTS.STRUCTURE,
-                building: BUILDING_PARTS.WALL,
-                partTag: isCityWallStair ? undefined : BUILDING_PART_TAGS.STAIR_SUPPORT,
+                pushBlock({
+                    z,
+                    element: ELEMENTS.STRUCTURE,
+                    texture: isCityWallStair ? TEXTURE_IDS.TOWN_WALL : TEXTURE_IDS.DEFAULT,
+                    effect: TILE_EFFECTS.STRUCTURE,
+                    building: BUILDING_PARTS.WALL,
+                    partTag: isCityWallStair ? undefined : BUILDING_PART_TAGS.STAIR_SUPPORT,
                 anchorZ: stairBaseElevation,
                 placementZ: stairBaseElevation,
                 placementTag: BUILDING_PLACEMENT_TAGS.NONE,
@@ -460,7 +483,7 @@ export function createVoxelMatrix(rows, legend = {}) {
     const normalizedRows = normalizeTileRowsWithLegend(rows, legend);
     const height = normalizedRows.length;
     const width = normalizedRows[0]?.length || 0;
-    return {
+    const matrix = {
         encoding: 'voxel-matrix-v1',
         width,
         height,
@@ -468,6 +491,18 @@ export function createVoxelMatrix(rows, legend = {}) {
         offsetY: Math.floor(height / 2),
         columns: normalizedRows.map((row) => row.map((cell) => tileCellToVoxelColumn(cell)))
     };
+    for (const key of ['seed', 'variant', 'townName', 'townCenter', 'spawn', 'generator', 'generationVersion', 'contentHash', 'theme', 'generation']) {
+        if (rows?.[key] !== undefined) matrix[key] = rows[key];
+    }
+    if (Array.isArray(rows?.visualVariantRows)) {
+        matrix.visualVariantRows = rows.visualVariantRows.slice();
+    }
+    if (Array.isArray(rows?.paletteRows)) {
+        matrix.paletteRows = rows.paletteRows.map((row) => row.slice());
+    }
+    if (rows?.sourceTown) matrix.sourceTown = { ...rows.sourceTown };
+    if (rows?.world) matrix.world = { ...rows.world };
+    return matrix;
 }
 
 export function getVoxelColumn(matrix, gridX, gridY) {
@@ -874,6 +909,13 @@ export function isBlockWalkable(element, texture, buildingPart = BUILDING_PARTS.
     if (isWindowWallPart(buildingPart) || buildingPart === BUILDING_PARTS.WALL) return false;
     if (buildingPart === BUILDING_PARTS.GROUND_FLOOR) return true;
     return Boolean(getTileDefinition(element, texture).walkable);
+}
+
+function normalizePaletteId(value) {
+    const normalized = String(value || 'meadow')
+        .toLowerCase()
+        .replace(/[^a-z0-9-]+/g, '-');
+    return normalized || 'meadow';
 }
 
 function clampInteger(value, fallback) {

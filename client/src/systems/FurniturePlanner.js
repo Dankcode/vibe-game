@@ -44,7 +44,8 @@ export function planBuildingFurniture(building, seedHash = hashFurnitureSeed) {
     for (let level = 0; level < stories; level++) {
         const rooms = roomsForLevel(building, level, footprint);
         const levelBlocked = createBlockedSet(building, level);
-        const reserved = new Set(levelBlocked);
+        const structuralBlocked = createStructuralBlockedSet(building, level);
+        const reserved = new Set([...levelBlocked, ...structuralBlocked]);
 
         rooms.forEach((room, roomIndex) => {
             const roomCells = normalizeRoomCells(room, footprint);
@@ -73,7 +74,8 @@ export function planBuildingFurniture(building, seedHash = hashFurnitureSeed) {
 
                 const nextPlaced = new Set(roomPlaced);
                 nextPlaced.add(cellKey(candidate));
-                if (!validateRoomWalkability(nextPlaced, roomCells, doorCell)) continue;
+                const occupancy = new Set([...structuralBlocked, ...nextPlaced]);
+                if (!validateRoomWalkability(occupancy, roomCells, doorCell)) continue;
 
                 const key = cellKey(candidate);
                 reserved.add(key);
@@ -140,7 +142,7 @@ export function validateRoomWalkability(placedCellsSet, roomCells, doorCell) {
     const roomSet = new Set(room.map(cellKey));
     const blocked = normalizeKeySet(placedCellsSet);
     const free = room.filter((cell) => !blocked.has(cellKey(cell)));
-    if (!free.length) return true;
+    if (!free.length) return false;
 
     const normalizedDoor = normalizePoint(doorCell);
     const start = normalizedDoor && roomSet.has(cellKey(normalizedDoor)) && !blocked.has(cellKey(normalizedDoor))
@@ -160,7 +162,30 @@ export function validateRoomWalkability(placedCellsSet, roomCells, doorCell) {
         }
     }
 
-    return free.every((cell) => seen.has(cellKey(cell)));
+    return free.every((cell) => seen.has(cellKey(cell))) && hasMinimumFreeRectangle(free, 2, 3);
+}
+
+export function hasMinimumFreeRectangle(cells, minimumWidth = 2, minimumHeight = 3) {
+    const open = new Set(normalizeCells(cells).map(cellKey));
+    const orientations = minimumWidth === minimumHeight
+        ? [[minimumWidth, minimumHeight]]
+        : [[minimumWidth, minimumHeight], [minimumHeight, minimumWidth]];
+    for (const key of open) {
+        const [left, top] = key.split(',').map(Number);
+        for (const [width, height] of orientations) {
+            let complete = true;
+            for (let y = top; y < top + height && complete; y++) {
+                for (let x = left; x < left + width; x++) {
+                    if (!open.has(`${x},${y}`)) {
+                        complete = false;
+                        break;
+                    }
+                }
+            }
+            if (complete) return true;
+        }
+    }
+    return false;
 }
 
 export function mulberry32(seed) {
@@ -198,7 +223,10 @@ function normalizeRoomCells(room, footprint) {
     ];
 
     if (cells.length) {
-        return dedupeCells(cells.filter((cell) => footprint.set.has(cellKey(cell))));
+        return dedupeCells(cells.filter((cell) =>
+            footprint.set.has(cellKey(cell)) &&
+            !isFootprintEdgeCell(footprint.set, cell.x, cell.y)
+        ));
     }
 
     const rect = room.gridRect || room.grid_rect || room.rect;
@@ -208,13 +236,15 @@ function normalizeRoomCells(room, footprint) {
         const height = Math.max(1, Math.floor(Number(rect.height || 1)));
         for (let y = Math.floor(Number(rect.y)); y < Math.floor(Number(rect.y)) + height; y++) {
             for (let x = Math.floor(Number(rect.x)); x < Math.floor(Number(rect.x)) + width; x++) {
-                if (footprint.set.has(`${x},${y}`)) rectCells.push({ x, y });
+                if (footprint.set.has(`${x},${y}`) && !isFootprintEdgeCell(footprint.set, x, y)) {
+                    rectCells.push({ x, y });
+                }
             }
         }
         return rectCells;
     }
 
-    return footprint.cells;
+    return footprint.cells.filter((cell) => !isFootprintEdgeCell(footprint.set, cell.x, cell.y));
 }
 
 function getRoomDoorCell(room, building, roomCells, footprint) {
@@ -248,7 +278,7 @@ function createBlockedSet(building, level) {
         }
     }
 
-    for (const stair of building.stairCells || []) {
+    for (const stair of collectStairCells(building)) {
         const stairLevel = Number.isFinite(Number(stair.level)) ? Math.floor(Number(stair.level)) : 0;
         if (stairLevel === level || stairLevel === level - 1 || stairLevel === level + 1) {
             const point = normalizePoint(stair);
@@ -257,6 +287,40 @@ function createBlockedSet(building, level) {
     }
 
     return blocked;
+}
+
+function createStructuralBlockedSet(building, level) {
+    const blocked = new Set();
+    for (const stair of collectStairCells(building)) {
+        const stairLevel = Number.isFinite(Number(stair.level)) ? Math.floor(Number(stair.level)) : 0;
+        if (stairLevel !== level && stairLevel !== level - 1 && stairLevel !== level + 1) continue;
+        const point = normalizePoint(stair);
+        if (point) blocked.add(cellKey(point));
+    }
+    return blocked;
+}
+
+function collectStairCells(building) {
+    const cells = [];
+    for (const cell of building?.stairCells || []) cells.push(cell);
+    for (const stair of building?.stairs || []) {
+        // Keep legacy one-cell stair markers blocked while also reserving every sector in modern
+        // structural flights. `stairCells: []` must not mask a populated legacy `stairs` array.
+        cells.push(stair);
+        if (Array.isArray(stair?.cells)) {
+            for (const cell of stair.cells) {
+                cells.push({ ...cell, level: cell?.level ?? stair?.level ?? 0 });
+            }
+        }
+    }
+    const deduped = new Map();
+    for (const cell of cells) {
+        const point = normalizePoint(cell);
+        if (!point) continue;
+        const level = Number.isFinite(Number(cell?.level)) ? Math.floor(Number(cell.level)) : 0;
+        deduped.set(`${point.x},${point.y},${level}`, { ...cell, ...point, level });
+    }
+    return [...deduped.values()];
 }
 
 function getBuildingFootprint(building) {
@@ -283,7 +347,18 @@ function getStoryCount(building) {
 }
 
 function getAdjacentWall(cell, footprintSet) {
-    return CARDINALS.find((direction) => !footprintSet.has(`${cell.x + direction.x},${cell.y + direction.y}`)) || null;
+    return CARDINALS.find((direction) => {
+        const x = cell.x + direction.x;
+        const y = cell.y + direction.y;
+        return !footprintSet.has(`${x},${y}`) || isFootprintEdgeCell(footprintSet, x, y);
+    }) || null;
+}
+
+function isFootprintEdgeCell(footprintSet, x, y) {
+    return !footprintSet.has(`${x},${y - 1}`) ||
+        !footprintSet.has(`${x + 1},${y}`) ||
+        !footprintSet.has(`${x},${y + 1}`) ||
+        !footprintSet.has(`${x - 1},${y}`);
 }
 
 function getDoorEdge(building, door) {

@@ -26,6 +26,7 @@ export class InputManager {
         this.onClickCallbacks = [];
 
         this.mouseNDC = { x: 0, y: 0 };
+        this.pointerVersion = 0;
         this.handleMouseDown = (e) => {
             this.updateMousePosition(e);
             this.onClickCallbacks.forEach(cb => cb(e.button, e));
@@ -51,6 +52,11 @@ export class InputManager {
         const height = rect.height || window.innerHeight;
         this.mouseNDC.x = ((e.clientX - rect.left) / width) * 2 - 1;
         this.mouseNDC.y = -((e.clientY - rect.top) / height) * 2 + 1;
+        this.pointerVersion += 1;
+    }
+
+    getPointerVersion() {
+        return this.pointerVersion;
     }
 
     isKeyDown(code) {

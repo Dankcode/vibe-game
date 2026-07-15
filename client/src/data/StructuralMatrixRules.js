@@ -183,17 +183,15 @@ export function getBuildingLevelReferenceForZ(levels = [], z = 0, fallbackGround
 }
 
 const BASE_SOLID_TRIANGULAR_SECTORS = Object.freeze([
-    { x: 0, y: 0, sector: 'top-left', role: 'air', voxel: 0, heightTier: 0 },
-    { x: 1, y: 0, sector: 'top-right', role: 'upper-stair', voxel: 'upper-tier-half-stair', heightTier: 2 },
-    { x: 0, y: 1, sector: 'bottom-left', role: 'lower-stair', voxel: 'lower-tier-half-stair', heightTier: 1 },
-    { x: 1, y: 1, sector: 'bottom-right', role: 'support', voxel: 'solid-wall-support', heightTier: 2 }
+    { x: 0, y: 0, sector: 'bottom-start', role: 'lower-stair', voxel: 'lower-tier-half-stair', heightTier: 0 },
+    { x: 0, y: 1, sector: 'upper-supported', role: 'upper-stair', voxel: 'upper-tier-half-stair', heightTier: STAIR_FLOOR_HEIGHT },
+    { x: 1, y: 1, sector: 'upper-pass-through', role: 'air', voxel: 0, heightTier: 0 }
 ]);
 
 const BASE_FLOATING_SLOPE_SECTORS = Object.freeze([
-    { x: 0, y: 0, sector: 'top-left', role: 'air', voxel: 0, heightTier: 0 },
-    { x: 1, y: 0, sector: 'top-right', role: 'upper-stair', voxel: 'upper-tier-half-stair', heightTier: 2 },
-    { x: 0, y: 1, sector: 'bottom-left', role: 'lower-stair', voxel: 'lower-tier-half-stair', heightTier: 1 },
-    { x: 1, y: 1, sector: 'bottom-right', role: 'pass-through-air', voxel: 0, heightTier: 0 }
+    { x: 0, y: 0, sector: 'bottom-start', role: 'lower-stair', voxel: 'lower-tier-half-stair', heightTier: 0 },
+    { x: 0, y: 1, sector: 'upper-supported', role: 'upper-stair', voxel: 'upper-tier-half-stair', heightTier: STAIR_FLOOR_HEIGHT },
+    { x: 1, y: 1, sector: 'upper-pass-through', role: 'pass-through-air', voxel: 0, heightTier: 0 }
 ]);
 
 export function getBuildingFootprintCells(building) {
@@ -327,11 +325,11 @@ export function createStaircaseModule({
     });
 }
 
-// One stair set = one 2x2 module per storey climb (contract, context.md PLAN 2 §G):
-//   bottom-left  = lower half-stair, tier 1 (above the ground-floor slab; player enters here)
-//   top-right    = upper half-stair, tier 2 (the continuation)
-//   bottom-right = solid support block (absent in the floating configuration)
-//   top-left     = air shaft the player passes through between floor levels
+// One stair set = one 2x2 module per storey climb:
+//   0,0,0 = lower stair surface on the building ground-floor plane
+//   0,1,1 = upper stair surface at the destination floor
+//   0,1,0 = implicit support wall below the upper stair surface
+//   1,1,1 = open shaft that lets the player pass through the next floor slab
 // All stair cells are composed strictly from createStaircaseModule; multi-voxel climbs chain
 // modules along the climb direction, each offset +2 tiers. Validation is all-or-nothing.
 export function createStairFlight({
@@ -347,7 +345,7 @@ export function createStairFlight({
     const rotation = directionToRotation(direction);
     const tangent = directionToTangent(direction);
     const moduleCount = Math.max(1, Math.ceil(Math.max(1, Math.floor(climbVoxels)) / STAIR_FLOOR_HEIGHT));
-    const lowerLocal = rotateSector(0, 1, rotation);
+    const lowerLocal = rotateSector(0, 0, rotation);
 
     const cells = [];
     for (let moduleIndex = 0; moduleIndex < moduleCount; moduleIndex++) {
@@ -395,7 +393,7 @@ export function assertStairFlightInvariants(cells = [], options = {}) {
     const issues = [];
     const coordinates = new Set();
     const walkHeights = new Set();
-    const expectedCellsPerModule = configuration === STAIR_CONFIGURATION.FLOATING_SLOPE ? 4 : 4;
+    const expectedCellsPerModule = configuration === STAIR_CONFIGURATION.FLOATING_SLOPE ? 3 : 3;
     if (cells.length !== moduleCount * expectedCellsPerModule) {
         issues.push(`flight needs ${moduleCount * expectedCellsPerModule} cells, received ${cells.length}`);
     }
@@ -423,13 +421,13 @@ export function assertStairFlightInvariants(cells = [], options = {}) {
         if (lower.length !== 1) issues.push(`module ${moduleIndex} needs exactly one lower half-stair`);
         if (upper.length !== 1) issues.push(`module ${moduleIndex} needs exactly one upper half-stair`);
         if (air.length !== 1) issues.push(`module ${moduleIndex} needs exactly one air shaft cell`);
-        if (configuration === STAIR_CONFIGURATION.SOLID_TRIANGULAR && support.length !== 1) {
-            issues.push(`module ${moduleIndex} needs exactly one solid support cell`);
+        if (support.length > 0) {
+            issues.push(`module ${moduleIndex} must use implicit support below the upper stair`);
         }
         if (configuration === STAIR_CONFIGURATION.FLOATING_SLOPE && support.length !== 0) {
             issues.push(`module ${moduleIndex} must not emit support cells in floating configuration`);
         }
-        const expectedLower = moduleIndex * STAIR_FLOOR_HEIGHT + 1;
+        const expectedLower = moduleIndex * STAIR_FLOOR_HEIGHT;
         const expectedUpper = moduleIndex * STAIR_FLOOR_HEIGHT + STAIR_FLOOR_HEIGHT;
         if (lower[0] && lower[0].height !== expectedLower) {
             issues.push(`module ${moduleIndex} lower half-stair must be tier ${expectedLower}`);
@@ -515,8 +513,8 @@ export function validateStaircaseRouting(stairs = [], options = {}) {
             issues.push(`stair level ${level} terminates at z${terminalZ}, expected z${expectedTerminalZ}`);
         }
 
-        // The module's top-left air shaft must stay open through the destination floor slab so the
-        // player can pass between floor levels; carve the shaft column from origin to destination.
+        // The destination pass-through shaft must stay open through the floor slab so the player
+        // can pass between floor levels; carve the shaft column from origin to destination.
         for (const cell of (stair?.cells || [])) {
             if (cell.role !== 'air') continue;
             addShaftCutouts(headroomCutouts, cell.x, cell.y, originZ, destinationZ + headroom);
@@ -591,8 +589,8 @@ export function createVoxelCollisionBox(block = {}) {
     const texture = Math.max(0, Math.floor(block.textureValue ?? block.texture ?? 0));
     const z = Math.max(0, Math.floor(block.z ?? 0));
     const isStair = STAIR_PARTS.has(building);
-    const stairLowerTier = CITY_WALL_STAIR_PARTS.has(building) ? 0 : 1;
-    const stairUpperTier = CITY_WALL_STAIR_PARTS.has(building) ? 1 : STAIR_FLOOR_HEIGHT;
+    const stairLowerTier = 0;
+    const stairUpperTier = 1;
     const isClosedShell = isClosedShellBuildingPart(building);
     const walkable = Boolean(block.walkable);
     return {

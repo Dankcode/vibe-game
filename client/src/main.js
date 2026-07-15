@@ -1,6 +1,6 @@
 import { Game } from './Game.js';
 
 window.addEventListener('DOMContentLoaded', () => {
-    const game = new Game();
+    new Game();
     console.log('[Main] Game initialized with Three.js');
 });

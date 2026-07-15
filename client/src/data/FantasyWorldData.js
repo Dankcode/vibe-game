@@ -1,153 +1,58 @@
-import { ACTIVE_TOWNS, ACTIVE_WORLD } from './ActiveWorldData.js';
+import { ACTIVE_WORLD } from './ActiveWorldData.js';
+import {
+    createGeographicWorldPlan,
+    GEOGRAPHIC_WORLD_VIEW_HEIGHT,
+    GEOGRAPHIC_WORLD_VIEW_WIDTH,
+    sampleGeographicField
+} from './GeographicWFCGenerator.js';
 
-export const WORLD_VIEW_WIDTH = 80;
-export const WORLD_VIEW_HEIGHT = 60;
-
+export const WORLD_VIEW_WIDTH = GEOGRAPHIC_WORLD_VIEW_WIDTH;
+export const WORLD_VIEW_HEIGHT = GEOGRAPHIC_WORLD_VIEW_HEIGHT;
 export const FANTASY_WORLD = ACTIVE_WORLD;
 
 export function getWorldMapLocations() {
-    return FANTASY_WORLD.locations.map((location) => cloneLocation(location));
+    return (FANTASY_WORLD.locations || []).map(cloneLocation);
 }
 
 export function getDefaultWorldLocation() {
-    const locations = getWorldMapLocations().filter((location) => ACTIVE_TOWNS[location.id]);
-    return locations.find((location) => location.type === 'capital') || locations[0];
+    const locations = getWorldMapLocations();
+    if (!locations.length) {
+        return { id: 'world-center', name: FANTASY_WORLD.name, x: FANTASY_WORLD.width / 2, y: FANTASY_WORLD.height / 2 };
+    }
+    return locations
+        .map((location) => ({ location, score: scoreDefaultLocation(location) }))
+        .sort((a, b) => b.score - a.score || a.location.id.localeCompare(b.location.id))[0].location;
 }
 
 export function createFantasyWorldPlanAt(worldX, worldY, options = {}) {
-    const location = findBestLocation(worldX, worldY);
-    const town = ACTIVE_TOWNS[location.id];
-    if (!town) throw new Error(`Missing active world town payload for ${location.id}.`);
-
-    const rows = town.rows.slice();
-    const elevationRows = cloneElevationRows(town.elevationRows);
-    const width = rows[0]?.length || town.width || WORLD_VIEW_WIDTH;
-    const height = rows.length || town.height || WORLD_VIEW_HEIGHT;
-
-    return {
-        rows,
-        elevationRows,
-        buildings: cloneBuildings(town.buildings),
-        decorations: cloneDecorations(town.decorations),
-        connectDoors: false,
-        width,
-        height,
-        center: {
-            x: Math.floor(width / 2),
-            y: Math.floor(height / 2)
-        },
-        townName: location.name,
-        seed: town.seed ?? FANTASY_WORLD.seed,
-        sourceTown: {
-            id: town.id,
-            name: town.name,
-            biome: town.biome,
-            density: town.density,
-            stats: { ...town.stats },
-            terrainScale: town.terrainScale || FANTASY_WORLD.importScale || 1,
-            buildingScale: town.buildingScale || FANTASY_WORLD.buildingScale || 1,
-            requestedWorldX: worldX,
-            requestedWorldY: worldY
-        },
-        world: {
-            id: FANTASY_WORLD.id,
-            name: FANTASY_WORLD.name,
-            seed: FANTASY_WORLD.seed,
-            centerX: location.x,
-            centerY: location.y,
-            originX: location.grid?.origin?.[0] ?? location.x - width / 2,
-            originY: location.grid?.origin?.[1] ?? location.y - height / 2,
-            locations: [location.id],
-            source: FANTASY_WORLD.source,
-            image: FANTASY_WORLD.image
-        }
-    };
+    return createGeographicWorldPlan({
+        worldX,
+        worldY,
+        width: options.width || WORLD_VIEW_WIDTH,
+        height: options.height || WORLD_VIEW_HEIGHT,
+        variant: options.variant || 0
+    });
 }
 
-function findBestLocation(worldX, worldY) {
-    const x = Number(worldX);
-    const y = Number(worldY);
-    const locations = FANTASY_WORLD.locations;
-    if (!locations.length) throw new Error('Active world has no borough locations.');
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return locations[0];
-
-    return locations.reduce((best, location) => {
-        const distance = Math.hypot(location.x - x, location.y - y);
-        return distance < best.distance ? { location, distance } : best;
-    }, { location: locations[0], distance: Infinity }).location;
+function scoreDefaultLocation(location) {
+    const field = sampleGeographicField(location.x, location.y);
+    const edgeDistance = Math.min(
+        location.x,
+        location.y,
+        FANTASY_WORLD.width - location.x,
+        FANTASY_WORLD.height - location.y
+    );
+    return (location.flags?.capital ? 40 : 0) +
+        (location.flags?.port ? -10 : 8) +
+        Math.log2(1 + Math.max(0, Number(location.population) || 0)) * 4 +
+        field.land * 34 +
+        Math.min(18, Math.max(0, field.height - 20) * 0.42) +
+        Math.min(16, edgeDistance * 0.18);
 }
 
 function cloneLocation(location) {
     return {
         ...location,
-        flags: { ...(location.flags || {}) },
-        grid: location.grid ? {
-            ...location.grid,
-            origin: [...(location.grid.origin || [])],
-            center: [...(location.grid.center || [])]
-        } : undefined,
-        summary: { ...(location.summary || {}) }
+        flags: { ...(location.flags || {}) }
     };
-}
-
-function cloneDecorations(decorations = []) {
-    return decorations.map((decoration) => ({
-        ...decoration,
-        position: decoration.position ? { ...decoration.position } : undefined
-    }));
-}
-
-function cloneBuildings(buildings = []) {
-    return buildings.map((building) => ({
-        ...building,
-        door: building.door ? { ...building.door } : undefined,
-        stairs: (building.stairs || []).map((stair) => ({ ...stair })),
-        stairCells: (building.stairCells || []).map((cell) => ({ ...cell })),
-        footprintCells: (building.footprintCells || []).map((cell) => ({ ...cell })),
-        matrix: building.matrix ? cloneBuildingMatrix(building.matrix) : null,
-        interior: building.interior ? { ...building.interior } : undefined,
-        floors: (building.floors || []).map((floor) => ({
-            ...floor,
-            rooms: (floor.rooms || []).map((room) => ({
-                ...room,
-                gridRect: room.gridRect ? { ...room.gridRect } : null,
-                tiles: (room.tiles || []).map((tile) => Array.isArray(tile) ? [...tile] : tile),
-                doors: (room.doors || []).map((door) => ({
-                    ...door,
-                    grid: Array.isArray(door.grid) ? [...door.grid] : null
-                }))
-            })),
-            stairs: floor.stairs ? {
-                ...floor.stairs,
-                grid: Array.isArray(floor.stairs.grid) ? [...floor.stairs.grid] : null
-            } : null
-        })),
-        sourceColors: building.sourceColors ? { ...building.sourceColors } : undefined
-    }));
-}
-
-function cloneBuildingMatrix(matrix) {
-    return {
-        ...matrix,
-        vertical: matrix.vertical ? {
-            ...matrix.vertical,
-            levelTags: (matrix.vertical.levelTags || []).map((level) => ({ ...level })),
-            roof: matrix.vertical.roof ? { ...matrix.vertical.roof } : null
-        } : null,
-        levels: (matrix.levels || []).map((level) => ({ ...level })),
-        cells: (matrix.cells || []).map((cell) => ({
-            ...cell,
-            ground: cell.ground ? { ...cell.ground } : null,
-            floors: (cell.floors || []).map((floor) => ({ ...floor })),
-            roof: cell.roof ? { ...cell.roof } : null,
-            stair: cell.stair ? { ...cell.stair } : null
-        }))
-    };
-}
-
-function cloneElevationRows(rows = []) {
-    return rows.map((row) => {
-        if (typeof row === 'string') return [...row].map((value) => Number(value) || 0);
-        return row.slice();
-    });
 }

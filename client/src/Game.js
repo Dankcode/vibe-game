@@ -6,7 +6,14 @@ import { Pathfinder } from './systems/Pathfinder.js';
 import { WildlifeSystem } from './systems/WildlifeSystem.js';
 import { AdminPanel } from './ui/AdminPanel.js';
 import { CombatScene } from './scenes/CombatScene.js';
-import { createFantasyWorldRowsAt, MAIN_MAP, MAP_CHUNK_SIZE, MAP_LEGEND, WILDLIFE_SPAWNS } from './data/MapData.js';
+import {
+    createFantasyWorldRowsAt,
+    createWildlifeSpawnsForMap,
+    MAIN_MAP,
+    MAP_CHUNK_SIZE,
+    MAP_LEGEND
+} from './data/MapData.js';
+import { encodeNetworkMap } from './data/NetworkMapCodec.js';
 import * as Colyseus from 'colyseus.js';
 
 export class Game {
@@ -15,9 +22,14 @@ export class Game {
         this.inputManager = new InputManager();
         this.inputManager.setPointerTarget(this.threeManager.renderer.domElement);
         
-        this.worldGenerator = new WorldGenerator(this.threeManager, { chunkSize: MAP_CHUNK_SIZE });
+        this.worldGenerator = new WorldGenerator(this.threeManager, {
+            chunkSize: MAP_CHUNK_SIZE,
+            visibleTileRadius: 32
+        });
         this.currentMapRows = MAIN_MAP;
+        this.currentVariant = MAIN_MAP.variant || 0;
         this.currentBuildings = MAIN_MAP.buildings || [];
+        this.threeManager.setWorldTheme?.(MAIN_MAP.theme);
         this.worldGenerator.generateFromChunkedArray(MAIN_MAP, MAP_LEGEND, MAP_CHUNK_SIZE, {
             buildings: this.currentBuildings,
             decorations: MAIN_MAP.decorations || []
@@ -34,23 +46,35 @@ export class Game {
         });
         this.worldGenerator.updateVisibleTilesAround(this.player.gridX, this.player.gridY);
         this.remotePlayers = new Map();
-        this.wildlifeSystem = new WildlifeSystem(this.threeManager, this.worldGenerator, WILDLIFE_SPAWNS);
+        this.wildlifeSystem = new WildlifeSystem(
+            this.threeManager,
+            this.worldGenerator,
+            createWildlifeSpawnsForMap(MAIN_MAP)
+        );
         this.hoveredTile = null;
         this.activePath = [];
         this.collisionDebugEnabled = false;
         this.lastFrameTime = performance.now();
+        this.lastPointerVersion = -1;
+        this.lastWorldUpdateAt = 0;
+        this.lastHudUpdateAt = 0;
+        this.lastPlayerTileKey = '';
+        this.serverMapAccepted = false;
         
         this.connectToServer();
 
         this.inputManager.onLeftClick((button) => {
             if (button !== 0) return; // Left click only
-            if (this.hoveredTile && this.player) {
+            const clickedTile = this.threeManager.getIntersectedTile(this.inputManager.mouseNDC);
+            if (clickedTile && this.player && this.worldGenerator.isWalkable(clickedTile.gridX, clickedTile.gridY)) {
                 const freshPath = this.pathfinder.findPath(
                     this.player.gridX, this.player.gridY, 
-                    this.hoveredTile.gridX, this.hoveredTile.gridY,
+                    clickedTile.gridX, clickedTile.gridY,
                     this.player.gridZ
                 );
                 if (freshPath && freshPath.length > 0) {
+                    this.activePath = freshPath;
+                    this.threeManager.renderPathLine(freshPath, this.worldGenerator);
                     this.player.setPath(freshPath);
                 }
             }
@@ -64,6 +88,11 @@ export class Game {
         this.chunkReadout = document.getElementById('chunk-readout');
         this.wildlifeReadout = document.getElementById('wildlife-readout');
         this.playerCountReadout = document.getElementById('player-count-readout');
+        this.locationReadout = document.getElementById('location-readout');
+        this.biomeReadout = document.getElementById('biome-readout');
+        this.seedReadout = document.getElementById('seed-readout');
+        this.regionSummary = document.getElementById('region-summary');
+        this.rerollButton = document.getElementById('world-reroll-button');
         this.adminPanel = new AdminPanel({
             onTeleport: ({ worldX, worldY, location }) => this.teleportToWorld(worldX, worldY, location),
             onStartCombat: () => this.startCombatScene(),
@@ -75,6 +104,12 @@ export class Game {
             event.preventDefault();
             this.adminPanel.toggle();
         });
+        this.inputManager.onKeyDown('KeyR', (event) => {
+            if (this.shouldIgnoreGlobalShortcut(event)) return;
+            event.preventDefault();
+            this.regenerateWorldVariant();
+        });
+        this.rerollButton?.addEventListener('click', () => this.regenerateWorldVariant());
         this.updateHud('Connecting');
 
         requestAnimationFrame(this.animate);
@@ -98,6 +133,7 @@ export class Game {
 
             this.setupNetworking();
             this.syncCurrentMapToServer('client-default');
+            this.repositionPlayerForCurrentWorld();
             this.combatScene = new CombatScene({
                 client: this.client,
                 userId: this.userId,
@@ -114,8 +150,9 @@ export class Game {
 
         this.room.state.players.onAdd = (player, sessionId) => {
             if (sessionId === this.room.sessionId) {
-                // Sync initial position if needed
-                this.player.applyAuthoritativeCenter(player.centerX, player.centerY, player.centerZ, player.tileX, player.tileY, player.tileZ);
+                // The room begins on a tiny fallback surface. Keep the authored
+                // town entrance until the compact collision matrix is acknowledged.
+                this.repositionPlayerForCurrentWorld();
             } else {
                 this.addRemotePlayer(player, sessionId);
             }
@@ -136,6 +173,13 @@ export class Game {
         });
 
         this.room.onMessage('world:map:updated', (data) => {
+            if (data?.accepted === false) {
+                this.serverMapAccepted = false;
+                this.adminPanel.setMessage('The server rejected the world collision matrix.', 'error');
+                return;
+            }
+            this.serverMapAccepted = true;
+            this.repositionPlayerForCurrentWorld();
             this.adminPanel.setMessage(`World ${data.source} map active: ${data.width} x ${data.height}.`, 'success');
         });
 
@@ -186,6 +230,8 @@ export class Game {
         if (!this.room?.state?.players) return;
         this.room.state.players.forEach((playerState, sessionId) => {
             if (sessionId === this.room.sessionId) {
+                if (!this.serverMapAccepted) return;
+                if (performance.now() < (this.authoritativeGraceUntil || 0)) return;
                 if (Math.abs(playerState.centerX - this.player.gridX) > 0.8 || Math.abs(playerState.centerY - this.player.gridY) > 0.8) {
                     this.player.applyAuthoritativeCenter(playerState.centerX, playerState.centerY, playerState.centerZ, playerState.tileX, playerState.tileY, playerState.tileZ);
                 }
@@ -208,13 +254,19 @@ export class Game {
         this.threeManager.renderPathLine([], this.worldGenerator);
         this.wildlifeSystem.destroy();
         this.currentMapRows = rows;
+        this.currentVariant = rows.variant || 0;
         this.currentBuildings = source === 'custom' ? [] : (rows.buildings || []);
         this.worldGenerator.generateFromChunkedArray(rows, MAP_LEGEND, MAP_CHUNK_SIZE, {
             buildings: this.currentBuildings,
             decorations: rows.decorations || []
         });
+        this.threeManager.setWorldTheme?.(rows.theme);
         this.repositionPlayerForCurrentWorld();
-        this.wildlifeSystem = new WildlifeSystem(this.threeManager, this.worldGenerator, WILDLIFE_SPAWNS);
+        this.wildlifeSystem = new WildlifeSystem(
+            this.threeManager,
+            this.worldGenerator,
+            createWildlifeSpawnsForMap(rows)
+        );
 
         this.scheduleCurrentMapToServer(source);
 
@@ -223,10 +275,19 @@ export class Game {
     }
 
     teleportToWorld(worldX, worldY, location = null) {
-        const rows = createFantasyWorldRowsAt(worldX, worldY);
+        const rows = createFantasyWorldRowsAt(worldX, worldY, { variant: this.currentVariant });
         this.applyWorldMap(rows, 'world-teleport');
         const label = location?.name || `${Math.round(worldX)}, ${Math.round(worldY)}`;
         this.adminPanel?.setMessage(`Arrived at ${label}.`, 'success');
+    }
+
+    regenerateWorldVariant() {
+        const nextVariant = (this.currentVariant + 1) % 1000000;
+        const worldX = this.currentMapRows.world?.centerX ?? 0;
+        const worldY = this.currentMapRows.world?.centerY ?? 0;
+        const rows = createFantasyWorldRowsAt(worldX, worldY, { variant: nextVariant });
+        this.applyWorldMap(rows, 'world-variant');
+        this.adminPanel?.setMessage(`World variation ${nextVariant + 1} generated from the same FMG geography.`, 'success');
     }
 
     repositionPlayerForCurrentWorld() {
@@ -245,6 +306,7 @@ export class Game {
         this.player.visualY = this.player.gridY;
         this.player.visualZ = this.player.gridZ;
         this.player.currentPath = [];
+        this.authoritativeGraceUntil = performance.now() + 8000;
         this.player.setCollisionDebugVisible(this.collisionDebugEnabled);
         this.player.syncModel();
         this.worldGenerator.updateVisibleTilesAround(this.player.gridX, this.player.gridY);
@@ -254,6 +316,7 @@ export class Game {
         if (!this.room || !this.currentMapRows?.length) return;
         const mapKey = this.getCurrentMapSyncKey();
         if (mapKey && this.lastSyncedMapKey === mapKey) return;
+        const encodedMap = encodeNetworkMap(this.currentMapRows);
         this.room.send('world:admin:map_updated', {
             source,
             width: this.currentMapRows[0].length,
@@ -261,7 +324,10 @@ export class Game {
             chunkSize: MAP_CHUNK_SIZE,
             spawn: this.currentMapRows.spawn,
             world: this.currentMapRows.world,
-            rows: this.currentMapRows
+            generationVersion: this.currentMapRows.generationVersion,
+            contentHash: this.currentMapRows.contentHash,
+            variant: this.currentMapRows.variant || 0,
+            ...(encodedMap || { rows: this.currentMapRows })
         });
         if (mapKey) this.lastSyncedMapKey = mapKey;
     }
@@ -285,7 +351,14 @@ export class Game {
         if (!this.currentMapRows?.length) return null;
         const townId = this.currentMapRows.sourceTown?.id || this.currentMapRows.townName || 'local';
         const worldId = this.currentMapRows.world?.id || 'world';
-        return `${worldId}:${townId}:${this.currentMapRows[0]?.length || 0}x${this.currentMapRows.length}`;
+        return [
+            worldId,
+            townId,
+            `${this.currentMapRows[0]?.length || 0}x${this.currentMapRows.length}`,
+            this.currentMapRows.generationVersion || 'v1',
+            this.currentMapRows.contentHash || 'unhashed',
+            this.currentMapRows.variant || 0
+        ].join(':');
     }
 
     setCollisionDebugVisible(isEnabled) {
@@ -336,32 +409,22 @@ export class Game {
             this.threeManager.handleZoom(wheelDelta);
         }
 
-        // Handle Hover & Pathfinding
-        const tile = this.threeManager.getIntersectedTile(this.inputManager.mouseNDC);
-        if (tile !== this.hoveredTile) {
-            if (this.hoveredTile) this.hoveredTile.clearHighlight();
-            this.hoveredTile = tile;
-            
-            if (this.hoveredTile) {
-                const canStandHere = this.worldGenerator.isWalkable(this.hoveredTile.gridX, this.hoveredTile.gridY);
-                this.hoveredTile.highlight(canStandHere ? 0x2f8f4e : 0x8f2630);
-                // Calculate Path from Player to Hovered Tile
-                if (this.player && canStandHere) {
-                   this.activePath = this.pathfinder.findPath(
-                       this.player.gridX,
-                       this.player.gridY,
-                       this.hoveredTile.gridX,
-                       this.hoveredTile.gridY,
-                       this.player.gridZ
-                   );
-                   this.threeManager.renderPathLine(this.activePath, this.worldGenerator);
-                } else {
-                   this.activePath = [];
-                   this.threeManager.renderPathLine([], this.worldGenerator);
-                }
+        // Raycasting a voxel world is expensive. Only inspect the scene after
+        // the pointer actually moves; calculate a full path only on click.
+        const pointerVersion = this.inputManager.getPointerVersion();
+        if (pointerVersion !== this.lastPointerVersion) {
+            this.lastPointerVersion = pointerVersion;
+            const tile = this.threeManager.getIntersectedTile(this.inputManager.mouseNDC);
+            if (tile === this.hoveredTile) {
+                // Nothing visual changed.
             } else {
-                this.activePath = null;
-                this.threeManager.renderPathLine([], this.worldGenerator);
+                if (this.hoveredTile) this.hoveredTile.clearHighlight();
+                this.hoveredTile = tile;
+
+                if (this.hoveredTile) {
+                    const canStandHere = this.worldGenerator.isWalkable(this.hoveredTile.gridX, this.hoveredTile.gridY);
+                    this.hoveredTile.highlight(canStandHere ? 0x2f8f4e : 0x8f2630);
+                }
             }
         }
 
@@ -377,13 +440,23 @@ export class Game {
             // Make camera follow player before updating visibility.
             const targetPos = this.player.group.position;
             this.threeManager.updateCamera(targetPos);
-            this.worldGenerator.updateBuildingVisibility(this.player.gridX, this.player.gridY);
             this.worldGenerator.updateDoorAnimations(deltaSeconds);
-            this.worldGenerator.updateVisibleTilesAround(this.player.gridX, this.player.gridY);
-            this.worldGenerator.updateObstructionHiding(this.player.gridX, this.player.gridY, this.player.gridZ);
+            const playerTileKey = `${Math.round(this.player.gridX)},${Math.round(this.player.gridY)},${this.player.gridZ}`;
+            const playerChangedTile = playerTileKey !== this.lastPlayerTileKey;
+            if (playerChangedTile || now - this.lastWorldUpdateAt >= 160) {
+                this.lastPlayerTileKey = playerTileKey;
+                this.lastWorldUpdateAt = now;
+                this.worldGenerator.updateLivingWorld(now / 1000, this.player.gridX, this.player.gridY);
+                this.worldGenerator.updateBuildingVisibility(this.player.gridX, this.player.gridY);
+                this.worldGenerator.updateVisibleTilesAround(this.player.gridX, this.player.gridY);
+                this.worldGenerator.updateObstructionHiding(this.player.gridX, this.player.gridY, this.player.gridZ);
+            }
 
-            this.updateHud();
-            if (this.adminPanel?.panel?.classList.contains('is-open')) this.updateBurgMapPanel();
+            if (now - this.lastHudUpdateAt >= 125) {
+                this.lastHudUpdateAt = now;
+                this.updateHud();
+                if (this.adminPanel?.panel?.classList.contains('is-open')) this.updateBurgMapPanel();
+            }
         }
 
         this.threeManager.render();
@@ -423,6 +496,20 @@ export class Game {
         }
         if (this.playerCountReadout) {
             this.playerCountReadout.textContent = `${this.room?.state?.players?.size || 1}`;
+        }
+        if (this.locationReadout) {
+            this.locationReadout.textContent = this.currentMapRows.townName || this.currentMapRows.sourceTown?.name || 'Unknown';
+        }
+        if (this.biomeReadout) {
+            this.biomeReadout.textContent = this.currentMapRows.theme?.biome || 'Mixed wilds';
+        }
+        if (this.seedReadout) {
+            this.seedReadout.textContent = String(this.currentMapRows.seed ?? 0);
+        }
+        if (this.regionSummary) {
+            const buildings = this.currentMapRows.buildings?.length || 0;
+            const biome = this.currentMapRows.theme?.biome || 'mixed frontier';
+            this.regionSummary.textContent = `${biome} · ${buildings} generated structures · R to reshape this region`;
         }
     }
 

@@ -1,5 +1,10 @@
 import * as THREE from 'three';
-import { ELEMENTS, getTileDefinition } from '../data/TileRegistry.js';
+import {
+    ELEMENTS,
+    getTileDefinition,
+    normalizeWorldPaletteId,
+    normalizeWorldVisualVariant
+} from '../data/TileRegistry.js';
 import { BUILDING_PARTS } from '../data/TileLibrary.js';
 
 export const TILE_HEIGHT = 0.96;
@@ -18,10 +23,18 @@ export class Tile {
         this.attributes = attributes;
         
         // Elemental system: similar to Genshin Impact
-        this.element = attributes.element || ELEMENTS.GEO;
-        this.textureValue = attributes.textureValue || 0; // Variant/Texture offset
-        this.effect = attributes.effect || 0;
-        this.building = attributes.building || 0;
+        this.element = attributes.element ?? ELEMENTS.GEO;
+        this.textureValue = attributes.textureValue ?? 0; // Variant/Texture offset
+        this.effect = attributes.effect ?? 0;
+        this.building = attributes.building ?? 0;
+        this.paletteId = normalizeWorldPaletteId(
+            attributes.paletteId ?? attributes.biomePaletteId ?? attributes.worldPalette ?? null,
+            null
+        );
+        this.visualSeed = Tile.normalizeVisualSeed(
+            attributes.visualSeed ?? attributes.variantSeed ?? attributes.seed ?? 0
+        );
+        this.visualVariant = Tile.normalizeVisualVariant(attributes.visualVariant);
         this.objects = [];
 
         this.render();
@@ -37,7 +50,7 @@ export class Tile {
             this.clearObjects();
             this.mesh.material = Tile.isSpecialBuildingShape(building)
                 ? Tile.getInvisibleMaterial()
-                : Tile.getMaterials(element, textureValue, effect, this.elevation, building);
+                : Tile.getMaterials(element, textureValue, effect, this.elevation, building, this.getVisualContext());
             this.createObjects();
         }
     }
@@ -46,7 +59,14 @@ export class Tile {
         // In 3D: (x, y, z) -> gridX, elevation, gridY
         const material = Tile.isSpecialBuildingShape(this.building)
             ? Tile.getInvisibleMaterial()
-            : Tile.getMaterials(this.element, this.textureValue, this.effect, this.elevation, this.building);
+            : Tile.getMaterials(
+                this.element,
+                this.textureValue,
+                this.effect,
+                this.elevation,
+                this.building,
+                this.getVisualContext()
+            );
 
         this.mesh = new THREE.Mesh(Tile.geometry, material);
         this.mesh.castShadow = !getTileDefinition(this.element, this.textureValue).walkable;
@@ -72,10 +92,29 @@ export class Tile {
         }
     }
 
+    getVisualContext() {
+        return {
+            x: this.gridX,
+            y: this.gridY,
+            elevation: this.elevation,
+            seed: this.visualSeed,
+            paletteId: this.paletteId,
+            visualVariant: this.visualVariant
+        };
+    }
+
     addWindowWallObjects() {
         const direction = Tile.getBuildingPartDirection(this.building);
-        const glassMaterial = Tile.getWindowGlassMaterial();
-        const wallMaterial = Tile.getMaterials(this.element, this.textureValue, this.effect, this.elevation, this.building);
+        const visualContext = this.getVisualContext();
+        const glassMaterial = Tile.getWindowGlassMaterial(visualContext);
+        const wallMaterial = Tile.getMaterials(
+            this.element,
+            this.textureValue,
+            this.effect,
+            this.elevation,
+            this.building,
+            visualContext
+        );
         const isUpper = Tile.isUpperWindowWall(this.building);
         const wall = new THREE.Mesh(
             new THREE.BoxGeometry(0.98, 0.48, 0.98),
@@ -104,62 +143,42 @@ export class Tile {
     }
 
     addStairObjects() {
+        // Minecraft-style half-stair that fills the unit voxel so it matches neighbor block
+        // proportions (0.98 footprint, like window walls): a full-footprint bottom slab plus a
+        // quarter block on the ascent-side half, each exactly half the voxel tall. The tile ramps
+        // one full voxel from its entry edge to its top surface, so consecutive stair tiles chain
+        // 1:1 with the 2x2 stair-module contract (lower tier -> upper tier) and with the +1-step
+        // city-wall runs. No floating foundation, no rails — the column below is already solid.
         const direction = Tile.getBuildingPartDirection(this.building);
-        const normal = Tile.getDirectionVector(direction);
-        const material = Tile.getMaterials(this.element, this.textureValue, this.effect, this.elevation, this.building);
-        const isWallStair = [
-            BUILDING_PARTS.CITY_WALL_STAIRS_NORTH,
-            BUILDING_PARTS.CITY_WALL_STAIRS_SOUTH,
-            BUILDING_PARTS.CITY_WALL_STAIRS_WEST,
-            BUILDING_PARTS.CITY_WALL_STAIRS_EAST
-        ].includes(this.building);
-        const stepCount = 3;
-        const stepDepth = 0.28;
-        const totalRise = isWallStair ? 1.18 : 1.48;
-
-        const well = new THREE.Mesh(
-            new THREE.BoxGeometry(0.82, 0.035, 0.82),
-            Tile.getStairwellMaterial()
+        const normal = Tile.getStairAscentVector(this.building) || Tile.getDirectionVector(direction);
+        const alongX = Math.abs(normal.x) > 0;
+        const material = Tile.getMaterials(
+            this.element,
+            this.textureValue,
+            this.effect,
+            this.elevation,
+            this.building,
+            this.getVisualContext()
         );
-        well.position.y = -0.49;
-        well.raycast = () => {};
-        this.mesh.add(well);
-        this.objects.push(well);
 
-        for (let i = 0; i < stepCount; i++) {
-            const height = ((i + 1) / stepCount) * totalRise;
-            const width = Math.max(0.5, 0.9 - i * 0.05);
-            const step = new THREE.Mesh(new THREE.BoxGeometry(width, height, stepDepth), material);
-            const offset = -0.3 + i * stepDepth;
-            step.position.set(normal.x * offset, -0.48 + height / 2, normal.y * offset);
-            step.rotation.y = direction === 'east' || direction === 'west' ? Math.PI / 2 : 0;
-            step.castShadow = true;
-            step.receiveShadow = true;
-            step.raycast = () => {};
-            this.mesh.add(step);
-            this.objects.push(step);
-        }
+        const lowerStep = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.5, 0.98), material);
+        lowerStep.position.y = -0.25;
+        lowerStep.castShadow = true;
+        lowerStep.receiveShadow = true;
+        lowerStep.raycast = () => {};
+        this.mesh.add(lowerStep);
+        this.objects.push(lowerStep);
 
-        const railMaterial = Tile.getStairRailMaterial();
-        const railHeight = 0.28;
-        const rails = direction === 'east' || direction === 'west'
-            ? [
-                { size: [0.05, railHeight, 0.82], x: -0.43, z: 0 },
-                { size: [0.05, railHeight, 0.82], x: 0.43, z: 0 }
-            ]
-            : [
-                { size: [0.82, railHeight, 0.05], x: 0, z: -0.43 },
-                { size: [0.82, railHeight, 0.05], x: 0, z: 0.43 }
-            ];
-        for (const railData of rails) {
-            const rail = new THREE.Mesh(new THREE.BoxGeometry(...railData.size), railMaterial);
-            rail.position.set(railData.x, railHeight / 2, railData.z);
-            rail.castShadow = true;
-            rail.receiveShadow = true;
-            rail.raycast = () => {};
-            this.mesh.add(rail);
-            this.objects.push(rail);
-        }
+        const upperStep = new THREE.Mesh(
+            new THREE.BoxGeometry(alongX ? 0.49 : 0.98, 0.5, alongX ? 0.98 : 0.49),
+            material
+        );
+        upperStep.position.set(normal.x * 0.245, 0.25, normal.y * 0.245);
+        upperStep.castShadow = true;
+        upperStep.receiveShadow = true;
+        upperStep.raycast = () => {};
+        this.mesh.add(upperStep);
+        this.objects.push(upperStep);
     }
 
     clearObjects() {
@@ -240,20 +259,50 @@ export class Tile {
         }[direction] || { x: 0, y: -1 };
     }
 
-    static getWindowGlassMaterial() {
-        if (!Tile.windowGlassMaterial) {
-            Tile.windowGlassMaterial = new THREE.MeshStandardMaterial({
-                color: 0x9de7ff,
-                emissive: 0x225c71,
-                emissiveIntensity: 0.2,
-                roughness: 0.18,
-                metalness: 0.02,
+    static getStairAscentVector(buildingPart) {
+        return {
+            [BUILDING_PARTS.STAIRS_EAST]: { x: 0, y: 1 },
+            [BUILDING_PARTS.STAIRS_SOUTH]: { x: -1, y: 0 },
+            [BUILDING_PARTS.STAIRS_WEST]: { x: 0, y: -1 },
+            [BUILDING_PARTS.STAIRS_NORTH]: { x: 1, y: 0 },
+            [BUILDING_PARTS.CITY_WALL_STAIRS_NORTH]: { x: 0, y: -1 },
+            [BUILDING_PARTS.CITY_WALL_STAIRS_SOUTH]: { x: 0, y: 1 },
+            [BUILDING_PARTS.CITY_WALL_STAIRS_WEST]: { x: -1, y: 0 },
+            [BUILDING_PARTS.CITY_WALL_STAIRS_EAST]: { x: 1, y: 0 }
+        }[buildingPart] || null;
+    }
+
+    static getWindowGlassMaterial(visualContext = {}) {
+        if (!Tile.windowGlassMaterials) Tile.windowGlassMaterials = new Map();
+        const palettes = [
+            { color: 0x92eaff, emissive: 0x1c617c },
+            { color: 0xffd474, emissive: 0x87511d },
+            { color: 0xb8a1ff, emissive: 0x47307f },
+            { color: 0x8ff0d1, emissive: 0x206f5a },
+            { color: 0xffa9c8, emissive: 0x7e3151 }
+        ];
+        const hash = Tile.hashVisualCoordinate(
+            visualContext.x,
+            visualContext.y,
+            visualContext.elevation,
+            visualContext.seed,
+            0x51f15e
+        );
+        const index = hash % palettes.length;
+        if (!Tile.windowGlassMaterials.has(index)) {
+            const palette = palettes[index];
+            Tile.windowGlassMaterials.set(index, new THREE.MeshStandardMaterial({
+                color: palette.color,
+                emissive: palette.emissive,
+                emissiveIntensity: 0.3,
+                roughness: 0.15,
+                metalness: 0.03,
                 transparent: true,
-                opacity: 0.58,
+                opacity: 0.68,
                 depthWrite: false
-            });
+            }));
         }
-        return Tile.windowGlassMaterial;
+        return Tile.windowGlassMaterials.get(index);
     }
 
     static getStairwellMaterial() {
@@ -314,27 +363,77 @@ export class Tile {
         this.highlightMaterial = null;
         this.mesh.material = Tile.isSpecialBuildingShape(this.building)
             ? Tile.getInvisibleMaterial()
-            : Tile.getMaterials(this.element, this.textureValue, this.effect, this.elevation, this.building);
+            : Tile.getMaterials(
+                this.element,
+                this.textureValue,
+                this.effect,
+                this.elevation,
+                this.building,
+                this.getVisualContext()
+            );
     }
 
-    static getMaterials(element, textureValue = 0, effect = 0, elevation = 0, building = BUILDING_PARTS.NONE) {
-        const elevationTone = Tile.getOutdoorElevationTone(element, elevation, building);
-        const key = `${element}:${textureValue}:${effect}:${elevationTone}`;
+    static getMaterials(
+        element,
+        textureValue = 0,
+        effect = 0,
+        elevation = 0,
+        building = BUILDING_PARTS.NONE,
+        visualContext = null
+    ) {
+        const isOrdinaryTerrain = building === BUILDING_PARTS.NONE && ![
+            ELEMENTS.VOID,
+            ELEMENTS.STRUCTURE
+        ].includes(element);
+        const definition = getTileDefinition(
+            element,
+            textureValue,
+            isOrdinaryTerrain ? visualContext?.paletteId : null
+        );
+        const visual = Tile.resolveVisualProfile(definition, {
+            ...(visualContext || {}),
+            elevation: visualContext?.elevation ?? elevation
+        }, element, textureValue, building);
+        const elevationTone = Math.min(
+            0.075,
+            Tile.getOutdoorElevationTone(element, elevation, building) +
+                (building === BUILDING_PARTS.NONE && [ELEMENTS.GEO, ELEMENTS.ANEMO, ELEMENTS.CRYO].includes(element)
+                    ? visual.topographicZone * 0.006
+                    : 0)
+        );
+        const key = [
+            element,
+            textureValue,
+            effect,
+            visual.paletteId,
+            visual.visualVariant,
+            visual.paletteIndex,
+            visual.motif,
+            elevationTone
+        ].join(':');
         if (!Tile.materialCache.has(key)) {
-            const definition = getTileDefinition(element, textureValue);
-            const topTexture = Tile.createTexture(definition, effect, elevationTone);
-            const sideTexture = Tile.createSideTexture(definition, elevationTone);
+            const topTexture = Tile.createTexture(visual, effect, elevationTone);
+            const sideTexture = Tile.createSideTexture(visual, elevationTone);
+            const isWater = element === ELEMENTS.HYDRO;
             const topMaterial = new THREE.MeshStandardMaterial({
                 color: 0xffffff,
                 map: topTexture,
-                roughness: definition.roughness,
-                metalness: 0.05
+                roughness: isWater ? Math.min(0.3, definition.roughness) : definition.roughness,
+                metalness: 0.02,
+                transparent: isWater,
+                opacity: isWater ? 0.96 : 1,
+                emissive: isWater ? new THREE.Color(visual.sideColor) : new THREE.Color(0x000000),
+                emissiveIntensity: isWater ? 0.1 : 0
             });
             const sideMaterial = new THREE.MeshStandardMaterial({
                 color: 0xffffff,
                 map: sideTexture,
                 roughness: Math.min(1, definition.roughness + 0.08),
-                metalness: 0.02
+                metalness: 0.02,
+                transparent: isWater,
+                opacity: isWater ? 0.94 : 1,
+                emissive: isWater ? new THREE.Color(visual.sideColor) : new THREE.Color(0x000000),
+                emissiveIntensity: isWater ? 0.06 : 0
             });
             Tile.materialCache.set(key, [
                 sideMaterial,
@@ -348,11 +447,83 @@ export class Tile {
         return Tile.materialCache.get(key);
     }
 
+    static normalizeVisualSeed(value) {
+        if (Number.isFinite(value)) return Math.trunc(value) >>> 0;
+        const text = String(value ?? '0');
+        let hash = 2166136261;
+        for (let i = 0; i < text.length; i++) {
+            hash ^= text.charCodeAt(i);
+            hash = Math.imul(hash, 16777619);
+        }
+        return hash >>> 0;
+    }
+
+    static normalizeVisualVariant(value) {
+        return normalizeWorldVisualVariant(value, null);
+    }
+
+    static hashVisualCoordinate(x = 0, y = 0, elevation = 0, seed = 0, salt = 0) {
+        let hash = Tile.normalizeVisualSeed(seed) ^ (Math.trunc(salt) >>> 0);
+        hash ^= Math.imul(Math.trunc(x), 0x9e3779b1);
+        hash = Math.imul(hash ^ (hash >>> 16), 0x85ebca6b);
+        hash ^= Math.imul(Math.trunc(y), 0xc2b2ae35);
+        hash = Math.imul(hash ^ (hash >>> 13), 0x27d4eb2f);
+        hash ^= Math.imul(Math.trunc(elevation), 0x165667b1);
+        hash ^= hash >>> 15;
+        return hash >>> 0;
+    }
+
+    static resolveVisualProfile(definition, context, element, textureValue, building) {
+        const variants = definition.visualVariants?.length
+            ? definition.visualVariants
+            : [{
+                topColor: definition.topColor,
+                sideColor: definition.sideColor,
+                accentColor: definition.topColor,
+                highlightColor: definition.topColor
+            }];
+        const x = Number.isFinite(context?.x) ? context.x : 0;
+        const y = Number.isFinite(context?.y) ? context.y : 0;
+        const elevation = Number.isFinite(context?.elevation) ? context.elevation : 0;
+        const seed = Tile.normalizeVisualSeed(context?.seed ?? 0);
+        const isOrdinaryTerrain = building === BUILDING_PARTS.NONE && ![
+            ELEMENTS.VOID,
+            ELEMENTS.STRUCTURE
+        ].includes(element);
+        const requestedVariant = Tile.normalizeVisualVariant(context?.visualVariant);
+        const fallbackVariant = Tile.hashVisualCoordinate(
+            x,
+            y,
+            elevation,
+            seed,
+            element * 257 + textureValue * 37 + building * 17 + 0x4d3
+        ) % 6;
+        const visualVariant = requestedVariant ?? fallbackVariant;
+        const paletteIndex = visualVariant % variants.length;
+        // Pattern placement is seeded only by the finite 0..5 variant. This
+        // keeps generated materials bounded and replayable across sessions.
+        const motif = visualVariant;
+        const paletteId = definition.paletteId || definition.visualPalette || 'default';
+        return {
+            ...definition,
+            ...variants[paletteIndex],
+            paletteId,
+            visualVariant,
+            paletteIndex,
+            motif,
+            matrixVariant: visualVariant,
+            microVariant: visualVariant,
+            topographicZone: 0,
+            isOrdinaryTerrain,
+            visualSeed: seed
+        };
+    }
+
     static getOutdoorElevationTone(element, elevation, building) {
         if (building !== BUILDING_PARTS.NONE) return 0;
         if (![ELEMENTS.GEO, ELEMENTS.ANEMO, ELEMENTS.CRYO].includes(element)) return 0;
-        if (elevation <= 0) return -0.14;
-        return Math.min(0.3, 0.08 + elevation * 0.11);
+        if (elevation <= 0) return 0;
+        return Math.min(0.05, 0.01 + elevation * 0.01);
     }
 
     static createTexture(definition, effect = 0, elevationTone = 0) {
@@ -360,8 +531,11 @@ export class Tile {
         canvas.width = 96;
         canvas.height = 96;
         const ctx = canvas.getContext('2d');
-        const top = `#${definition.topColor.toString(16).padStart(6, '0')}`;
-        const side = `#${definition.sideColor.toString(16).padStart(6, '0')}`;
+        const top = Tile.hexColor(definition.topColor);
+        const side = Tile.hexColor(definition.sideColor);
+        const accent = Tile.hexColor(definition.accentColor ?? definition.topColor);
+        const highlight = Tile.hexColor(definition.highlightColor ?? definition.topColor);
+        const motif = definition.motif || 0;
 
         ctx.fillStyle = top;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -370,23 +544,23 @@ export class Tile {
         if (!isLiquidPattern) Tile.drawSoftTop(ctx, definition);
 
         if (definition.pattern === 'grass') {
-            Tile.drawGrass(ctx, top, side);
+            Tile.drawGrass(ctx, top, side, accent, highlight, motif);
         } else if (definition.pattern === 'forest') {
-            Tile.drawForest(ctx);
+            Tile.drawForest(ctx, accent, highlight, motif);
         } else if (definition.pattern === 'hill') {
-            Tile.drawHill(ctx);
+            Tile.drawHill(ctx, accent, highlight, motif);
         } else if (definition.pattern === 'stone') {
-            Tile.drawStone(ctx);
+            Tile.drawStone(ctx, accent, highlight, motif);
         } else if (definition.pattern === 'road') {
-            Tile.drawRoad(ctx);
+            Tile.drawRoad(ctx, side, accent, highlight, motif);
         } else if (definition.pattern === 'villageGround') {
-            Tile.drawVillageGround(ctx);
+            Tile.drawVillageGround(ctx, side, accent, highlight, motif);
         } else if (definition.pattern === 'cityCobble') {
-            Tile.drawCityCobble(ctx);
+            Tile.drawCityCobble(ctx, side, accent, highlight, motif);
         } else if (definition.pattern === 'plazaStone') {
-            Tile.drawPlazaStone(ctx);
+            Tile.drawPlazaStone(ctx, side, accent, highlight, motif);
         } else if (definition.pattern === 'gardenGround') {
-            Tile.drawGardenGround(ctx);
+            Tile.drawGardenGround(ctx, accent, highlight, motif);
         } else if (definition.pattern === 'floor') {
             Tile.drawFloor(ctx);
         } else if (definition.pattern === 'woodFloor') {
@@ -394,20 +568,20 @@ export class Tile {
         } else if (definition.pattern === 'stoneFloor') {
             Tile.drawStoneFloor(ctx);
         } else if (definition.pattern === 'water') {
-            Tile.drawWaterSurface(ctx, '#b9f2f0', 0.34);
+            Tile.drawWaterSurface(ctx, accent, highlight, 0.42, motif);
         } else if (definition.pattern === 'waterShallow') {
-            Tile.drawWaterSurface(ctx, '#d4f7ee', 0.22);
+            Tile.drawWaterSurface(ctx, accent, highlight, 0.32, motif);
         } else if (definition.pattern === 'waterCoastal') {
-            Tile.drawWaterSurface(ctx, '#a7e8e1', 0.3);
+            Tile.drawWaterSurface(ctx, accent, highlight, 0.38, motif);
         } else if (definition.pattern === 'marsh') {
-            Tile.drawWaterSurface(ctx, '#8fa45f', 0.2);
-            Tile.drawSpeckles(ctx, '#2f3b20', 22, 0.45);
+            Tile.drawWaterSurface(ctx, accent, highlight, 0.26, motif);
+            Tile.drawSpeckles(ctx, side, 22, 0.38, motif);
         } else if (definition.pattern === 'sand') {
-            Tile.drawSpeckles(ctx, '#f5dea0', 42, 0.45);
+            Tile.drawSpeckles(ctx, accent, 42, 0.42, motif);
         } else if (definition.pattern === 'ice') {
-            Tile.drawIce(ctx, '#ffffff');
+            Tile.drawIce(ctx, '#ffffff', motif);
         } else if (definition.pattern === 'lava') {
-            Tile.drawLava(ctx);
+            Tile.drawLava(ctx, motif);
         } else if (definition.pattern === 'brick') {
             Tile.drawBrick(ctx);
         } else if (definition.pattern === 'masonry') {
@@ -430,18 +604,25 @@ export class Tile {
         } else if (definition.pattern === 'blocked') {
             Tile.drawBlocked(ctx);
         } else {
-            Tile.drawSpeckles(ctx, side, 28, 0.25);
+            Tile.drawSpeckles(ctx, accent, 28, 0.25, motif);
         }
 
-        if (effect > 0 && !isLiquidPattern) Tile.drawElementEffect(ctx, effect);
+        Tile.drawMatrixVariation(ctx, definition, isLiquidPattern);
+        if (effect > 0 && !isLiquidPattern && !definition.isOrdinaryTerrain) {
+            Tile.drawElementEffect(ctx, effect);
+        }
         Tile.applyElevationTone(ctx, elevationTone);
-        if (!isLiquidPattern) Tile.drawRoundedFrame(ctx, definition.walkable);
+        if (!isLiquidPattern && !definition.isOrdinaryTerrain) {
+            Tile.drawRoundedFrame(ctx, definition.walkable);
+        }
 
         const texture = new THREE.CanvasTexture(canvas);
         texture.colorSpace = THREE.SRGBColorSpace;
         texture.wrapS = THREE.RepeatWrapping;
         texture.wrapT = THREE.RepeatWrapping;
         texture.repeat.set(1, 1);
+        texture.magFilter = THREE.NearestFilter;
+        texture.minFilter = THREE.LinearMipmapLinearFilter;
         texture.needsUpdate = true;
         return texture;
     }
@@ -451,40 +632,38 @@ export class Tile {
         canvas.width = 96;
         canvas.height = 96;
         const ctx = canvas.getContext('2d');
-        const top = `#${definition.topColor.toString(16).padStart(6, '0')}`;
-        const side = `#${definition.sideColor.toString(16).padStart(6, '0')}`;
+        const top = Tile.hexColor(definition.topColor);
+        const side = Tile.hexColor(definition.sideColor);
+        const accent = Tile.hexColor(definition.accentColor ?? definition.topColor);
+        const highlight = Tile.hexColor(definition.highlightColor ?? definition.topColor);
+        const motif = definition.motif || 0;
+        const liquidPatterns = ['water', 'waterShallow', 'waterCoastal', 'marsh'];
+        const isLiquid = liquidPatterns.includes(definition.pattern);
 
         const gradient = ctx.createLinearGradient(0, 0, 0, 96);
-        gradient.addColorStop(0, top);
-        gradient.addColorStop(0.18, side);
-        gradient.addColorStop(1, Tile.shadeColor(side, -34));
+        gradient.addColorStop(0, isLiquid ? highlight : top);
+        gradient.addColorStop(isLiquid ? 0.22 : 0.12, isLiquid ? top : accent);
+        gradient.addColorStop(isLiquid ? 0.62 : 0.24, side);
+        gradient.addColorStop(1, Tile.shadeColor(side, isLiquid ? -22 : -36));
         ctx.fillStyle = gradient;
         ctx.fillRect(0, 0, 96, 96);
 
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.22)';
-        ctx.fillRect(0, 0, 96, 8);
-        ctx.fillStyle = 'rgba(4, 9, 12, 0.26)';
-        ctx.fillRect(0, 84, 96, 12);
-
-        ctx.strokeStyle = definition.walkable ? 'rgba(31, 58, 35, 0.22)' : 'rgba(6, 9, 12, 0.38)';
-        ctx.lineWidth = 3;
-        for (let y = 22; y < 88; y += 22) {
-            ctx.beginPath();
-            ctx.moveTo(0, y);
-            ctx.lineTo(96, y);
-            ctx.stroke();
+        const terrainPatterns = [
+            'grass', 'forest', 'hill', 'stone', 'road', 'villageGround',
+            'cityCobble', 'plazaStone', 'gardenGround', 'sand', 'ice'
+        ];
+        if (isLiquid) {
+            Tile.drawWaterSide(ctx, accent, highlight, motif);
+        } else if (terrainPatterns.includes(definition.pattern)) {
+            Tile.drawCliffSide(ctx, definition, top, side, accent, highlight, motif);
+        } else {
+            Tile.drawBuiltSide(ctx, definition, side, accent, highlight, motif);
         }
 
-        if (!definition.walkable) {
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-            ctx.lineWidth = 4;
-            ctx.beginPath();
-            ctx.moveTo(18, 16);
-            ctx.lineTo(78, 76);
-            ctx.moveTo(80, 18);
-            ctx.lineTo(20, 78);
-            ctx.stroke();
-        }
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+        ctx.fillRect(0, 0, 96, isLiquid ? 5 : 7);
+        ctx.fillStyle = 'rgba(4, 9, 12, 0.2)';
+        ctx.fillRect(0, 88, 96, 8);
 
         Tile.applyElevationTone(ctx, elevationTone * 0.9);
 
@@ -492,8 +671,185 @@ export class Tile {
         texture.colorSpace = THREE.SRGBColorSpace;
         texture.wrapS = THREE.RepeatWrapping;
         texture.wrapT = THREE.RepeatWrapping;
+        texture.magFilter = THREE.NearestFilter;
+        texture.minFilter = THREE.LinearMipmapLinearFilter;
         texture.needsUpdate = true;
         return texture;
+    }
+
+    static drawWaterSide(ctx, accent, highlight, motif = 0) {
+        ctx.save();
+        ctx.strokeStyle = highlight;
+        ctx.globalAlpha = 0.34;
+        ctx.lineWidth = 3;
+        for (let y = 15 + motif * 2; y < 86; y += 21) {
+            ctx.beginPath();
+            for (let x = -8; x <= 104; x += 12) {
+                const waveY = y + Math.sin((x + motif * 11) * 0.17) * 3;
+                if (x === -8) ctx.moveTo(x, waveY);
+                else ctx.lineTo(x, waveY);
+            }
+            ctx.stroke();
+        }
+        ctx.strokeStyle = accent;
+        ctx.globalAlpha = 0.2;
+        ctx.lineWidth = 5;
+        for (let x = 13 + motif * 7; x < 96; x += 31) {
+            ctx.beginPath();
+            ctx.moveTo(x, 10);
+            ctx.lineTo(x - 7, 88);
+            ctx.stroke();
+        }
+        ctx.restore();
+    }
+
+    static drawCliffSide(ctx, definition, top, side, accent, highlight, motif = 0) {
+        const greenLipPatterns = ['grass', 'forest', 'hill', 'villageGround', 'gardenGround'];
+        ctx.save();
+        ctx.fillStyle = greenLipPatterns.includes(definition.pattern) ? top : accent;
+        ctx.globalAlpha = 0.9;
+        ctx.fillRect(0, 0, 96, greenLipPatterns.includes(definition.pattern) ? 11 : 7);
+        ctx.fillStyle = highlight;
+        ctx.globalAlpha = 0.35;
+        ctx.fillRect(0, 2, 96, 3);
+
+        ctx.globalAlpha = 0.3;
+        ctx.strokeStyle = Tile.shadeColor(side, -26);
+        ctx.lineWidth = 3;
+        for (let layer = 0; layer < 4; layer++) {
+            const baseY = 23 + layer * 18 + ((motif + layer) % 3 - 1) * 2;
+            ctx.beginPath();
+            ctx.moveTo(0, baseY);
+            for (let x = 12; x <= 96; x += 12) {
+                const y = baseY + (((x / 12 + layer * 3 + motif) % 5) - 2) * 1.5;
+                ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+        }
+
+        ctx.globalAlpha = 0.22;
+        ctx.fillStyle = accent;
+        for (let i = 0; i < 11; i++) {
+            const x = (i * 29 + motif * 17) % 91;
+            const y = 17 + ((i * 41 + motif * 13) % 67);
+            const width = 5 + ((i + motif) % 3) * 3;
+            const height = 4 + ((i * 2 + motif) % 3) * 2;
+            ctx.fillRect(x, y, width, height);
+        }
+
+        ctx.strokeStyle = 'rgba(33, 25, 22, 0.26)';
+        ctx.globalAlpha = 1;
+        ctx.lineWidth = 2.5;
+        for (let i = 0; i < 4; i++) {
+            const x = 14 + ((i * 23 + motif * 9) % 69);
+            const y = 21 + ((i * 17 + motif * 11) % 47);
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x + ((i % 2) ? -5 : 5), y + 9);
+            ctx.lineTo(x + ((i % 2) ? 2 : -2), y + 16);
+            ctx.stroke();
+        }
+        ctx.restore();
+    }
+
+    static drawBuiltSide(ctx, definition, side, accent, highlight, motif = 0) {
+        ctx.save();
+        const pattern = definition.pattern;
+        if (['masonry', 'blocked', 'brick', 'cityWallTop', 'wallStairs', 'stoneFloor'].includes(pattern)) {
+            ctx.strokeStyle = Tile.shadeColor(side, -28);
+            ctx.globalAlpha = 0.4;
+            ctx.lineWidth = 3;
+            for (let y = 17; y < 94; y += 17) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(96, y);
+                ctx.stroke();
+                const offset = ((Math.floor(y / 17) + motif) % 2) * 17;
+                for (let x = 8 + offset; x < 96; x += 34) {
+                    ctx.beginPath();
+                    ctx.moveTo(x, y - 17);
+                    ctx.lineTo(x, y);
+                    ctx.stroke();
+                }
+            }
+        } else if (['timber', 'woodFloor', 'floor', 'stairs'].includes(pattern)) {
+            ctx.strokeStyle = Tile.shadeColor(side, -38);
+            ctx.globalAlpha = 0.52;
+            ctx.lineWidth = 6;
+            for (let x = 12 + motif * 3; x < 96; x += 25) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x - 5, 96);
+                ctx.stroke();
+            }
+            if (pattern === 'timber') {
+                ctx.beginPath();
+                ctx.moveTo(0, 14 + motif * 4);
+                ctx.lineTo(96, 80 - motif * 3);
+                ctx.moveTo(96, 14 + motif * 4);
+                ctx.lineTo(0, 80 - motif * 3);
+                ctx.stroke();
+            }
+        } else if (pattern.startsWith('door')) {
+            ctx.fillStyle = Tile.shadeColor(side, -30);
+            ctx.globalAlpha = 0.48;
+            Tile.roundRect(ctx, 20, 13, 56, 82, 8);
+            ctx.fill();
+            ctx.strokeStyle = highlight;
+            ctx.globalAlpha = 0.45;
+            ctx.lineWidth = 4;
+            Tile.roundRect(ctx, 23, 16, 50, 76, 7);
+            ctx.stroke();
+        } else {
+            ctx.strokeStyle = Tile.shadeColor(side, -25);
+            ctx.globalAlpha = 0.3;
+            ctx.lineWidth = 3;
+            for (let y = 20; y < 90; y += 22) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(96, y);
+                ctx.stroke();
+            }
+        }
+
+        ctx.fillStyle = accent;
+        ctx.globalAlpha = 0.28;
+        ctx.fillRect(0, 7, 96, 5);
+        ctx.fillStyle = highlight;
+        ctx.globalAlpha = 0.2;
+        for (let i = 0; i < 6; i++) {
+            const x = (i * 31 + motif * 13) % 90;
+            const y = 18 + ((i * 23 + motif * 7) % 65);
+            ctx.fillRect(x, y, 6 + (i % 2) * 3, 4);
+        }
+        ctx.restore();
+    }
+
+    static drawMatrixVariation(ctx, definition, isLiquid = false) {
+        const motif = definition.motif || 0;
+        const accent = Tile.hexColor(definition.accentColor ?? definition.topColor);
+        const highlight = Tile.hexColor(definition.highlightColor ?? definition.topColor);
+        ctx.save();
+        ctx.globalAlpha = isLiquid ? 0.11 : 0.09;
+        ctx.fillStyle = isLiquid ? highlight : accent;
+        const count = isLiquid ? 5 : 7;
+        for (let i = 0; i < count; i++) {
+            const x = (i * 37 + motif * 19) % 88;
+            const y = (i * 23 + motif * 31) % 88;
+            const size = isLiquid ? 8 + (i % 2) * 5 : 5 + (i % 3) * 3;
+            ctx.fillRect(x, y, size, isLiquid ? 3 : size);
+        }
+        if (!isLiquid && definition.topographicZone > 1) {
+            ctx.strokeStyle = highlight;
+            ctx.globalAlpha = 0.1 + Math.min(0.12, definition.topographicZone * 0.02);
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            const y = 78 - definition.topographicZone * 6;
+            ctx.moveTo(4, y);
+            ctx.bezierCurveTo(28, y - 8, 58, y + 7, 92, y - 2);
+            ctx.stroke();
+        }
+        ctx.restore();
     }
 
     static applyElevationTone(ctx, amount) {
@@ -506,6 +862,11 @@ export class Tile {
         ctx.restore();
     }
 
+    static hexColor(value) {
+        if (typeof value === 'string') return value;
+        return `#${((Number(value) || 0) & 0xffffff).toString(16).padStart(6, '0')}`;
+    }
+
     static shadeColor(color, amount) {
         const value = parseInt(color.replace('#', ''), 16);
         const r = Math.max(0, Math.min(255, (value >> 16) + amount));
@@ -516,24 +877,18 @@ export class Tile {
 
     static drawSoftTop(ctx, definition) {
         const gradient = ctx.createRadialGradient(34, 26, 8, 48, 48, 72);
-        gradient.addColorStop(0, 'rgba(255, 255, 255, 0.34)');
-        gradient.addColorStop(0.52, 'rgba(255, 255, 255, 0.08)');
-        gradient.addColorStop(1, definition.walkable ? 'rgba(45, 62, 44, 0.16)' : 'rgba(18, 24, 24, 0.34)');
+        gradient.addColorStop(0, 'rgba(255, 255, 255, 0.2)');
+        gradient.addColorStop(0.52, 'rgba(255, 255, 255, 0.035)');
+        gradient.addColorStop(1, definition.walkable ? 'rgba(36, 58, 38, 0.13)' : 'rgba(18, 24, 24, 0.3)');
         ctx.fillStyle = gradient;
         ctx.fillRect(0, 0, 96, 96);
     }
 
     static drawRoundedFrame(ctx, walkable) {
         ctx.save();
-        ctx.lineWidth = walkable ? 4 : 6;
-        ctx.strokeStyle = walkable ? 'rgba(255, 255, 255, 0.28)' : 'rgba(30, 24, 22, 0.42)';
-        Tile.roundRect(ctx, 7, 7, 82, 82, 15);
-        ctx.stroke();
-
-        ctx.lineWidth = 3;
-        ctx.strokeStyle = walkable ? 'rgba(43, 68, 45, 0.18)' : 'rgba(5, 7, 8, 0.34)';
-        Tile.roundRect(ctx, 2.5, 2.5, 91, 91, 13);
-        ctx.stroke();
+        ctx.lineWidth = walkable ? 1.5 : 2.5;
+        ctx.strokeStyle = walkable ? 'rgba(255, 255, 255, 0.14)' : 'rgba(30, 24, 22, 0.28)';
+        ctx.strokeRect(1, 1, 94, 94);
         ctx.restore();
     }
 
@@ -587,55 +942,68 @@ export class Tile {
         ctx.closePath();
     }
 
-    static drawGrass(ctx, top, side) {
-        Tile.drawSpeckles(ctx, '#a4d37e', 32, 0.5);
+    static drawGrass(ctx, top, side, accent, highlight, motif = 0) {
+        Tile.drawSpeckles(ctx, accent, 32, 0.4, motif);
         ctx.strokeStyle = side;
-        ctx.lineWidth = 2;
+        ctx.globalAlpha = 0.55;
+        ctx.lineWidth = 1.5;
         for (let i = 0; i < 18; i++) {
-            const x = (i * 31) % 92 + 2;
-            const y = (i * 47) % 88 + 5;
+            const x = (i * 31 + motif * 17) % 92 + 2;
+            const y = (i * 47 + motif * 23) % 88 + 5;
             ctx.beginPath();
             ctx.moveTo(x, y + 5);
             ctx.lineTo(x + 3, y);
             ctx.stroke();
         }
+        ctx.fillStyle = highlight;
+        ctx.globalAlpha = 0.28;
+        for (let i = 0; i < 5; i++) {
+            const x = (i * 43 + motif * 11) % 86 + 5;
+            const y = (i * 29 + motif * 19) % 84 + 6;
+            ctx.fillRect(x, y, 5 + (i % 2) * 3, 3);
+        }
         ctx.fillStyle = top;
-        ctx.globalAlpha = 0.25;
+        ctx.globalAlpha = 0.13;
         ctx.fillRect(0, 0, 96, 96);
         ctx.globalAlpha = 1;
     }
 
-    static drawForest(ctx) {
-        Tile.drawSpeckles(ctx, '#2f8d48', 30, 0.32);
-        ctx.fillStyle = 'rgba(20, 110, 54, 0.35)';
+    static drawForest(ctx, accent, highlight, motif = 0) {
+        Tile.drawSpeckles(ctx, accent, 30, 0.28, motif);
+        ctx.fillStyle = highlight;
+        ctx.globalAlpha = 0.2;
         for (let i = 0; i < 13; i++) {
-            const x = (i * 29) % 82 + 8;
-            const y = (i * 43) % 82 + 8;
+            const x = (i * 29 + motif * 17) % 82 + 8;
+            const y = (i * 43 + motif * 11) % 82 + 8;
             ctx.beginPath();
             ctx.arc(x, y, 4 + (i % 3), 0, Math.PI * 2);
             ctx.fill();
         }
+        ctx.globalAlpha = 1;
     }
 
-    static drawHill(ctx) {
-        Tile.drawSpeckles(ctx, '#d4ed91', 24, 0.36);
-        ctx.strokeStyle = 'rgba(57, 108, 53, 0.34)';
+    static drawHill(ctx, accent, highlight, motif = 0) {
+        Tile.drawSpeckles(ctx, accent, 24, 0.3, motif);
+        ctx.strokeStyle = highlight;
+        ctx.globalAlpha = 0.28;
         ctx.lineWidth = 4;
-        for (let y = 20; y < 86; y += 22) {
+        for (let y = 18 + motif * 2; y < 86; y += 22) {
             ctx.beginPath();
             ctx.moveTo(13, y);
-            ctx.bezierCurveTo(30, y - 10, 52, y + 10, 80, y - 2);
+            ctx.bezierCurveTo(30, y - 8, 52, y + 9, 83, y - 2);
             ctx.stroke();
         }
+        ctx.globalAlpha = 1;
     }
 
-    static drawStone(ctx) {
-        Tile.drawSpeckles(ctx, '#dce2b2', 30, 0.28);
-        ctx.strokeStyle = 'rgba(75, 84, 72, 0.32)';
+    static drawStone(ctx, accent, highlight, motif = 0) {
+        Tile.drawSpeckles(ctx, accent, 30, 0.25, motif);
+        ctx.strokeStyle = highlight;
+        ctx.globalAlpha = 0.32;
         ctx.lineWidth = 3;
         for (let i = 0; i < 8; i++) {
-            const x = (i * 19) % 74 + 10;
-            const y = (i * 31) % 74 + 10;
+            const x = (i * 19 + motif * 13) % 74 + 10;
+            const y = (i * 31 + motif * 17) % 74 + 10;
             ctx.beginPath();
             ctx.moveTo(x - 8, y);
             ctx.lineTo(x, y - 6);
@@ -644,75 +1012,99 @@ export class Tile {
             ctx.closePath();
             ctx.stroke();
         }
+        ctx.globalAlpha = 1;
     }
 
-    static drawRoad(ctx) {
+    static drawRoad(ctx, side, accent, highlight, motif = 0) {
         ctx.save();
-        ctx.strokeStyle = 'rgba(163, 112, 53, 0.28)';
+        ctx.strokeStyle = side;
+        ctx.globalAlpha = 0.28;
         ctx.lineWidth = 5;
         ctx.setLineDash([10, 9]);
         ctx.beginPath();
-        ctx.moveTo(4, 51);
-        ctx.bezierCurveTo(24, 38, 50, 60, 92, 43);
+        ctx.moveTo(4, 48 + motif * 2);
+        ctx.bezierCurveTo(24, 35 + motif * 2, 50, 58 - motif, 92, 42 + motif);
         ctx.stroke();
         ctx.restore();
-        Tile.drawSpeckles(ctx, '#fff1bd', 34, 0.38);
+        Tile.drawSpeckles(ctx, accent, 34, 0.32, motif);
+        ctx.fillStyle = highlight;
+        ctx.globalAlpha = 0.22;
+        ctx.fillRect(8 + motif * 9, 18 + motif * 4, 17, 5);
+        ctx.globalAlpha = 1;
     }
 
-    static drawVillageGround(ctx) {
-        Tile.drawSpeckles(ctx, '#e5c887', 42, 0.34);
-        ctx.strokeStyle = 'rgba(106, 77, 38, 0.22)';
+    static drawVillageGround(ctx, side, accent, highlight, motif = 0) {
+        Tile.drawSpeckles(ctx, accent, 42, 0.28, motif);
+        ctx.strokeStyle = side;
+        ctx.globalAlpha = 0.24;
         ctx.lineWidth = 3;
-        for (let y = 18; y < 92; y += 22) {
+        for (let y = 18 + motif * 2; y < 92; y += 22) {
             ctx.beginPath();
             ctx.moveTo(6, y);
             ctx.bezierCurveTo(28, y + 4, 52, y - 6, 90, y + 2);
             ctx.stroke();
         }
+        ctx.fillStyle = highlight;
+        ctx.globalAlpha = 0.17;
+        ctx.fillRect(13 + motif * 11, 67 - motif * 4, 20, 5);
+        ctx.globalAlpha = 1;
     }
 
-    static drawCityCobble(ctx) {
-        Tile.drawSpeckles(ctx, '#d8ddda', 20, 0.16);
-        ctx.strokeStyle = 'rgba(72, 79, 80, 0.3)';
+    static drawCityCobble(ctx, side, accent, highlight, motif = 0) {
+        Tile.drawSpeckles(ctx, accent, 20, 0.14, motif);
+        ctx.strokeStyle = side;
+        ctx.globalAlpha = 0.35;
         ctx.lineWidth = 2.5;
-        for (let y = 12; y < 96; y += 14) {
-            const offset = (Math.floor(y / 14) % 2) * 12;
+        for (let y = 12 + motif; y < 96; y += 14) {
+            const offset = ((Math.floor(y / 14) + motif) % 2) * 12;
             for (let x = -10 + offset; x < 96; x += 24) {
                 ctx.beginPath();
                 ctx.ellipse(x + 12, y, 12, 7, 0, 0, Math.PI * 2);
                 ctx.stroke();
             }
         }
+        ctx.fillStyle = highlight;
+        ctx.globalAlpha = 0.12;
+        ctx.fillRect((motif * 23) % 70 + 5, 9, 20, 6);
+        ctx.globalAlpha = 1;
     }
 
-    static drawPlazaStone(ctx) {
-        ctx.strokeStyle = 'rgba(91, 86, 74, 0.32)';
+    static drawPlazaStone(ctx, side, accent, highlight, motif = 0) {
+        ctx.strokeStyle = side;
+        ctx.globalAlpha = 0.34;
         ctx.lineWidth = 3;
-        for (let y = 0; y <= 96; y += 24) {
+        const offset = motif % 2 === 0 ? 0 : 12;
+        for (let y = -24 + offset; y <= 96; y += 24) {
             ctx.beginPath();
             ctx.moveTo(0, y);
             ctx.lineTo(96, y);
             ctx.stroke();
         }
-        for (let x = 0; x <= 96; x += 24) {
+        for (let x = -24 + offset; x <= 96; x += 24) {
             ctx.beginPath();
             ctx.moveTo(x, 0);
             ctx.lineTo(x, 96);
-            ctx.stroke();
+                ctx.stroke();
         }
-        Tile.drawSpeckles(ctx, '#f1ead4', 16, 0.18);
+        Tile.drawSpeckles(ctx, accent, 16, 0.16, motif);
+        ctx.fillStyle = highlight;
+        ctx.globalAlpha = 0.14;
+        ctx.fillRect(10 + motif * 13, 10, 18, 8);
+        ctx.globalAlpha = 1;
     }
 
-    static drawGardenGround(ctx) {
-        Tile.drawSpeckles(ctx, '#b8d787', 28, 0.34);
-        ctx.fillStyle = 'rgba(43, 123, 54, 0.28)';
+    static drawGardenGround(ctx, accent, highlight, motif = 0) {
+        Tile.drawSpeckles(ctx, accent, 28, 0.3, motif);
+        ctx.fillStyle = highlight;
+        ctx.globalAlpha = 0.24;
         for (let i = 0; i < 12; i++) {
-            const x = (i * 31) % 82 + 7;
-            const y = (i * 47) % 82 + 7;
+            const x = (i * 31 + motif * 17) % 82 + 7;
+            const y = (i * 47 + motif * 11) % 82 + 7;
             ctx.beginPath();
             ctx.ellipse(x, y, 7, 3, i * 0.7, 0, Math.PI * 2);
             ctx.fill();
         }
+        ctx.globalAlpha = 1;
     }
 
     static drawFloor(ctx) {
@@ -770,24 +1162,32 @@ export class Tile {
         Tile.drawSpeckles(ctx, '#edf0ec', 18, 0.18);
     }
 
-    static drawWaterSurface(ctx, color, alpha) {
+    static drawWaterSurface(ctx, color, highlight, alpha, motif = 0) {
         const sheen = ctx.createLinearGradient(0, 0, 96, 96);
-        sheen.addColorStop(0, 'rgba(255, 255, 255, 0.14)');
+        sheen.addColorStop(0, 'rgba(255, 255, 255, 0.22)');
         sheen.addColorStop(0.45, 'rgba(255, 255, 255, 0.04)');
         sheen.addColorStop(1, 'rgba(21, 78, 95, 0.2)');
         ctx.fillStyle = sheen;
         ctx.fillRect(0, 0, 96, 96);
-        Tile.drawWaves(ctx, color, alpha);
+        Tile.drawWaves(ctx, color, alpha, motif);
+        ctx.fillStyle = highlight;
+        ctx.globalAlpha = 0.22;
+        for (let i = 0; i < 5; i++) {
+            const x = (i * 39 + motif * 17) % 84 + 3;
+            const y = (i * 27 + motif * 23) % 82 + 5;
+            ctx.fillRect(x, y, 10 + (i % 2) * 7, 3);
+        }
+        ctx.globalAlpha = 1;
     }
 
-    static drawWaves(ctx, color, alpha) {
+    static drawWaves(ctx, color, alpha, motif = 0) {
         ctx.strokeStyle = color;
         ctx.globalAlpha = alpha;
         ctx.lineWidth = 3;
-        for (let y = 14; y < 96; y += 20) {
+        for (let y = 12 + motif * 3; y < 96; y += 20) {
             ctx.beginPath();
             for (let x = -8; x < 104; x += 12) {
-                const waveY = y + Math.sin(x * 0.18) * 3;
+                const waveY = y + Math.sin((x + motif * 11) * 0.18) * 3;
                 if (x === -8) ctx.moveTo(x, waveY);
                 else ctx.lineTo(x, waveY);
             }
@@ -796,34 +1196,36 @@ export class Tile {
         ctx.globalAlpha = 1;
     }
 
-    static drawSpeckles(ctx, color, count, alpha) {
+    static drawSpeckles(ctx, color, count, alpha, motif = 0) {
         ctx.fillStyle = color;
         ctx.globalAlpha = alpha;
         for (let i = 0; i < count; i++) {
-            const x = (i * 37) % 92 + 2;
-            const y = (i * 53) % 92 + 2;
-            const size = 1 + (i % 3);
+            const x = (i * 37 + motif * 19) % 92 + 2;
+            const y = (i * 53 + motif * 31) % 92 + 2;
+            const size = 1 + ((i + motif) % 3);
             ctx.fillRect(x, y, size, size);
         }
         ctx.globalAlpha = 1;
     }
 
-    static drawIce(ctx, color) {
+    static drawIce(ctx, color, motif = 0) {
         ctx.strokeStyle = color;
         ctx.globalAlpha = 0.5;
         ctx.lineWidth = 2;
         for (let i = 0; i < 7; i++) {
-            const start = (i * 13) % 96;
+            const start = (i * 13 + motif * 17) % 96;
             ctx.beginPath();
             ctx.moveTo(start, 4);
-            ctx.lineTo(96 - start / 2, 92);
+            ctx.lineTo((96 - start / 2 + motif * 7) % 104, 92);
             ctx.stroke();
         }
         ctx.globalAlpha = 1;
     }
 
-    static drawLava(ctx) {
-        const gradient = ctx.createRadialGradient(48, 48, 4, 48, 48, 70);
+    static drawLava(ctx, motif = 0) {
+        const centerX = 42 + motif * 2;
+        const centerY = 51 - motif;
+        const gradient = ctx.createRadialGradient(centerX, centerY, 4, centerX, centerY, 70);
         gradient.addColorStop(0, '#ffd166');
         gradient.addColorStop(0.45, '#f97316');
         gradient.addColorStop(1, '#7c1d12');
@@ -832,9 +1234,9 @@ export class Tile {
         ctx.strokeStyle = 'rgba(255, 224, 102, 0.65)';
         ctx.lineWidth = 4;
         ctx.beginPath();
-        ctx.moveTo(8, 28);
-        ctx.bezierCurveTo(28, 10, 42, 60, 62, 28);
-        ctx.bezierCurveTo(72, 12, 84, 30, 91, 18);
+        ctx.moveTo(5 + motif, 25 + motif * 2);
+        ctx.bezierCurveTo(25, 8 + motif, 39 + motif, 61 - motif, 60, 30 + motif);
+        ctx.bezierCurveTo(71, 10 + motif * 2, 82 - motif, 33, 92, 17 + motif);
         ctx.stroke();
     }
 

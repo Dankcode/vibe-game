@@ -246,8 +246,8 @@ export function applyBuildingStoriesToTileRows(tileRows, buildings = []) {
                         continue;
                     }
                     if (stairCell.role === 'air') {
-                        // Top-left air shaft: keep the origin floor walkable, leave the column open
-                        // through the destination floor slab, keep any floors above the destination.
+                        // Destination pass-through shaft: keep the origin floor walkable, leave this
+                        // column open through the destination floor slab, keep floors above it.
                         cell.height = baseElevation;
                         cell.buildingFloorLevels = buildingFloorLevels
                             .filter((level) => level <= stairOrigin || level > stairOrigin + 2);
@@ -411,6 +411,7 @@ export function stampBuildingsOnRows(rows, buildings = DEFAULT_BUILDINGS, option
 
 function normalizeBuildingEntrances(mutable, buildings, offsetX, offsetY) {
     for (const building of buildings) {
+        if (building.preserveEntrance === true) continue;
         const safeDoor = findSafeDoor(building, mutable, offsetX, offsetY);
         if (safeDoor) building.door = safeDoor;
     }
@@ -475,6 +476,9 @@ function prepareTownLots(mutable, buildings, offsetX, offsetY, options) {
             const row = building.y + localY + offsetY;
             const col = building.x + localX + offsetX;
             if (!mutable[row]?.[col]) continue;
+            // Lot aprons are cosmetic ground preparation. Never let them carve city walls,
+            // water, or another structure; placement validation must move the building instead.
+            if (!canStampDoorApproach(mutable[row][col])) continue;
             mutable[row][col] = BUILDING_SYMBOLS.approach;
         }
 
@@ -533,6 +537,7 @@ function stampRoadCell(mutable, x, y, offsetX, offsetY) {
     const row = y + offsetY;
     const col = x + offsetX;
     if (!mutable[row]?.[col]) return;
+    if (!canStampDoorApproach(mutable[row][col])) return;
     mutable[row][col] = BUILDING_SYMBOLS.approach;
 }
 
@@ -558,7 +563,8 @@ function stampBuilding(mutable, building, offsetX, offsetY) {
             const row = building.y + localY + offsetY;
             const col = building.x + localX + offsetX;
             if (!mutable[row]?.[col]) continue;
-            if (!canStampOver(mutable[row][col]) && !building.footprintCells?.length) continue;
+            // Explicit footprints are not permission to overwrite protected world constraints.
+            if (!canStampOver(mutable[row][col])) continue;
 
             const isEdge = isBuildingEdgeCell(footprint.set, localX, localY);
             const isDoor = building.door?.x === localX && building.door?.y === localY;
@@ -751,6 +757,16 @@ function stampDoorApproach(mutable, building, offsetX, offsetY) {
 
 function isWindowCandidate(building, localX, localY, edge) {
     if (!edge) return false;
+
+    // Preferred path: the wave-function-collapsed facade plan baked at import time
+    // (tools/import_world_map_package.mjs resolveFacadeWindows). It is derived purely from the
+    // map-data seed, so every client stamps the identical persistent facades.
+    if (Array.isArray(building.facadeWindows)) {
+        return building.facadeWindows.some((cell) =>
+            Math.floor(cell?.[0]) === localX && Math.floor(cell?.[1]) === localY);
+    }
+
+    // Legacy fallback for buildings without a baked facade plan: hashed rhythm pattern.
     const isCorner = (localX === 0 || localX === building.width - 1) &&
         (localY === 0 || localY === building.height - 1);
     if (isCorner) return false;

@@ -2,47 +2,58 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <link rel="icon" href="data:,">
     <title>Vibe Game</title>
     <style>
         :root {
-            --page-bg: #101512;
-            --panel-bg: rgba(15, 23, 18, 0.72);
-            --panel-border: rgba(205, 221, 181, 0.24);
-            --text: #eef6df;
-            --muted: #aab9a4;
-            --accent: #9ad17b;
-            --warn: #f4c66d;
+            --page-bg: #071924;
+            --panel-bg: rgba(13, 43, 59, 0.86);
+            --panel-border: rgba(221, 248, 255, 0.48);
+            --text: #f5fcff;
+            --muted: #b9d8e1;
+            --accent: #65e2a4;
+            --warn: #ffd36a;
+            --shell-gap: 12px;
+            --hud-gap: 10px;
+            --map-toggle-width: 78px;
+            --reroll-width: 112px;
         }
 
         * {
             box-sizing: border-box;
         }
 
+        html {
+            width: 100%;
+            height: 100%;
+        }
+
         body { 
             margin: 0; 
-            background: radial-gradient(circle at 50% 10%, #253225 0, var(--page-bg) 56%);
+            background: radial-gradient(circle at 50% 10%, #164761 0, var(--page-bg) 62%);
             overflow: hidden; 
             display: flex;
             justify-content: center;
             align-items: center;
-            height: 100vh;
-            width: 100vw;
+            min-height: 100svh;
+            height: 100dvh;
+            width: 100%;
+            padding: var(--shell-gap);
             color: var(--text);
             font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         }
 
         .game-shell {
             position: relative;
-            width: min(96vw, 1360px);
-            height: min(92vh, 820px);
-            min-height: 520px;
-            border: 1px solid rgba(230, 242, 211, 0.2);
-            border-radius: 8px;
+            width: min(100%, 1680px);
+            height: min(calc(100dvh - (var(--shell-gap) * 2)), 945px);
+            min-height: min(520px, calc(100dvh - (var(--shell-gap) * 2)));
+            border: 2px solid rgba(232, 250, 255, 0.5);
+            border-radius: 12px;
             overflow: hidden;
-            background: #182018;
-            box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+            background: #59c9ee;
+            box-shadow: 0 28px 90px rgba(0, 13, 25, 0.5);
         }
 
         #three-game { 
@@ -69,32 +80,36 @@
             display: flex;
             gap: 8px;
             align-items: center;
-            padding: 10px;
+            padding: var(--hud-gap);
             color: var(--text);
         }
 
         .hud-top {
             top: 0;
             left: 0;
+            right: calc(var(--map-toggle-width) + var(--reroll-width) + (var(--hud-gap) * 3));
         }
 
         .hud-bottom {
             right: 0;
             bottom: 0;
             align-items: flex-end;
+            justify-content: flex-end;
+            max-width: min(100%, 720px);
         }
 
         .hud-panel,
         .stat-chip {
             border: 1px solid var(--panel-border);
-            border-radius: 8px;
+            border-radius: 11px;
             background: var(--panel-bg);
             backdrop-filter: blur(12px);
-            box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+            box-shadow: 0 10px 28px rgba(0, 18, 30, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.12);
         }
 
         .hud-panel {
-            min-width: 184px;
+            width: min(100%, 320px);
+            min-width: 0;
             padding: 10px 12px;
         }
 
@@ -106,12 +121,17 @@
         }
 
         .brand {
+            min-width: 0;
             font-size: 14px;
             font-weight: 700;
             letter-spacing: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .status-pill {
+            flex: 0 0 auto;
             min-width: 62px;
             padding: 4px 8px;
             border-radius: 999px;
@@ -154,11 +174,51 @@
             color: var(--muted);
             font-size: 12px;
             line-height: 1.35;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .stat-chip {
+            flex: 0 1 102px;
             min-width: 92px;
             padding: 8px 10px;
+            overflow: hidden;
+        }
+
+        .stat-chip.location-chip {
+            flex-basis: 150px;
+            min-width: 130px;
+        }
+
+        .debug-stat {
+            display: none;
+        }
+
+        .reroll-button {
+            position: absolute;
+            top: var(--hud-gap);
+            right: calc(var(--map-toggle-width) + (var(--hud-gap) * 2));
+            z-index: 5;
+            display: flex;
+            width: var(--reroll-width);
+            height: 40px;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+            padding: 8px 12px;
+            border-radius: 11px;
+            background: var(--panel-bg);
+            backdrop-filter: blur(12px);
+            pointer-events: auto;
+            box-shadow: 0 10px 28px rgba(0, 18, 30, 0.24);
+        }
+
+        .reroll-button svg {
+            display: block;
+            width: 18px;
+            height: 18px;
+            flex: 0 0 auto;
         }
 
         .stat-label {
@@ -175,33 +235,36 @@
             margin-top: 4px;
             font-size: 13px;
             font-weight: 700;
+            overflow: hidden;
+            text-overflow: ellipsis;
             white-space: nowrap;
         }
 
         .admin-toggle {
             position: absolute;
-            top: 10px;
-            right: 10px;
+            top: var(--hud-gap);
+            right: var(--hud-gap);
             z-index: 5;
-            width: 78px;
-            height: 36px;
+            width: var(--map-toggle-width);
+            height: 40px;
             pointer-events: auto;
             background: var(--panel-bg);
+            border-radius: 11px;
             backdrop-filter: blur(12px);
         }
 
         .admin-panel {
             position: absolute;
-            top: 54px;
-            right: 10px;
+            top: calc(var(--hud-gap) + 44px);
+            right: var(--hud-gap);
             z-index: 6;
             display: none;
-            width: min(380px, calc(100% - 20px));
-            max-height: calc(100% - 74px);
+            width: min(380px, calc(100% - (var(--hud-gap) * 2)));
+            max-height: calc(100% - (var(--hud-gap) + 64px));
             padding: 12px;
             border: 1px solid var(--panel-border);
             border-radius: 8px;
-            background: rgba(13, 20, 16, 0.88);
+            background: rgba(8, 34, 48, 0.94);
             backdrop-filter: blur(16px);
             pointer-events: auto;
             overflow: auto;
@@ -358,11 +421,51 @@
 
         .burg-map-cell.water { background: #206d83; }
         .burg-map-cell.ground { background: #557e45; }
-        .burg-map-cell.road { background: #a79a72; }
+        .burg-map-cell.ground.palette-meadow { background: #69c956; }
+        .burg-map-cell.ground.palette-forest { background: #2f9e59; }
+        .burg-map-cell.ground.palette-jungle { background: #19a968; }
+        .burg-map-cell.ground.palette-savanna { background: #b8c950; }
+        .burg-map-cell.ground.palette-desert { background: #eac46d; }
+        .burg-map-cell.ground.palette-wetland { background: #63aa85; }
+        .burg-map-cell.ground.palette-taiga { background: #4c9480; }
+        .burg-map-cell.ground.palette-tundra { background: #c8e8e8; }
+        .burg-map-cell.ground.palette-alpine { background: #91a99d; }
+        .burg-map-cell.ground.palette-crystal { background: #8768d4; }
+        .burg-map-cell.road,
+        .burg-map-cell.palette-path { background: #e5b968; }
         .burg-map-cell.wall { background: #717b7d; }
         .burg-map-cell.building { background: #9a7652; }
         .burg-map-cell.door { background: #d7b85f; }
         .burg-map-cell.stair { background: #d9d0bb; }
+
+        .burg-map-cell.elevation-0 { filter: brightness(0.76) saturate(0.92); }
+        .burg-map-cell.elevation-1 { filter: brightness(0.88); }
+        .burg-map-cell.elevation-2 { filter: brightness(0.98); }
+        .burg-map-cell.elevation-3 { filter: brightness(1.07) saturate(1.04); }
+        .burg-map-cell.elevation-4 { filter: brightness(1.15) saturate(1.08); }
+        .burg-map-cell.elevation-5,
+        .burg-map-cell.elevation-6 { filter: brightness(1.22) saturate(1.12); }
+
+        .burg-landmark-point {
+            position: absolute;
+            z-index: 2;
+            width: 7px;
+            height: 7px;
+            border: 1px solid rgba(255, 255, 255, 0.78);
+            border-radius: 2px;
+            background: #ffd764;
+            box-shadow: 0 0 0 2px rgba(14, 24, 29, 0.74), 0 0 8px rgba(255, 215, 100, 0.7);
+            transform: translate(-50%, -50%) rotate(45deg);
+        }
+
+        .burg-landmark-point.is-waterfall,
+        .burg-landmark-point.is-fountain { background: #54e4ff; }
+        .burg-landmark-point.is-windmill,
+        .burg-landmark-point.is-overlook { background: #8ee86f; }
+        .burg-landmark-point.is-banner,
+        .burg-landmark-point.is-archway { background: #b994ff; }
+        .burg-landmark-point.is-clock_tower,
+        .burg-landmark-point.is-lantern_cluster { background: #ffb755; }
 
         .burg-player-point {
             position: absolute;
@@ -505,22 +608,43 @@
             background: rgba(238, 246, 223, 0.05);
         }
 
-        @media (max-width: 720px) {
+        @media (max-width: 720px), (max-height: 560px) {
+            :root {
+                --shell-gap: 0px;
+                --hud-gap: max(8px, env(safe-area-inset-top), env(safe-area-inset-right), env(safe-area-inset-bottom), env(safe-area-inset-left));
+                --reroll-width: 42px;
+            }
+
+            body {
+                padding: 0;
+            }
+
             .game-shell {
-                width: 100vw;
-                height: 100vh;
+                width: 100%;
+                height: 100dvh;
                 min-height: 0;
                 border-radius: 0;
                 border: 0;
             }
 
             .hud-cluster {
-                padding: 8px;
                 gap: 6px;
             }
 
+            .hud-top {
+                right: calc(var(--map-toggle-width) + var(--reroll-width) + (var(--hud-gap) * 3));
+            }
+
+            .reroll-button {
+                padding: 9px;
+            }
+
+            .reroll-button span {
+                display: none;
+            }
+
             .hud-panel {
-                min-width: 152px;
+                width: 100%;
                 padding: 8px 10px;
             }
 
@@ -532,14 +656,19 @@
             .hud-bottom {
                 left: 0;
                 display: grid;
-                grid-template-columns: repeat(5, minmax(0, 1fr));
-                width: 100%;
+                grid-template-columns: minmax(84px, 1.35fr) minmax(72px, 1.1fr) minmax(64px, .8fr) minmax(56px, .65fr) minmax(56px, .65fr);
+                width: auto;
+                max-width: none;
             }
 
             .hud-bottom .stat-chip {
                 min-width: 0;
                 padding: 7px 5px;
                 overflow: hidden;
+            }
+
+            .stat-chip.location-chip {
+                min-width: 0;
             }
 
             .hud-bottom .stat-label {
@@ -553,7 +682,7 @@
             }
 
             .admin-panel {
-                top: 52px;
+                top: calc(var(--hud-gap) + 44px);
             }
 
             .combat-grid {
@@ -561,7 +690,7 @@
             }
         }
     </style>
-  <script type="module" crossorigin src="/assets/index-D0yNilIJ.js"></script>
+  <script type="module" crossorigin src="/assets/index-ClYk64OH.js"></script>
 </head>
 <body>
     <main class="game-shell" aria-label="Vibe Game">
@@ -573,22 +702,34 @@
                         <span class="brand">Vibe Realm</span>
                         <span id="status-pill" class="status-pill">Booting</span>
                     </div>
-                    <div class="quest-line">Meadow hare sighted near the village edge.</div>
+                    <div id="region-summary" class="quest-line">Shaping the FMG frontier…</div>
                 </div>
             </section>
 
             <section class="hud-cluster hud-bottom">
-                <div class="stat-chip">
+                <div class="stat-chip debug-stat">
                     <span class="stat-label">Tile</span>
                     <span id="position-readout" class="stat-value">0, 0, 0</span>
                 </div>
-                <div class="stat-chip">
+                <div class="stat-chip debug-stat">
                     <span class="stat-label">Terrain</span>
                     <span id="zone-readout" class="stat-value">Loading</span>
                 </div>
-                <div class="stat-chip">
+                <div class="stat-chip debug-stat">
                     <span class="stat-label">Chunk</span>
                     <span id="chunk-readout" class="stat-value">0,0</span>
+                </div>
+                <div class="stat-chip location-chip">
+                    <span class="stat-label">Location</span>
+                    <span id="location-readout" class="stat-value">Loading</span>
+                </div>
+                <div class="stat-chip">
+                    <span class="stat-label">Biome</span>
+                    <span id="biome-readout" class="stat-value">Loading</span>
+                </div>
+                <div class="stat-chip">
+                    <span class="stat-label">Seed</span>
+                    <span id="seed-readout" class="stat-value">0</span>
                 </div>
                 <div class="stat-chip">
                     <span class="stat-label">Wildlife</span>
@@ -600,6 +741,15 @@
                 </div>
             </section>
 
+            <button id="world-reroll-button" class="reroll-button" type="button"
+                data-testid="world-reroll" aria-label="Generate a new world variation" aria-keyshortcuts="R"
+                title="Generate a new world variation (R)">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M19 7V3m0 0h-4m4 0-3.2 3.2A7 7 0 1 0 18.3 14" fill="none"
+                        stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span>Regenerate</span>
+            </button>
             <button id="admin-toggle" class="admin-toggle" type="button" aria-expanded="false" aria-controls="admin-panel" aria-keyshortcuts="M">Map</button>
             <aside id="admin-panel" class="admin-panel" aria-label="Admin panel">
                 <div class="admin-head">

@@ -9,6 +9,8 @@ const PATCH_RATE_MS = 50;
 const MIN_MOVE_INTERVAL_MS = 45;
 const POSITION_PRECISION = 1000;
 const MAX_CENTER_STEP = 0.7;
+const NETWORK_PALETTE_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+const NETWORK_HEIGHT_ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyz';
 
 class WorldRoom extends Colyseus.Room {
     onCreate(options) {
@@ -133,8 +135,10 @@ class WorldRoom extends Colyseus.Room {
         this.onMessage('world:admin:map_updated', (client, data) => {
             const width = Number.isInteger(data?.width) ? data.width : 0;
             const height = Number.isInteger(data?.height) ? data.height : 0;
-            if (this.isValidMapRows(data?.rows)) {
-                this.worldSurface.loadRows(data.rows);
+            const decodedRows = this.decodeNetworkMap(data) || data?.rows;
+            const accepted = this.isValidMapRows(decodedRows);
+            if (accepted) {
+                this.worldSurface.loadRows(decodedRows);
                 const shouldUseHighestSpawn = ['random', 'client-default'].includes(data?.source);
                 const requestedSpawn = this.getRequestedMapSpawn(data?.spawn);
                 const fallbackSpawn = shouldUseHighestSpawn ? this.worldSurface.findHighestWalkable() : null;
@@ -158,7 +162,8 @@ class WorldRoom extends Colyseus.Room {
                 source: data?.source || 'custom',
                 width,
                 height,
-                chunkSize: CHUNK_SIZE
+                chunkSize: CHUNK_SIZE,
+                accepted
             });
         });
 
@@ -210,6 +215,42 @@ class WorldRoom extends Colyseus.Room {
         const width = this.getMapRowWidth(rows[0]);
         if (width <= 0 || width > 128) return false;
         return rows.every((row) => this.getMapRowWidth(row) === width);
+    }
+
+    decodeNetworkMap(data) {
+        if (data?.matrixEncoding !== 'palette-height-v1' || !Array.isArray(data?.palette)) return null;
+        const { palette, tileRows, elevationRows } = data;
+        if (!Array.isArray(tileRows) || !Array.isArray(elevationRows) || tileRows.length === 0 ||
+            tileRows.length !== elevationRows.length || tileRows.length > 128 || palette.length > NETWORK_PALETTE_ALPHABET.length) {
+            return null;
+        }
+        const width = tileRows[0]?.length || 0;
+        if (!width || width > 128 || tileRows.some((row) => typeof row !== 'string' || row.length !== width) ||
+            elevationRows.some((row) => typeof row !== 'string' || row.length !== width)) {
+            return null;
+        }
+
+        const decoded = [];
+        for (let y = 0; y < tileRows.length; y++) {
+            const row = [];
+            for (let x = 0; x < width; x++) {
+                const paletteIndex = NETWORK_PALETTE_ALPHABET.indexOf(tileRows[y][x]);
+                const elevation = NETWORK_HEIGHT_ALPHABET.indexOf(elevationRows[y][x]);
+                const entry = palette[paletteIndex];
+                if (!Array.isArray(entry) || entry.length < 4 || elevation < 0) return null;
+                const cell = {
+                    element: entry[0],
+                    texture: entry[1],
+                    effect: entry[2],
+                    building: entry[3],
+                    height: elevation
+                };
+                if (typeof entry[4] === 'boolean') cell.walkable = entry[4];
+                row.push(cell);
+            }
+            decoded.push(row);
+        }
+        return decoded;
     }
 
     getMapRowWidth(row) {

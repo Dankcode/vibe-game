@@ -3,9 +3,13 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"npm run dev --workspace=client\" \"npm start --workspace=server\"",
+    "dev": "concurrently --kill-others-on-fail --names client,server \"npm run dev --workspace=client\" \"npm start --workspace=server\"",
+    "build": "npm run build --workspace=client",
     "client": "npm run dev --workspace=client",
     "server": "npm start --workspace=server",
+    "test": "node --test client/src/data/*.test.js",
+    "test:wfc": "node --test client/src/data/WaveFunctionCollapse.test.js client/src/data/TownWavePlanner.test.js",
+    "validate:world": "node tools/validate_world_generation.mjs",
     "compile:magic-voxels": "node tools/compile_magic_voxels.mjs",
     "import:world-map": "node tools/import_world_map_package.mjs",
     "replace:world-map": "node tools/import_world_map_package.mjs && node tools/compile_magic_voxels.mjs --all-burgs"

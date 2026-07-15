@@ -91,7 +91,7 @@ const DEFAULT_MAP = [
 const WALKABLE_ELEMENTS = new Set([ELEMENTS.GEO, ELEMENTS.ANEMO, ELEMENTS.CRYO]);
 const BLOCKING_CLEARANCE_VOXELS = 1;
 const BUILDING_STAIR_STOREY_HEIGHT = 2;
-const BUILDING_STAIR_PAIR_STEP_HEIGHT = 1;
+const BUILDING_STAIR_PAIR_STEP_HEIGHT = BUILDING_STAIR_STOREY_HEIGHT;
 const BUILDING_FLOOR_HEIGHT = 2;
 const BUILDING_LEVEL_KINDS = {
     BASEMENT: 'basement',
@@ -353,7 +353,7 @@ class WorldSurface {
                 pushBlock({
                     z,
                     element: ELEMENTS.STRUCTURE,
-                    texture: isCityWallStair ? 1 : cell.texture,
+                    texture: isCityWallStair ? 1 : 0,
                     effect: ELEMENTS.STRUCTURE,
                     building: 1,
                     partTag: isCityWallStair ? undefined : BUILDING_PART_TAGS.STAIR_SUPPORT,
@@ -482,8 +482,8 @@ class WorldSurface {
         const building = this.clampInteger(block.building, 0);
         const z = this.clampInteger(block.z, 0);
         const walkable = Boolean(block.walkable);
-        const stairLowerTier = this.isCityWallStairPart(building) ? 0 : 1;
-        const stairUpperTier = this.isCityWallStairPart(building) ? 1 : BUILDING_STAIR_STOREY_HEIGHT;
+        const stairLowerTier = 0;
+        const stairUpperTier = 1;
         return {
             active: true,
             type: this.isStairPart(building) ? 'slope-aabb' : 'aabb',
@@ -1098,7 +1098,7 @@ class WorldSurface {
         if (!this.isBuildingStairSurface(fromSurface) || !this.isBuildingStairSurface(toSurface)) return false;
         const dz = (toSurface?.z ?? 0) - (fromSurface?.z ?? 0);
         if (Math.abs(dz) !== BUILDING_STAIR_PAIR_STEP_HEIGHT) return false;
-        if (Math.abs(dx) !== 1 || Math.abs(dy) !== 1) return false;
+        if (Math.abs(dx) + Math.abs(dy) !== 1) return false;
         const direction = dz > 0
             ? this.getBuildingStairAscentVector(fromSurface) || this.getBuildingStairAscentVector(toSurface)
             : this.getBuildingStairAscentVector(toSurface) || this.getBuildingStairAscentVector(fromSurface);
@@ -1123,10 +1123,10 @@ class WorldSurface {
 
     getBuildingStairAscentVector(surface) {
         return {
-            13: { x: 1, y: -1 },
-            11: { x: 1, y: 1 },
-            12: { x: -1, y: 1 },
-            10: { x: -1, y: -1 }
+            13: { x: 0, y: 1 },
+            11: { x: -1, y: 0 },
+            12: { x: 0, y: -1 },
+            10: { x: 1, y: 0 }
         }[surface?.building] || null;
     }
 

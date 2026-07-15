@@ -99,17 +99,35 @@ export class AdminPanel {
             for (let y = 0; y < height; y++) {
                 for (let x = 0; x < width; x++) {
                     const cell = document.createElement('span');
-                    cell.className = `burg-map-cell ${classifyBurgMapCell(rows[y][x])}`;
+                    const elevation = Math.max(0, Math.min(6, Math.floor(Number(rows[y][x]?.height) || 0)));
+                    const paletteId = String(rows[y][x]?.paletteId || 'meadow').replace(/[^a-z0-9_-]/gi, '-');
+                    cell.className = `burg-map-cell ${classifyBurgMapCell(rows[y][x])} palette-${paletteId} elevation-${elevation}`;
                     grid.appendChild(cell);
                 }
             }
             this.burgMapCard.appendChild(grid);
         } else {
-            this.burgMapCard.querySelectorAll('.burg-player-point, .burg-map-label').forEach((node) => node.remove());
+            this.burgMapCard.querySelectorAll('.burg-player-point, .burg-landmark-point, .burg-map-label')
+                .forEach((node) => node.remove());
         }
 
         const offsetX = Math.floor(width / 2);
         const offsetY = Math.floor(height / 2);
+        for (const landmark of rows.decorations || []) {
+            if (!landmark.matrixLandmark) continue;
+            const x = Number(landmark.x);
+            const y = Number(landmark.y);
+            if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+            const point = document.createElement('span');
+            point.className = `burg-landmark-point is-${String(landmark.type || 'landmark').replace(/[^a-z0-9_-]/g, '-')}`;
+            point.title = formatLandmarkLabel(landmark.type);
+            point.setAttribute('role', 'img');
+            point.setAttribute('aria-label', point.title);
+            point.style.left = `${((x + offsetX + 0.5) / width) * 100}%`;
+            point.style.top = `${((y + offsetY + 0.5) / height) * 100}%`;
+            this.burgMapCard.appendChild(point);
+        }
+
         for (const player of players) {
             const x = Number(player?.x);
             const y = Number(player?.y);
@@ -206,6 +224,13 @@ export class AdminPanel {
         this.message.textContent = text;
         this.message.dataset.tone = tone;
     }
+}
+
+function formatLandmarkLabel(type) {
+    return String(type || 'landmark')
+        .split('_')
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
 }
 
 function classifyBurgMapCell(cell) {

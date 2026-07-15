@@ -190,12 +190,14 @@ export class PlayerAvatar {
         const facingSide = direction === 'west' ? -1 : direction === 'east' ? 1 : 0;
         const skin = '#ffe2cf';
         const blush = '#ff9eb4';
-        const hair = '#4b2f7f';
-        const hairShade = '#2d214f';
-        const coat = '#7fd6ff';
-        const coatShade = '#3989c7';
-        const boots = '#5a3a55';
-        const outline = 'rgba(42, 28, 54, 0.72)';
+        const hair = '#8c532f';
+        const hairShade = '#51301f';
+        const coat = '#e7edf5';
+        const coatShade = '#8394aa';
+        const tabard = '#3978b9';
+        const gold = '#e4b84f';
+        const boots = '#563c31';
+        const outline = 'rgba(33, 35, 48, 0.82)';
 
         ctx.save();
         ctx.translate(originX, originY);
@@ -211,6 +213,22 @@ export class PlayerAvatar {
         const headY = 34 + bob;
         const faceShift = facingSide * 4;
 
+        // Reference-inspired knight silhouette. Every part shares bodyY so
+        // equipment stays registered through the complete walk cycle.
+        if (direction !== 'north') {
+            ctx.strokeStyle = outline;
+            ctx.lineWidth = 5;
+            ctx.fillStyle = '#537fc0';
+            ctx.beginPath();
+            ctx.arc(26 - facingSide * 2, bodyY + 22, 12, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = '#edf4ff';
+            ctx.beginPath();
+            ctx.arc(26 - facingSide * 2, bodyY + 22, 6, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
         ctx.strokeStyle = outline;
         ctx.lineWidth = 5;
         ctx.fillStyle = coatShade;
@@ -221,6 +239,11 @@ export class PlayerAvatar {
         ctx.fillStyle = coat;
         PlayerAvatar.roundRect(ctx, 35, bodyY + 2, 26, 32, 11);
         ctx.fill();
+        ctx.fillStyle = tabard;
+        PlayerAvatar.roundRect(ctx, 42, bodyY + 5, 12, 30, 4);
+        ctx.fill();
+        ctx.fillStyle = gold;
+        ctx.fillRect(46, bodyY + 13, 4, 12);
 
         ctx.strokeStyle = outline;
         ctx.lineWidth = 6;
@@ -230,6 +253,22 @@ export class PlayerAvatar {
         ctx.moveTo(61, bodyY + 13);
         ctx.lineTo(71 - step * 2, bodyY + 31);
         ctx.stroke();
+
+        if (direction !== 'north') {
+            const swordX = direction === 'west' ? 72 : 74;
+            ctx.strokeStyle = '#e9f3ff';
+            ctx.lineWidth = 5;
+            ctx.beginPath();
+            ctx.moveTo(swordX, bodyY + 30 - step * 2);
+            ctx.lineTo(swordX + facingSide * 3, bodyY - 14 - step * 2);
+            ctx.stroke();
+            ctx.strokeStyle = gold;
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(swordX - 6, bodyY + 22 - step * 2);
+            ctx.lineTo(swordX + 6, bodyY + 22 - step * 2);
+            ctx.stroke();
+        }
 
         ctx.strokeStyle = boots;
         ctx.lineWidth = 8;
@@ -252,6 +291,11 @@ export class PlayerAvatar {
         ctx.beginPath();
         ctx.ellipse(47, headY + 6, 24, 18, -0.08, 0, Math.PI * 2);
         ctx.fill();
+        ctx.strokeStyle = coatShade;
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.arc(48, headY + 13, 23, Math.PI * 1.08, Math.PI * 1.92);
+        ctx.stroke();
         ctx.fillStyle = hairShade;
         ctx.beginPath();
         ctx.ellipse(33 - faceShift * 0.2, headY + 22, 8, 17, 0.18, 0, Math.PI * 2);

@@ -17,7 +17,8 @@ export class MeadowHare {
         this.speed = 1.35;
         this.idleTimer = 0.4;
         this.target = null;
-        this.bobTime = Math.random() * Math.PI * 2;
+        this.random = createWildlifeRandom(spawn.seed ?? spawn.id);
+        this.bobTime = this.random() * Math.PI * 2;
 
         this.group = this.createModel();
         this.threeManager.addToEntities(this.group);
@@ -75,7 +76,7 @@ export class MeadowHare {
             this.idleTimer -= deltaSeconds;
             if (this.idleTimer <= 0) {
                 this.target = this.pickTarget();
-                this.idleTimer = 1.2 + Math.random() * 2.4;
+                this.idleTimer = 1.2 + this.random() * 2.4;
             }
         }
 
@@ -114,13 +115,17 @@ export class MeadowHare {
             }
         }
         if (candidates.length === 0) return null;
-        return candidates[Math.floor(Math.random() * candidates.length)];
+        return candidates[Math.floor(this.random() * candidates.length)];
     }
 
     syncModel() {
         this.visualZ += (this.gridZ - this.visualZ) * 0.18;
         const hop = this.target ? Math.abs(Math.sin(this.bobTime)) * 0.08 : 0;
-        this.group.position.set(this.gridX, this.visualZ + 1.05 + hop, this.gridY);
+        this.group.position.set(
+            this.gridX,
+            this.visualZ + this.worldGenerator.getTopSurfaceOffset() + 0.02 + hop,
+            this.gridY
+        );
     }
 
     destroy() {
@@ -130,4 +135,18 @@ export class MeadowHare {
         });
         this.threeManager.removeFromEntities(this.group);
     }
+}
+
+function createWildlifeRandom(seed) {
+    let state = 2166136261;
+    for (const character of String(seed)) {
+        state ^= character.charCodeAt(0);
+        state = Math.imul(state, 16777619);
+    }
+    return () => {
+        state = (state + 0x6D2B79F5) | 0;
+        let value = Math.imul(state ^ (state >>> 15), 1 | state);
+        value = (value + Math.imul(value ^ (value >>> 7), 61 | value)) ^ value;
+        return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+    };
 }
