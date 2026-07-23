@@ -1,18 +1,23 @@
-# PLAN 10 (Rev 2) — Unified Constrained WFC: Terrain + Buildings, JSON as Inhibitor
+# PLAN 10 (Rev 6) — Blueprint-First WFC: Fixed FMG Skeleton, Partial Cores, Generated Terrain + Buildings
 
-**Status:** Core requested scope implemented · **Date:** 2026-07-14 · **Scope:** this repo only.
+**Status:** Rev 6 implemented · **Date:** 2026-07-23 · **Scope:** this repo only.
 
-Rev 2 change: WFC is now the *primary generator for both terrain and buildings*. Baked JSON data is no longer spliced verbatim (old WS2); it becomes a **constraint envelope** that limits how chaotic the wave can go, plus a small library of **baked building prefabs** injected as pre-collapsed nodes. Inside city walls the wave is biased toward buildings over terrain change. Minimum enterable interior drops from 3×3 to **2×3** (smallest cabin).
+WFC remains the primary generator for terrain and buildings, but the global FMG export now passes through an **offline settlement-blueprint compiler** first. The compiler fixes hierarchy, walls, gates, castle plots, roads, ward priors, crossings, docks, climate, and waterfalls before runtime collapse. The JSON-derived blueprint limits chaos; it is never spliced as a town, and no town/building file JSON is opened. Inside walls, per-ward waves strongly favor buildings over terrain changes. The minimum enterable interior remains **2×3**.
 
-## Implementation record (2026-07-14)
+## Implementation record (2026-07-23)
 
-- `WorldConstraintField.js` mathematically projects geography-only FMG values into wall envelopes, gates, urbanization, inhibitor/chaos limits, terrain variance, and fixed-water constraints.
-- `GeographicWFCGenerator.js` now drives terrain WFC and contextual parcel/building WFC from that shared field, stamps physical walls/gates and settlement roads, and reports coupled diagnostics with explicit zero-fallback/zero-contradiction guarantees.
-- `ContextualBuildingWFC.js` supplies parcel-scale terrain/public/building modules, a strong building bias inside wall confinement, deterministic building anchors, and complete enterable buildings with a one-cell wall ring.
-- `BakedBuildingLibrary.js` supplies code-native area-aware market, clocktower, civic hall, inn, lighthouse, chapel, and minimum-cabin blueprints. Two compatible baked landmarks are placed per qualifying area before parcel collapse.
-- `FurniturePlanner.js` preserves both connected walkability and a free 2×3/3×2 interior after furniture/stair occupancy. Runtime doors, facade decoration, furniture, and distinct landmark roof silhouettes are enabled.
-- The earlier WS1/WS4 proposal to extract town/building JSON prefabs was intentionally superseded by the user's no-town/building-payload boundary. FMG/global JSON remains a numeric inhibitor/reference only; baked landmarks are formulaic code assets.
-- Automated acceptance currently passes 47 tests (including all 50 FMG locations), the geography-only world validator, and the Vite production build. The default view has 17 enterable buildings, four baked landmarks, 100% wall-interior parcel building bias, 46.5% developable urban footprint coverage, and no WFC fallbacks or contradictions.
+- `tools/compile_world_blueprints.mjs` and `SettlementBlueprint.js` compile and validate 60 blueprints from the refreshed global FMG payload: 30 one-seat clusters, 30 unwalled fiefs, 160 waterfall directives, 0 unexplained fields, and a 172 KB payload within the explicit 192 KB budget.
+- `WorldConstraintField.js` projects the selected related cluster and stamps a variant-stable skeleton. It no longer invents or relocates settlement envelopes at runtime; every view contains at most one seat wall system, and fiefs remain open villages connected by compiled roads.
+- `GeographicWFCGenerator.js` runs fixed skeleton → terrain collapse → per-ward building waves. Capital seats retain three aligned rings, their compiled voxel heights, and an enterable 9×9 keep; castle, civic, market, harbor, artisan, residential, and garden priors influence density and archetypes.
+- `ContextualBuildingWFC.js` consumes ward/district priors, while `BakedBuildingLibrary.js` supplies formulaic code-native landmarks, a valid minimum cabin, and fixed-area building placement. All generated and baked interiors preserve a free 2×3/3×2 space.
+- `PartialChunkRegistry.js` and `bake_partial_chunks.mjs` replace the retired full magic-voxel dump. A clean 3×3-chunk terrain/elevation core is pinned by global lattice coordinate, schema, generation version, sample scale, and world content hash; terrain seam repair may change the live boundary but never a compatible baked cell.
+- Terrain WFC now uses world-variant seeds, global cell/node ids, complete 8×8 chunks, and a chunk-aligned halo before cropping. Adjacent one-sample views are bit-identical across every overlapping terrain id, elevation, final symbol, palette, and visual-variant cell.
+- Confinement is part of the shared terrain/building formula: uncertain FMG macro water is soft inside a compiled wall envelope so the ward wave can reclaim it as stable urban ground, while parser-authored water and every skeleton node stay fixed.
+- Clipped coastal seats receive a deterministic compact-adjacency fallback only after the normal ward solver fails. It removes aesthetic padding—not structural occupancy—and reruns the same validated 4×5 cabin solver, preserving the required 2×3 interior and free exterior approach.
+- Blueprint coverage now uses exact field patterns and rejects unrecognized nested FMG fields, preventing schema drift from being mislabeled as consumed.
+- `WorldGenerator.js` renders a crenellated keep with turrets, textured roof families, vibrant district accents, and complete metadata-driven multi-tier waterfalls with mist and plunge pools. Terrain-only voxels are sanitized so structural window/door metadata cannot leak onto grass or water.
+- `validate:world` now enforces compiler coverage, no forbidden town/building JSON reads, one seat per cluster, unwalled fiefs, fixed skeleton replay stability, three-ring capitals, keeps, ward waves, waterfall metadata, and zero WFC contradictions across the runtime checks.
+- Current default Trilza acceptance: 10 enterable buildings, 2 baked landmarks, 3 ward waves, 3 wall rings, 1 keep, 34 decorations, 44.7% physical urban footprint coverage, 100% confined parcel building assignment, 0 WFC fallbacks, and 0 contradictions.
 
 ---
 
@@ -219,3 +224,85 @@ Suggested priority: port/docks and citadel (visual payoff, data already at hand)
 
 ## R-execution
 R3+R4 first (rendering trust), then R1 (traversal correctness), R6 (town structure), R2 (walls), R5 (climate), R7 as scoped follow-ups. Each lands with `npm test`, `validate:world` (grown per-item), and the camera-sweep LOD check.
+
+---
+
+# Rev 4 — Blueprint-First Generation: Walls Before WFC, Parser Before Runtime (2026-07-15)
+
+Direction change confirmed by the user: (1) no more unrelated wall-separated fragments — one main city with a castle rules unwalled fief villages; (2) towns generate from a **guideline blueprint** — walls compiled first from FMG data, WFC fills within; (3) **all** FMG data is consumed by an **offline parser** that bakes directives, never by runtime code reading JSON; (4) whole waterfalls generated where river/height data supports them.
+
+## B0 — Architecture shift
+
+Current: `WorldConstraintField` computes wall bounds/urbanization *at runtime per view* from geographic samples — which is why distant, unrelated walled fragments co-exist in one map.
+Target: a **compile step** (Node, offline) parses FMG JSON once and emits per-burg **Settlement Blueprints**; the runtime consumes blueprints as pre-collapsed constraints. `WorldConstraintField` shrinks to a projector of blueprint → view cells (no invention at runtime).
+
+```
+tools/compile_world_blueprints.mjs   (new; runs inside `npm run replace:world-map`)
+  reads: manifest.json + map-data.json (+ per-burg town_summary only — never full town payloads)
+  emits: ACTIVE_SETTLEMENT_BLUEPRINTS in ActiveWorldData.js  (compact, few KB per burg)
+```
+
+## B1 — Settlement Blueprint schema (per burg, all fields parser-derived)
+
+```js
+{
+  burgId, name, tier,                 // tier = f(population, capital, citadel, walls) as R2
+  hierarchy: 'seat' | 'fief',        // seat = walled main city; fief = unwalled satellite village
+  seatOf: [fiefBurgIds],             // seat lists its fiefs; fief points back via liegeBurgId
+  wallRings: [                        // OUTER→INNER; [] for fiefs and unwalled seats
+    { ring: 0, radius, thickness, heightVoxels,
+      gates: [{ bearing, grand, towardRoute | towardFief }] },   // gates face real route bearings
+    { ring: 1, ... }                  // tier ≥2 gets 2 rings; capital 3 (multi-walled city)
+  ],
+  castle: { ward: innermostRing, size, keepHeight } | null,      // capital/citadel/duke seats only
+  wards: [                            // the WFC guideline blueprint, one per ring annulus + center
+    { ring, district: 'castle'|'civic'|'market'|'residential'|'artisan'|'harbor',
+      wfcPriors: { buildingDensity, archetypeWeights, elevationVariance } }
+  ],
+  districtDirectives: { docks, plaza, temple(religionId), watchtowers },   // from burg.flags + state.neighbors
+  roads: [{ kind, widthTiles, gateBearing }],                    // from routes.kind + points
+  climate: { latitude, snowline },                               // from geo_coordinate (R5)
+  water: { riverIds, fords: [...], bridges: [...], waterfalls: [...] }     // §B4
+}
+```
+
+## B2 — One seat, unwalled fiefs (replaces R6's merge-only rule)
+
+Parser-side clustering (not runtime): group burgs within interaction distance `D = f(populations, shared route)`.
+- The dominant burg (walls > capital > citadel > population) becomes the **seat**: it alone gets wall rings and, if `capital || citadel` (or state capital of a duchy `state.form`), a **castle in the innermost ward** — the king/duke ruling the cluster.
+- Every other cluster member becomes a **fief**: walls stripped, rendered as an open WFC village (existing generator path), linked to the seat by a compiled road ending at a seat gate, plus a signpost carrying both names.
+- Views never contain two wall systems; a fief inside a seat's view reads as its farm/village belt, related by road, palette (same state theme), and banner accents.
+- Load-zone alternative rejected for now (bigger engine change); noted as a future option if capital interiors outgrow one view.
+
+## B3 — Walls first, WFC within (the guideline blueprint)
+
+Generation order per view becomes:
+1. **Stamp blueprint skeleton** — wall rings, gates, castle plot, compiled roads, water/waterfall cells: all pre-collapsed (fixed) nodes.
+2. **Ward waves** — each ward annulus is its own WFC region with blueprint priors: castle ward = keep + garrison/manor archetypes, near-zero terrain variance; civic/market = hall/plaza/temple density; residential/artisan outer ward = mixed rows; harbor ward (port flag) = docks against the water edge. Baked landmark placement (Rev 2 WS4) runs per ward with ward-appropriate requirements.
+3. **Wilderness wave** outside the outer ring, as today, with fief villages as open settlements.
+Multi-walled cities fall out of the ring list: capital = 3 concentric rings with grand gates aligned so a route can pass ring-to-ring through aligned gates to the castle.
+
+## B4 — Waterfalls and full water directives (parser-computed)
+
+- Parser walks each river polyline over cell heights: where the along-river height drop ≥ threshold within ≤2 cells, emit `waterfall { position, dropTiers = quantized Δheight, widthTiles = f(river.width), intensity = f(discharge), plungePool: true }`. River `width`/`discharge` also decide ford (narrow) vs bridge (wide) vs no crossing (torrent).
+- Runtime renders **whole waterfalls**: multi-tier cascade down the actual terrain cliff (terrain wave receives the cliff as a fixed elevation constraint so geometry and water agree), plunge pool of shallow-water tiles, walkable shallow outflow, mist particles from the existing atmospheric system. The current single-mesh `addDecorWaterfall` becomes the smallest tier of this.
+- Algorithmic fallback stays: if the *generated* terrain makes any river/stream cross a ≥2-tier step where the parser had no data, the same waterfall assembler runs — data-driven first, formula second.
+
+## B5 — Full FMG utilization (R7 table becomes parser output)
+
+Every R7 row compiles into a blueprint field (B1): flags→districtDirectives, routes.kind→roads, rivers→water, culture.type/state.form→wfcPriors + naming, provinces→map panel regions, notes→lore hooks table keyed by burg for signage. The parser logs a **coverage report**: every FMG field either consumed, or explicitly listed as ignored-with-reason — so "are we using all the data?" is answerable from the import log, not from reading code.
+
+## B6 — Acceptance
+1. Parser: `replace:world-map` emits 60 blueprints; coverage report shows 0 unexplained FMG fields; blueprints total ≤ 192 KB; runtime has zero imports of source-package JSON (lint rule).
+2. Hierarchy: every cluster has exactly one seat; 0 walled fiefs; every fief has a compiled road reaching a seat gate; seats with capital/citadel have a castle in the innermost ring.
+3. Multi-wall: capital renders 3 rings with aligned grand gates; ring interiors satisfy their ward priors (castle ward ≥1 keep, market ward ≥1 plaza, harbor ward docks touch water).
+4. Walls-first: re-running with a different variant seed changes ward interiors but never ring/gate/castle/road/waterfall skeleton cells (fixed-node hash stable).
+5. Waterfalls: every parser-detected drop renders a cascade whose tiers equal `dropTiers`, with plunge pool + walkable outflow; pathfinder can still cross via compiled ford/bridge; 0 waterfalls floating without a cliff.
+6. All previous gates (Rev 2/3) keep passing.
+
+## B7 — Files
+Add: `tools/compile_world_blueprints.mjs`, `client/src/data/SettlementBlueprint.js`, `client/src/data/PartialChunkRegistry.js` (schemas + validators).
+Modify: `import_world_map_package.mjs` (invoke compiler), `WorldConstraintField.js` (project blueprints instead of inventing), `GeographicWFCGenerator.js` (skeleton stamp + ward waves + immutable partial cells), `ContextualBuildingWFC.js` (per-ward priors), `WorldGenerator.js` (waterfall assembler, castle/keep, docks, gatehouse meshes), `validate_world_generation.mjs` (B6), `rules.md`/`context.md`.
+Retire: runtime wall-bounds invention in `WorldConstraintField.createWallBounds` (kept only as blueprint projector), `compile_magic_voxels.mjs`, and the full `shared/magic-voxels/` artifact tree.
+
+Execution: B0/B1 parser + schema → B2 clustering → B3 skeleton-then-ward order → B4 waterfalls → B5 coverage report; regression after each.

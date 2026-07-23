@@ -10,9 +10,10 @@
     "test": "node --test client/src/data/*.test.js",
     "test:wfc": "node --test client/src/data/WaveFunctionCollapse.test.js client/src/data/TownWavePlanner.test.js",
     "validate:world": "node tools/validate_world_generation.mjs",
-    "compile:magic-voxels": "node tools/compile_magic_voxels.mjs",
+    "compile:world-blueprints": "node tools/compile_world_blueprints.mjs",
     "import:world-map": "node tools/import_world_map_package.mjs",
-    "replace:world-map": "node tools/import_world_map_package.mjs && node tools/compile_magic_voxels.mjs --all-burgs"
+    "replace:world-map": "node tools/import_world_map_package.mjs && node tools/compile_world_blueprints.mjs && node tools/bake_partial_chunks.mjs --reset",
+    "bake:partial-chunks": "node tools/bake_partial_chunks.mjs"
   },
   "workspaces": [
     "client",

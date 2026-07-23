@@ -57,7 +57,7 @@ export class Tile {
 
     render() {
         // In 3D: (x, y, z) -> gridX, elevation, gridY
-        const material = Tile.isSpecialBuildingShape(this.building)
+        const material = Tile.isSpecialBuildingShape(this.building) || this.isLayeredShallowWater()
             ? Tile.getInvisibleMaterial()
             : Tile.getMaterials(
                 this.element,
@@ -71,14 +71,14 @@ export class Tile {
         this.mesh = new THREE.Mesh(Tile.geometry, material);
         this.mesh.castShadow = !getTileDefinition(this.element, this.textureValue).walkable;
         this.mesh.receiveShadow = true;
-        
+
         // Position: use (gridX, elevation, gridY)
         // Note: Three.js y is UP.
         this.mesh.position.set(this.gridX, this.elevation, this.gridY);
-        
+
         // Store reference to this Tile instance
         this.mesh.userData.tile = this;
-        
+
         this.threeManager.addToWorld(this.mesh);
         this.createObjects();
     }
@@ -89,7 +89,62 @@ export class Tile {
             this.addWindowWallObjects();
         } else if (Tile.isDirectionalStair(this.building)) {
             this.addStairObjects();
+        } else if (this.isLayeredShallowWater()) {
+            this.addShallowWaterObjects();
         }
+    }
+
+    // MapleStory-2-style walkable water: the block is split into a sand bed on the bottom half
+    // and transparent water on the top half. Both halves carry the tile border, and the water's
+    // border stays visible on top of the transparency so the walkable grid still reads.
+    isLayeredShallowWater() {
+        if (this.element !== ELEMENTS.HYDRO || this.building !== BUILDING_PARTS.NONE) return false;
+        const definition = getTileDefinition(this.element, this.textureValue);
+        return definition.walkable === true &&
+            ['waterShallow', 'waterCoastal', 'marsh'].includes(definition.pattern);
+    }
+
+    addShallowWaterObjects() {
+        const visualContext = this.getVisualContext();
+        const sandMaterials = Tile.getMaterials(
+            ELEMENTS.ANEMO,
+            0,
+            0,
+            this.elevation,
+            BUILDING_PARTS.NONE,
+            Tile.getShallowWaterBedVisualContext(visualContext)
+        );
+        const sandBed = new THREE.Mesh(new THREE.BoxGeometry(0.98, TILE_HEIGHT / 2, 0.98), sandMaterials);
+        sandBed.position.y = -TILE_HEIGHT / 4;
+        sandBed.receiveShadow = true;
+        sandBed.raycast = () => {};
+        this.mesh.add(sandBed);
+        this.objects.push(sandBed);
+
+        const waterMaterials = Tile.getMaterials(
+            this.element,
+            this.textureValue,
+            this.effect,
+            this.elevation,
+            this.building,
+            visualContext
+        );
+        const waterTop = new THREE.Mesh(new THREE.BoxGeometry(0.98, TILE_HEIGHT / 2, 0.98), waterMaterials);
+        waterTop.position.y = TILE_HEIGHT / 4;
+        waterTop.receiveShadow = true;
+        waterTop.raycast = () => {};
+        this.mesh.add(waterTop);
+        this.objects.push(waterTop);
+    }
+
+    static getShallowWaterBedVisualContext(visualContext = {}) {
+        return {
+            ...visualContext,
+            // A ford may sit inside any world palette, including coast, crystal, or tundra.
+            // Its physical bed remains neutral sand instead of inheriting and recoloring the
+            // surrounding water palette.
+            paletteId: null
+        };
     }
 
     getVisualContext() {
@@ -415,13 +470,16 @@ export class Tile {
             const topTexture = Tile.createTexture(visual, effect, elevationTone);
             const sideTexture = Tile.createSideTexture(visual, elevationTone);
             const isWater = element === ELEMENTS.HYDRO;
+            // Water is genuinely transparent (MapleStory-2 read): the sand bed under walkable
+            // shallow water and neighboring cliff sides show through, while the bordered top
+            // texture keeps the tile grid visible on the surface.
             const topMaterial = new THREE.MeshStandardMaterial({
                 color: 0xffffff,
                 map: topTexture,
                 roughness: isWater ? Math.min(0.3, definition.roughness) : definition.roughness,
                 metalness: 0.02,
                 transparent: isWater,
-                opacity: isWater ? 0.96 : 1,
+                opacity: isWater ? 0.62 : 1,
                 emissive: isWater ? new THREE.Color(visual.sideColor) : new THREE.Color(0x000000),
                 emissiveIntensity: isWater ? 0.1 : 0
             });
@@ -431,7 +489,7 @@ export class Tile {
                 roughness: Math.min(1, definition.roughness + 0.08),
                 metalness: 0.02,
                 transparent: isWater,
-                opacity: isWater ? 0.94 : 1,
+                opacity: isWater ? 0.68 : 1,
                 emissive: isWater ? new THREE.Color(visual.sideColor) : new THREE.Color(0x000000),
                 emissiveIntensity: isWater ? 0.06 : 0
             });
@@ -612,9 +670,10 @@ export class Tile {
             Tile.drawElementEffect(ctx, effect);
         }
         Tile.applyElevationTone(ctx, elevationTone);
-        if (!isLiquidPattern && !definition.isOrdinaryTerrain) {
-            Tile.drawRoundedFrame(ctx, definition.walkable);
-        }
+        // MapleStory-2-style framing: EVERY tile top carries a crisp border — ordinary terrain,
+        // built tiles, and water alike — so the walkable grid reads everywhere. Water keeps a
+        // brighter border that stays visible on top of the transparent surface.
+        Tile.drawTileBorder(ctx, definition, isLiquidPattern);
 
         const texture = new THREE.CanvasTexture(canvas);
         texture.colorSpace = THREE.SRGBColorSpace;
@@ -664,6 +723,11 @@ export class Tile {
         ctx.fillRect(0, 0, 96, isLiquid ? 5 : 7);
         ctx.fillStyle = 'rgba(4, 9, 12, 0.2)';
         ctx.fillRect(0, 88, 96, 8);
+        // MapleStory-2 framing on block sides too: vertical edge strokes so stacked voxels read
+        // as individual bordered tiles instead of one continuous cliff face.
+        ctx.fillStyle = isLiquid ? 'rgba(236, 253, 255, 0.3)' : 'rgba(22, 16, 12, 0.3)';
+        ctx.fillRect(0, 0, 3, 96);
+        ctx.fillRect(93, 0, 3, 96);
 
         Tile.applyElevationTone(ctx, elevationTone * 0.9);
 
@@ -876,10 +940,18 @@ export class Tile {
     }
 
     static drawSoftTop(ctx, definition) {
+        const isNaturalTurf = Tile.isNaturalTurfPattern(definition.pattern);
         const gradient = ctx.createRadialGradient(34, 26, 8, 48, 48, 72);
         gradient.addColorStop(0, 'rgba(255, 255, 255, 0.2)');
         gradient.addColorStop(0.52, 'rgba(255, 255, 255, 0.035)');
-        gradient.addColorStop(1, definition.walkable ? 'rgba(36, 58, 38, 0.13)' : 'rgba(18, 24, 24, 0.3)');
+        gradient.addColorStop(
+            1,
+            isNaturalTurf
+                ? 'rgba(25, 58, 30, 0.045)'
+                : definition.walkable
+                    ? 'rgba(36, 58, 38, 0.13)'
+                    : 'rgba(18, 24, 24, 0.3)'
+        );
         ctx.fillStyle = gradient;
         ctx.fillRect(0, 0, 96, 96);
     }
@@ -890,6 +962,40 @@ export class Tile {
         ctx.strokeStyle = walkable ? 'rgba(255, 255, 255, 0.14)' : 'rgba(30, 24, 22, 0.28)';
         ctx.strokeRect(1, 1, 94, 94);
         ctx.restore();
+    }
+
+    static drawTileBorder(ctx, definition, isLiquid) {
+        ctx.save();
+        if (isLiquid) {
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = 'rgba(236, 253, 255, 0.55)';
+            ctx.strokeRect(1.5, 1.5, 93, 93);
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = 'rgba(8, 62, 88, 0.45)';
+            ctx.strokeRect(4.5, 4.5, 87, 87);
+        } else if (Tile.isNaturalTurfPattern(definition.pattern)) {
+            // Natural turf should read as one rolling surface rather than a dark checkerboard.
+            // Its low-contrast frame still preserves voxel scale without competing with paths,
+            // water, masonry, structures, or exposed cliff faces.
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = 'rgba(34, 70, 31, 0.14)';
+            ctx.strokeRect(1.5, 1.5, 93, 93);
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.11)';
+            ctx.strokeRect(4.5, 4.5, 87, 87);
+        } else {
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = 'rgba(22, 16, 12, 0.36)';
+            ctx.strokeRect(1.5, 1.5, 93, 93);
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = definition.walkable ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0.1)';
+            ctx.strokeRect(4.5, 4.5, 87, 87);
+        }
+        ctx.restore();
+    }
+
+    static isNaturalTurfPattern(pattern) {
+        return ['grass', 'forest', 'hill', 'gardenGround'].includes(pattern);
     }
 
     static drawElementEffect(ctx, effect) {

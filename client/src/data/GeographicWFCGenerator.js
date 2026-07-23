@@ -1,6 +1,5 @@
-import { ACTIVE_GEOGRAPHY, ACTIVE_WORLD } from './ActiveWorldData.js';
+import { ACTIVE_GEOGRAPHY, ACTIVE_SETTLEMENT_BLUEPRINTS, ACTIVE_WORLD } from './ActiveWorldData.js';
 import {
-    createWaveRandom,
     hashWaveSeed,
     solveWaveFunctionCollapse,
     WaveFunctionCollapseError
@@ -14,25 +13,45 @@ import {
     terrainWaveCompatible
 } from './WorldTileSet.js';
 import { planTownWave } from './TownWavePlanner.js';
-import { createStairFlight, STAIR_CONFIGURATION } from './StructuralMatrixRules.js';
 import {
     createSettlementConstraintAnchors,
-    createWallBounds,
+    createBlueprintSkeleton,
     createWorldConstraintField,
-    getWallGateCells,
-    isInsideWallBounds,
-    isWallBoundaryCell
+    getSettlementWardAt,
+    isInsideWallBounds
 } from './WorldConstraintField.js';
 import {
     CONTEXTUAL_WFC_MODULES,
     solveContextualBuildingWFC
 } from './ContextualBuildingWFC.js';
-import { createBakedBuildingPlan } from './BakedBuildingLibrary.js';
+import { createBakedBuildingPlan, createFixedBakedBuilding } from './BakedBuildingLibrary.js';
+import { BAKED_PARTIAL_CHUNKS } from './BakedChunkData.js';
+import {
+    getPartialChunkCell,
+    validatePartialChunkRegistry
+} from './PartialChunkRegistry.js';
 
-export const GEOGRAPHIC_WORLD_VIEW_WIDTH = 80;
-export const GEOGRAPHIC_WORLD_VIEW_HEIGHT = 60;
+// Compact view window (was 80x60): ~19% fewer generated columns per view, directly cutting the
+// tile/mesh count that made LOD heavy. The smaller window pairs with steeper elevation macro
+// scaling below so views feel dense and vertical instead of wide and flat. (64x48 was probed but
+// triggers a pathological clipped-settlement solve at burg-9 — do not shrink further without
+// profiling that case.)
+export const GEOGRAPHIC_WORLD_VIEW_WIDTH = 72;
+export const GEOGRAPHIC_WORLD_VIEW_HEIGHT = 54;
 export const WORLD_SAMPLE_SCALE = 0.64;
 export const TERRAIN_WFC_CHUNK_SIZE = 8;
+const TERRAIN_WFC_HALO_CHUNKS = 1;
+
+const PARTIAL_CHUNK_REGISTRY_STATUS = validatePartialChunkRegistry(BAKED_PARTIAL_CHUNKS, {
+    generationVersion: ACTIVE_WORLD.generationVersion,
+    worldContentHash: ACTIVE_WORLD.contentHash,
+    sampleScale: WORLD_SAMPLE_SCALE,
+    chunkSize: TERRAIN_WFC_CHUNK_SIZE,
+    allowedTileIds: new Set(GEOGRAPHIC_TILES.map((tile) => tile.id))
+});
+const ACTIVE_PARTIAL_CHUNK_REGISTRY = PARTIAL_CHUNK_REGISTRY_STATUS.compatible
+    ? BAKED_PARTIAL_CHUNKS
+    : null;
 
 const CELL_BUCKET_SIZE = 18;
 const PATH_BUCKET_SIZE = 12;
@@ -61,69 +80,125 @@ export function createGeographicWorldPlan({
     worldY,
     width = GEOGRAPHIC_WORLD_VIEW_WIDTH,
     height = GEOGRAPHIC_WORLD_VIEW_HEIGHT,
-    variant = 0
+    variant = 0,
+    includeTerrainSnapshot = false,
+    useBakedPartialChunks = true
 } = {}) {
     const safeWidth = clampInteger(width, 32, 112);
     const safeHeight = clampInteger(height, 24, 84);
     const centerX = clampNumber(worldX, 0, ACTIVE_WORLD.width, ACTIVE_WORLD.width / 2);
     const centerY = clampNumber(worldY, 0, ACTIVE_WORLD.height, ACTIVE_WORLD.height / 2);
+    // Every view samples the same world-anchored lattice. Without this snap, two overlapping
+    // views centered a fraction of a tile apart would address different cells and could shift a
+    // partial baked core. The requested center is still retained for map/UI navigation below.
+    const sampleCenterX = snapWorldSampleCoordinate(centerX);
+    const sampleCenterY = snapWorldSampleCoordinate(centerY);
     const safeVariant = Math.max(0, Math.floor(Number(variant) || 0));
-    const seed = hashWaveSeed(`${ACTIVE_WORLD.seed}:${round(centerX, 3)}:${round(centerY, 3)}:${safeVariant}`);
+    // Variant randomness is world-anchored. A center-dependent seed made every overlapping
+    // viewport a different universe even when both addressed the same global sample cells.
+    const seed = hashWaveSeed(`${ACTIVE_WORLD.seed}:variant:${safeVariant}`);
+    const viewSeed = hashWaveSeed(
+        `${seed}:view:${round(sampleCenterX, 3)}:${round(sampleCenterY, 3)}`
+    );
     const index = getGeographyIndex();
     const fields = sampleRegionFields(index, {
-        centerX,
-        centerY,
+        centerX: sampleCenterX,
+        centerY: sampleCenterY,
         width: safeWidth,
         height: safeHeight,
         seed
     });
     const rawSettlementAnchors = createSettlementConstraintAnchors({
+        blueprints: ACTIVE_SETTLEMENT_BLUEPRINTS,
         burgs: index.burgs,
-        centerX,
-        centerY,
+        centerX: sampleCenterX,
+        centerY: sampleCenterY,
         width: safeWidth,
         height: safeHeight,
         sampleScale: WORLD_SAMPLE_SCALE
     });
-    const settlementAnchors = stabilizeSettlementAnchors({
-        anchors: rawSettlementAnchors,
-        fields,
+    // Blueprint anchors, wall rings and roads are parser-authored fixed nodes. They deliberately
+    // bypass the old variant-dependent inland stabilization pass.
+    const settlementAnchors = rawSettlementAnchors;
+    const fixedSkeleton = createBlueprintSkeleton({
+        settlements: settlementAnchors,
         width: safeWidth,
-        height: safeHeight
+        height: safeHeight,
+        sampleScale: WORLD_SAMPLE_SCALE
     });
     const constraints = createWorldConstraintField({
         fields,
         width: safeWidth,
         height: safeHeight,
-        settlements: settlementAnchors
+        settlements: settlementAnchors,
+        skeleton: fixedSkeleton
     });
-    const collapse = collapseTerrain(fields, safeWidth, safeHeight, seed, constraints);
-    const elevationRows = createElevationRows(fields, collapse.tileIds, safeWidth, safeHeight, seed, constraints);
+    // Terrain is solved in a canonical chunk-aligned halo, then cropped. Full global chunks and
+    // the extra seam margin mean the same sample cell sees the same WFC graph even when it sits
+    // on two different viewport edges.
+    const terrainFrame = createTerrainGenerationFrame({
+        index,
+        centerX: sampleCenterX,
+        centerY: sampleCenterY,
+        width: safeWidth,
+        height: safeHeight,
+        seed
+    });
+    const frameCollapse = collapseTerrain(
+        terrainFrame.fields,
+        terrainFrame.width,
+        terrainFrame.height,
+        seed,
+        terrainFrame.constraints,
+        useBakedPartialChunks
+    );
+    const frameElevationRows = createElevationRows(
+        terrainFrame.fields,
+        frameCollapse.tileIds,
+        terrainFrame.width,
+        terrainFrame.height,
+        seed,
+        terrainFrame.constraints,
+        frameCollapse.bakedCellIds
+    );
+    const collapse = cropTerrainCollapse(
+        frameCollapse,
+        terrainFrame,
+        safeWidth,
+        safeHeight,
+        constraints,
+        fields,
+        useBakedPartialChunks
+    );
+    const elevationRows = cropTerrainRows(frameElevationRows, terrainFrame, safeWidth, safeHeight);
     const rows = createTerrainRows(collapse.tileIds, safeWidth, safeHeight);
-    const paletteRows = createPaletteRows(collapse.tileIds, fields, safeWidth, safeHeight);
+    const paletteRows = createPaletteRows(collapse.tileIds, fields, safeWidth, safeHeight, constraints);
 
-    overlayGeographicWaterAndRoutes(rows, paletteRows, elevationRows, fields, safeWidth, safeHeight);
+    overlayGeographicWaterAndRoutes(rows, paletteRows, elevationRows, fields, safeWidth, safeHeight, constraints);
     const settlement = synthesizeSettlements({
         rows,
         paletteRows,
         elevationRows,
         fields,
-        centerX,
-        centerY,
+        centerX: sampleCenterX,
+        centerY: sampleCenterY,
         width: safeWidth,
         height: safeHeight,
         seed,
         variant: safeVariant,
         index,
         anchors: settlementAnchors,
-        constraintField: constraints
+        constraintField: constraints,
+        skeleton: fixedSkeleton
     });
     const decorations = synthesizeDecorations({
         rows,
         paletteRows,
         elevationRows,
+        fields,
         buildings: settlement.buildings,
         settlements: settlement.settlements,
+        skeleton: fixedSkeleton,
         seed,
         width: safeWidth,
         height: safeHeight
@@ -132,18 +207,19 @@ export function createGeographicWorldPlan({
         rows,
         paletteRows,
         seed,
-        centerX,
-        centerY,
+        centerX: sampleCenterX,
+        centerY: sampleCenterY,
         width: safeWidth,
         height: safeHeight
     });
+    const wallHeightRows = createBlueprintWallHeightRows(fixedSkeleton, safeWidth, safeHeight);
     const dominantBiome = getDominantBiome(fields);
     const dominantPalette = getDominantPalette(paletteRows, rows);
-    const nearestBurg = findNearestBurg(index, centerX, centerY);
-    const regionName = getRegionName(nearestBurg, dominantBiome, centerX, centerY);
+    const nearestBurg = findNearestBurg(index, sampleCenterX, sampleCenterY);
+    const regionName = getRegionName(nearestBurg, dominantBiome, sampleCenterX, sampleCenterY);
     const stateColor = index.stateById.get(dominantBiome.state)?.color || '#65d58d';
     const cultureColor = index.cultureById.get(dominantBiome.culture)?.color || '#7d76e8';
-    const contentHash = `${ACTIVE_WORLD.contentHash}:${seed.toString(16).padStart(8, '0')}`;
+    const contentHash = `${ACTIVE_WORLD.contentHash}:${viewSeed.toString(16).padStart(8, '0')}`;
     const sourceAnchor = nearestBurg && nearestBurg.distance <= Math.max(safeWidth, safeHeight) * WORLD_SAMPLE_SCALE * 0.58
         ? nearestBurg.burg
         : null;
@@ -151,8 +227,13 @@ export function createGeographicWorldPlan({
     return {
         rows,
         elevationRows,
+        wallHeightRows,
         paletteRows,
         visualVariantRows,
+        // Pre-overlay terrain snapshot for the partial-chunk bake tool: the raw collapsed tile ids
+        // (no water/route overlay, no settlement stamping) so baked cells can be re-fixed into the
+        // terrain WFC without freezing structure symbols as terrain.
+        terrainTileIds: includeTerrainSnapshot ? collapse.tileIds.slice() : undefined,
         buildings: settlement.buildings,
         decorations,
         connectDoors: false,
@@ -199,25 +280,43 @@ export function createGeographicWorldPlan({
             contentHash,
             centerX,
             centerY,
-            originX: centerX - safeWidth * WORLD_SAMPLE_SCALE / 2,
-            originY: centerY - safeHeight * WORLD_SAMPLE_SCALE / 2,
+            sampleCenterX,
+            sampleCenterY,
+            originX: sampleCenterX - safeWidth * WORLD_SAMPLE_SCALE / 2,
+            originY: sampleCenterY - safeHeight * WORLD_SAMPLE_SCALE / 2,
             locations: settlement.settlements.map((entry) => `burg-${entry.burg.id}`),
             source: ACTIVE_WORLD.source,
             image: ACTIVE_WORLD.image,
             sampleScale: WORLD_SAMPLE_SCALE
         },
         generation: {
-            mode: 'geographic-wfc',
-            macroReference: 'FMG global cell graph',
+            mode: 'blueprint-first-geographic-wfc',
+            macroReference: 'offline FMG settlement blueprints + global cell graph',
             townPayloadsRead: false,
             terrainWfc: collapse.diagnostics,
+            partialBake: collapse.diagnostics.partialBake,
             buildingWfc: settlement.diagnostics,
             constraintField: constraints.diagnostics,
             settlements: settlement.settlements.length,
             coupledTerrainAndBuildings: true,
-            minimumInterior: '2x3'
+            couplingMode: 'shared-constraint-sequential-wfc',
+            worldAnchoredChunks: true,
+            minimumInterior: '2x3',
+            blueprintFirst: true,
+            activeClusterId: settlementAnchors[0]?.clusterId ?? null,
+            fixedSkeletonHash: fixedSkeleton.hash,
+            fixedSkeleton: fixedSkeleton.diagnostics
         }
     };
+}
+
+function createBlueprintWallHeightRows(skeleton, width, height) {
+    const rows = Array.from({ length: height }, () => Array(width).fill(0));
+    for (const cell of skeleton?.cells?.values?.() || []) {
+        if (cell.kind !== 'wall' || rows[cell.row]?.[cell.col] === undefined) continue;
+        rows[cell.row][cell.col] = clampInteger(cell.heightVoxels ?? 4, 3, 9);
+    }
+    return rows;
 }
 
 export function sampleGeographicField(worldX, worldY, options = {}) {
@@ -295,12 +394,127 @@ function sampleRegionFields(index, { centerX, centerY, width, height, seed }) {
                 ...sampleField(index, globalX, globalY, seed),
                 globalX,
                 globalY,
+                globalCol: Math.round(globalX / WORLD_SAMPLE_SCALE),
+                globalRow: Math.round(globalY / WORLD_SAMPLE_SCALE),
                 row,
                 col
             };
         }
     }
     return fields;
+}
+
+function createTerrainGenerationFrame({ index, centerX, centerY, width, height, seed }) {
+    const centerGlobalCol = Math.round(centerX / WORLD_SAMPLE_SCALE);
+    const centerGlobalRow = Math.round(centerY / WORLD_SAMPLE_SCALE);
+    const requestedMinCol = centerGlobalCol - Math.floor(width / 2);
+    const requestedMinRow = centerGlobalRow - Math.floor(height / 2);
+    const requestedMaxColExclusive = requestedMinCol + width;
+    const requestedMaxRowExclusive = requestedMinRow + height;
+    const halo = TERRAIN_WFC_HALO_CHUNKS * TERRAIN_WFC_CHUNK_SIZE;
+    const minCol = Math.floor(requestedMinCol / TERRAIN_WFC_CHUNK_SIZE) * TERRAIN_WFC_CHUNK_SIZE - halo;
+    const minRow = Math.floor(requestedMinRow / TERRAIN_WFC_CHUNK_SIZE) * TERRAIN_WFC_CHUNK_SIZE - halo;
+    const maxColExclusive = Math.ceil(requestedMaxColExclusive / TERRAIN_WFC_CHUNK_SIZE) *
+        TERRAIN_WFC_CHUNK_SIZE + halo;
+    const maxRowExclusive = Math.ceil(requestedMaxRowExclusive / TERRAIN_WFC_CHUNK_SIZE) *
+        TERRAIN_WFC_CHUNK_SIZE + halo;
+    const frameWidth = maxColExclusive - minCol;
+    const frameHeight = maxRowExclusive - minRow;
+    const frameCenterCol = minCol + Math.floor(frameWidth / 2);
+    const frameCenterRow = minRow + Math.floor(frameHeight / 2);
+    const frameCenterX = frameCenterCol * WORLD_SAMPLE_SCALE;
+    const frameCenterY = frameCenterRow * WORLD_SAMPLE_SCALE;
+    const frameFields = sampleRegionFields(index, {
+        centerX: frameCenterX,
+        centerY: frameCenterY,
+        width: frameWidth,
+        height: frameHeight,
+        seed
+    });
+    const frameAnchors = createSettlementConstraintAnchors({
+        blueprints: ACTIVE_SETTLEMENT_BLUEPRINTS,
+        burgs: index.burgs,
+        centerX: frameCenterX,
+        centerY: frameCenterY,
+        width: frameWidth,
+        height: frameHeight,
+        sampleScale: WORLD_SAMPLE_SCALE
+    });
+    const frameSkeleton = createBlueprintSkeleton({
+        settlements: frameAnchors,
+        width: frameWidth,
+        height: frameHeight,
+        sampleScale: WORLD_SAMPLE_SCALE
+    });
+    const frameConstraints = createWorldConstraintField({
+        fields: frameFields,
+        width: frameWidth,
+        height: frameHeight,
+        settlements: frameAnchors,
+        skeleton: frameSkeleton
+    });
+    return {
+        fields: frameFields,
+        constraints: frameConstraints,
+        width: frameWidth,
+        height: frameHeight,
+        minCol,
+        minRow,
+        cropCol: requestedMinCol - minCol,
+        cropRow: requestedMinRow - minRow
+    };
+}
+
+function cropTerrainCollapse(
+    frameCollapse,
+    frame,
+    width,
+    height,
+    requestedConstraints,
+    requestedFields,
+    useBakedPartialChunks
+) {
+    const tileIds = new Array(width * height);
+    const bakedCellIds = new Set();
+    for (let row = 0; row < height; row++) {
+        for (let col = 0; col < width; col++) {
+            const id = row * width + col;
+            const frameId = (frame.cropRow + row) * frame.width + frame.cropCol + col;
+            tileIds[id] = frameCollapse.tileIds[frameId];
+            if (frameCollapse.bakedCellIds.has(frameId)) bakedCellIds.add(id);
+        }
+    }
+    const invalidAdjacencySamples = listTerrainAdjacencyIssues(
+        tileIds,
+        width,
+        height,
+        requestedConstraints
+    );
+    const candidateCells = requestedFields.reduce((count, field) =>
+        count + (getBakedPartialCell(field, useBakedPartialChunks) ? 1 : 0), 0);
+    return {
+        tileIds,
+        bakedCellIds,
+        diagnostics: {
+            ...frameCollapse.diagnostics,
+            frameWidth: frame.width,
+            frameHeight: frame.height,
+            haloChunks: TERRAIN_WFC_HALO_CHUNKS,
+            invalidAdjacencies: invalidAdjacencySamples.length,
+            invalidAdjacencySamples: invalidAdjacencySamples.slice(0, 12),
+            partialBake: {
+                ...frameCollapse.diagnostics.partialBake,
+                candidateCells,
+                appliedCells: bakedCellIds.size,
+                constraintConflicts: Math.max(0, candidateCells - bakedCellIds.size)
+            }
+        }
+    };
+}
+
+function cropTerrainRows(frameRows, frame, width, height) {
+    return Array.from({ length: height }, (_, row) =>
+        frameRows[frame.cropRow + row].slice(frame.cropCol, frame.cropCol + width));
 }
 
 function sampleField(index, x, y, seed) {
@@ -365,78 +579,171 @@ function nearestPathDistance(index, x, y, count) {
     return nearest ? { ...nearest, distance: Math.hypot(nearest.x - x, nearest.y - y) } : null;
 }
 
-function collapseTerrain(fields, width, height, seed, constraintField) {
+function collapseTerrain(fields, width, height, seed, constraintField, useBakedPartialChunks) {
     const tileIds = new Array(width * height);
+    const bakedCellIds = new Set();
+    const chunkGroups = createGlobalTerrainChunkGroups(fields);
     let chunks = 0;
     let fallbacks = 0;
-    for (let chunkY = 0; chunkY < height; chunkY += TERRAIN_WFC_CHUNK_SIZE) {
-        for (let chunkX = 0; chunkX < width; chunkX += TERRAIN_WFC_CHUNK_SIZE) {
-            chunks++;
-            const chunkWidth = Math.min(TERRAIN_WFC_CHUNK_SIZE, width - chunkX);
-            const chunkHeight = Math.min(TERRAIN_WFC_CHUNK_SIZE, height - chunkY);
-            const nodes = [];
-            const domains = new Map();
-            const fixed = new Map();
-            for (let localY = 0; localY < chunkHeight; localY++) {
-                for (let localX = 0; localX < chunkWidth; localX++) {
-                    const col = chunkX + localX;
-                    const row = chunkY + localY;
-                    const id = row * width + col;
-                    const neighbors = [];
-                    if (localX > 0) neighbors.push({ id: id - 1, direction: 'west' });
-                    if (localX + 1 < chunkWidth) neighbors.push({ id: id + 1, direction: 'east' });
-                    if (localY > 0) neighbors.push({ id: id - width, direction: 'north' });
-                    if (localY + 1 < chunkHeight) neighbors.push({ id: id + width, direction: 'south' });
-                    nodes.push({ id, neighbors });
-                    const constraint = constraintField?.cells?.[id];
-                    const domain = getConstrainedTerrainDomain(fields[id], constraint);
-                    domains.set(id, domain);
-                    const fixedTerrain = getFixedTerrainModule(id, fields, constraintField, width, height);
-                    if (fixedTerrain && domain.includes(fixedTerrain)) fixed.set(id, fixedTerrain);
-                }
+    for (const chunk of chunkGroups) {
+        chunks++;
+        const nodes = [];
+        const domains = new Map();
+        const fixed = new Map();
+        const localIdByGlobalId = new Map(chunk.cells.map((cell) => [cell.globalId, cell.id]));
+        for (const cell of chunk.cells) {
+            const neighbors = [];
+            for (const direction of CARDINALS) {
+                const neighborGlobalId = globalSampleGridKey(
+                    cell.globalCol + direction.x,
+                    cell.globalRow + direction.y
+                );
+                if (!localIdByGlobalId.has(neighborGlobalId)) continue;
+                neighbors.push({ id: neighborGlobalId, direction: direction.name });
             }
-            try {
-                const assignment = solveWaveFunctionCollapse({
-                    nodes,
-                    tiles: GEOGRAPHIC_TILES,
-                    domains,
-                    fixed,
-                    compatible: terrainWaveCompatible,
-                    seed: `${seed}:terrain:${chunkX}:${chunkY}`,
-                    nodeWeights: (nodeId, tileId) => getConstrainedTerrainWeight(
-                        fields[nodeId],
-                        constraintField?.cells?.[nodeId],
+            nodes.push({ id: cell.globalId, neighbors });
+            const constraint = constraintField?.cells?.[cell.id];
+            // Partial baked chunk merge (the 3x3-chunk settlement cores baked by
+            // tools/bake_partial_chunks.mjs): a baked cell is authoritative — it enters
+            // the chunk solve pre-collapsed and the wave propagates the live world
+            // around it, welding baked city cores into generated terrain seamlessly.
+            const baked = getBakedPartialCell(fields[cell.id], useBakedPartialChunks);
+            if (baked) {
+                domains.set(cell.globalId, [baked.tileId]);
+                fixed.set(cell.globalId, baked.tileId);
+                bakedCellIds.add(cell.id);
+                continue;
+            }
+            const domain = getConstrainedTerrainDomain(fields[cell.id], constraint);
+            domains.set(cell.globalId, domain);
+            const fixedTerrain = getFixedTerrainModule(
+                cell.id,
+                fields,
+                constraintField,
+                width,
+                height
+            );
+            if (fixedTerrain && domain.includes(fixedTerrain)) {
+                fixed.set(cell.globalId, fixedTerrain);
+            }
+        }
+        try {
+            const assignment = solveWaveFunctionCollapse({
+                nodes,
+                tiles: GEOGRAPHIC_TILES,
+                domains,
+                fixed,
+                compatible: terrainWaveCompatible,
+                seed: `${seed}:terrain:${chunk.chunkCol}:${chunk.chunkRow}`,
+                nodeWeights: (globalId, tileId) => {
+                    const id = localIdByGlobalId.get(globalId);
+                    return getConstrainedTerrainWeight(
+                        fields[id],
+                        constraintField?.cells?.[id],
                         tileId
-                    )
-                });
-                for (const [id, tileId] of assignment) tileIds[id] = tileId;
-            } catch (error) {
-                if (!(error instanceof WaveFunctionCollapseError)) throw error;
-                fallbacks++;
-                for (const node of nodes) {
-                    tileIds[node.id] = chooseWeightedTerrain(
-                        fields[node.id],
-                        domains.get(node.id),
-                        `${seed}:${node.id}`,
-                        constraintField?.cells?.[node.id]
                     );
                 }
+            });
+            for (const [globalId, tileId] of assignment) {
+                tileIds[localIdByGlobalId.get(globalId)] = tileId;
+            }
+        } catch (error) {
+            if (!(error instanceof WaveFunctionCollapseError)) throw error;
+            fallbacks++;
+            for (const node of nodes) {
+                const id = localIdByGlobalId.get(node.id);
+                tileIds[id] = chooseWeightedTerrain(
+                    fields[id],
+                    domains.get(node.id),
+                    `${seed}:terrain-cell:${node.id}`,
+                    constraintField?.cells?.[id]
+                );
             }
         }
     }
-    repairTerrainTransitions(tileIds, fields, width, height, seed, constraintField);
+    const repair = repairTerrainTransitions(
+        tileIds,
+        fields,
+        width,
+        height,
+        seed,
+        constraintField,
+        bakedCellIds
+    );
+    const appliedBakedCellIds = new Set([...bakedCellIds].filter((id) => (
+        tileIds[id] === getBakedPartialCell(fields[id], useBakedPartialChunks)?.tileId
+    )));
+    const invalidAdjacencySamples = listTerrainAdjacencyIssues(tileIds, width, height, constraintField);
     return {
         tileIds,
+        bakedCellIds: appliedBakedCellIds,
         diagnostics: {
             chunks,
             fallbacks,
             chunkSize: TERRAIN_WFC_CHUNK_SIZE,
-            invalidAdjacencies: countTerrainAdjacencyIssues(tileIds, width, height)
+            invalidAdjacencies: invalidAdjacencySamples.length,
+            invalidAdjacencySamples: invalidAdjacencySamples.slice(0, 12),
+            partialBake: {
+                requested: useBakedPartialChunks !== false,
+                registryValid: PARTIAL_CHUNK_REGISTRY_STATUS.valid,
+                registryCompatible: PARTIAL_CHUNK_REGISTRY_STATUS.compatible,
+                registryCells: PARTIAL_CHUNK_REGISTRY_STATUS.cellCount || 0,
+                candidateCells: bakedCellIds.size + repair.bakedConstraintConflicts,
+                appliedCells: appliedBakedCellIds.size,
+                constraintConflicts: repair.bakedConstraintConflicts,
+                compatibilityErrors: [...PARTIAL_CHUNK_REGISTRY_STATUS.compatibilityErrors]
+            }
         }
     };
 }
 
+function createGlobalTerrainChunkGroups(fields) {
+    const groups = new Map();
+    for (let id = 0; id < fields.length; id++) {
+        const field = fields[id] || {};
+        const globalCol = Number.isFinite(field.globalCol)
+            ? field.globalCol
+            : Math.round(Number(field.globalX || 0) / WORLD_SAMPLE_SCALE);
+        const globalRow = Number.isFinite(field.globalRow)
+            ? field.globalRow
+            : Math.round(Number(field.globalY || 0) / WORLD_SAMPLE_SCALE);
+        const chunkCol = Math.floor(globalCol / TERRAIN_WFC_CHUNK_SIZE);
+        const chunkRow = Math.floor(globalRow / TERRAIN_WFC_CHUNK_SIZE);
+        const key = `${chunkCol},${chunkRow}`;
+        if (!groups.has(key)) groups.set(key, { chunkCol, chunkRow, cells: [] });
+        groups.get(key).cells.push({
+            id,
+            globalCol,
+            globalRow,
+            globalId: globalSampleGridKey(globalCol, globalRow)
+        });
+    }
+    return [...groups.values()]
+        .map((group) => ({
+            ...group,
+            cells: group.cells.sort((left, right) =>
+                left.globalRow - right.globalRow || left.globalCol - right.globalCol)
+        }))
+        .sort((left, right) => left.chunkRow - right.chunkRow || left.chunkCol - right.chunkCol);
+}
+
+function globalSampleGridKey(col, row) {
+    return `${col},${row}`;
+}
+
+function globalFieldSampleKey(field) {
+    return globalSampleGridKey(
+        Number.isFinite(field?.globalCol)
+            ? field.globalCol
+            : Math.round(Number(field?.globalX || 0) / WORLD_SAMPLE_SCALE),
+        Number.isFinite(field?.globalRow)
+            ? field.globalRow
+            : Math.round(Number(field?.globalY || 0) / WORLD_SAMPLE_SCALE)
+    );
+}
+
 function getConstrainedTerrainDomain(field, constraint) {
+    if (constraint?.fixedTerrain) return [constraint.fixedTerrain];
     const base = getTerrainDomain(field, ACTIVE_GEOGRAPHY.biomes);
     if (constraint?.hardWater) {
         return constraint.land <= 0.16
@@ -472,7 +779,9 @@ function getConstrainedTerrainWeight(field, constraint, tileId) {
     const spec = GEOGRAPHIC_TILE_BY_ID.get(tileId);
     let weight = getTerrainWeight(field, tileId, ACTIVE_GEOGRAPHY.biomes);
     const urbanization = constraint?.urbanization || 0;
-    if (constraint?.hardWater) {
+    if (constraint?.fixedTerrain) {
+        weight *= tileId === constraint.fixedTerrain ? 24 : 0.0001;
+    } else if (constraint?.hardWater) {
         weight *= spec?.tags.has('water') ? 8 : 0.02;
     } else if (urbanization > 0) {
         if (spec?.tags.has('relief') || spec?.tags.has('trees') || spec?.tags.has('water')) {
@@ -481,12 +790,21 @@ function getConstrainedTerrainWeight(field, constraint, tileId) {
             weight *= 1 + urbanization * 3.8;
         }
     }
+    const latitude = Math.abs(Number(constraint?.latitude) || 0);
+    if (latitude >= 45) {
+        if (['taiga', 'tundra', 'glacier', 'mountain'].includes(tileId)) weight *= 2.3;
+        if (['desert', 'savanna', 'jungle'].includes(tileId)) weight *= 0.18;
+    } else if (latitude <= 14) {
+        if (['savanna', 'jungle', 'desert'].includes(tileId)) weight *= 1.55;
+        if (['taiga', 'tundra', 'glacier'].includes(tileId)) weight *= 0.35;
+    }
     const sharpen = 1 + (constraint?.inhibitor || 0) * 0.75;
     return Math.max(0.0001, Math.pow(weight, sharpen));
 }
 
 function getFixedTerrainModule(id, fields, constraintField, width, height) {
     const constraint = constraintField?.cells?.[id];
+    if (constraint?.fixedTerrain) return constraint.fixedTerrain;
     if (!constraint?.hardWater) return null;
     if (constraint.land > 0.16) return 'shallow-water';
     const row = Math.floor(id / width);
@@ -510,12 +828,21 @@ function chooseWeightedTerrain(field, domain, seed, constraint = null) {
         .sort((a, b) => b.score - a.score || a.tileId.localeCompare(b.tileId))[0]?.tileId || 'meadow';
 }
 
-function repairTerrainTransitions(tileIds, fields, width, height, seed, constraintField) {
+function repairTerrainTransitions(tileIds, fields, width, height, seed, constraintField, bakedCellIds = new Set()) {
+    let bakedConstraintConflicts = 0;
     for (let id = 0; id < tileIds.length; id++) {
         const fixed = getFixedTerrainModule(id, fields, constraintField, width, height);
-        if (fixed) tileIds[id] = fixed;
+        if (!fixed) continue;
+        if (bakedCellIds.has(id) && tileIds[id] !== fixed) {
+            bakedCellIds.delete(id);
+            bakedConstraintConflicts++;
+        }
+        tileIds[id] = fixed;
     }
-    for (let pass = 0; pass < 24; pass++) {
+    // Chunk WFC intentionally runs in small windows, so this deterministic seam pass reconciles
+    // chunk boundaries and fixed blueprint nodes. Physical skeleton nodes are stamped later;
+    // their semantic underlay may become coast/hill here without moving or deleting the node.
+    for (let pass = 0; pass < 16; pass++) {
         let changes = 0;
         for (let row = 0; row < height; row++) {
             for (let col = 0; col < width; col++) {
@@ -526,25 +853,88 @@ function repairTerrainTransitions(tileIds, fields, width, height, seed, constrai
                     if (nx >= width || ny >= height) continue;
                     const neighborId = ny * width + nx;
                     if (terrainWaveCompatible(tileIds[id], tileIds[neighborId])) continue;
-                    const idHard = constraintField?.cells?.[id]?.hardWater === true;
-                    const neighborHard = constraintField?.cells?.[neighborId]?.hardWater === true;
-                    const targetId = idHard && !neighborHard
-                        ? neighborId
-                        : neighborHard && !idHard
-                            ? id
-                            : keyedUnit(`${seed}:repair:${pass}:${id}:${neighborId}`) < 0.5 ? id : neighborId;
-                    const otherId = targetId === id ? neighborId : id;
-                    if (constraintField?.cells?.[targetId]?.hardWater) continue;
-                    const bridge = findBridgeTerrain(tileIds[otherId], fields[targetId]);
-                    if (bridge && bridge !== tileIds[targetId]) {
-                        tileIds[targetId] = bridge;
-                        changes++;
-                    }
+                    changes += reconcileTerrainPair(
+                        tileIds,
+                        id,
+                        neighborId,
+                        fields,
+                        constraintField,
+                        seed,
+                        pass,
+                        bakedCellIds
+                    );
                 }
             }
         }
         if (changes === 0) break;
     }
+    return { bakedConstraintConflicts };
+}
+
+function reconcileTerrainPair(tileIds, id, neighborId, fields, constraintField, seed, pass, bakedCellIds) {
+    const left = GEOGRAPHIC_TILE_BY_ID.get(tileIds[id]);
+    const right = GEOGRAPHIC_TILE_BY_ID.get(tileIds[neighborId]);
+    if (!left || !right) return 0;
+    const leftBaked = bakedCellIds?.has(id) === true;
+    const rightBaked = bakedCellIds?.has(neighborId) === true;
+    if (leftBaked && rightBaked) return 0;
+    if (leftBaked || rightBaked) {
+        const bakedId = leftBaked ? id : neighborId;
+        const liveId = leftBaked ? neighborId : id;
+        const bridge = findBridgeTerrain(tileIds[bakedId], fields[liveId]);
+        if (!bridge || bridge === tileIds[liveId]) return 0;
+        tileIds[liveId] = bridge;
+        return 1;
+    }
+    const leftWater = left.tags.has('water');
+    const rightWater = right.tags.has('water');
+    const leftHard = constraintField?.cells?.[id]?.hardWater === true;
+    const rightHard = constraintField?.cells?.[neighborId]?.hardWater === true;
+
+    if (leftWater !== rightWater) {
+        const waterId = leftWater ? id : neighborId;
+        const landId = leftWater ? neighborId : id;
+        let changes = 0;
+        if (tileIds[waterId] !== 'shallow-water') {
+            tileIds[waterId] = 'shallow-water';
+            changes++;
+        }
+        if (tileIds[landId] !== 'sand') {
+            tileIds[landId] = 'sand';
+            changes++;
+        }
+        return changes;
+    }
+
+    if (Math.abs(left.band - right.band) > 1) {
+        const highId = left.band > right.band ? id : neighborId;
+        if ((highId === id && leftHard) || (highId === neighborId && rightHard)) return 0;
+        if (tileIds[highId] === 'hill') return 0;
+        tileIds[highId] = 'hill';
+        return 1;
+    }
+
+    const hotId = left.tags.has('hot') ? id : right.tags.has('hot') ? neighborId : null;
+    if (hotId !== null && !constraintField?.cells?.[hotId]?.hardWater) {
+        const other = hotId === id ? right : left;
+        const replacement = other.band >= 2 ? 'hill' : 'meadow';
+        if (tileIds[hotId] !== replacement) {
+            tileIds[hotId] = replacement;
+            return 1;
+        }
+    }
+
+    const pairKeys = [globalFieldSampleKey(fields[id]), globalFieldSampleKey(fields[neighborId])].sort();
+    const targetId = leftHard && !rightHard
+        ? neighborId
+        : rightHard && !leftHard
+            ? id
+            : keyedUnit(`${seed}:seam:${pass}:${pairKeys[0]}:${pairKeys[1]}`) < 0.5 ? id : neighborId;
+    const otherId = targetId === id ? neighborId : id;
+    const bridge = findBridgeTerrain(tileIds[otherId], fields[targetId]);
+    if (!bridge || bridge === tileIds[targetId]) return 0;
+    tileIds[targetId] = bridge;
+    return 1;
 }
 
 function findBridgeTerrain(otherTileId, field) {
@@ -555,13 +945,22 @@ function findBridgeTerrain(otherTileId, field) {
         .sort((a, b) => getTerrainWeight(field, b, ACTIVE_GEOGRAPHY.biomes) - getTerrainWeight(field, a, ACTIVE_GEOGRAPHY.biomes))[0] || 'meadow';
 }
 
-function countTerrainAdjacencyIssues(tileIds, width, height) {
-    let issues = 0;
+function listTerrainAdjacencyIssues(tileIds, width, height, constraintField = null) {
+    const issues = [];
     for (let row = 0; row < height; row++) {
         for (let col = 0; col < width; col++) {
             const id = row * width + col;
-            if (col + 1 < width && !terrainWaveCompatible(tileIds[id], tileIds[id + 1])) issues++;
-            if (row + 1 < height && !terrainWaveCompatible(tileIds[id], tileIds[id + width])) issues++;
+            for (const neighborId of [col + 1 < width ? id + 1 : -1, row + 1 < height ? id + width : -1]) {
+                if (neighborId < 0 || terrainWaveCompatible(tileIds[id], tileIds[neighborId])) continue;
+                const neighborRow = Math.floor(neighborId / width);
+                const neighborCol = neighborId % width;
+                const constraint = constraintField?.cells?.[id];
+                const neighborConstraint = constraintField?.cells?.[neighborId];
+                issues.push({
+                    from: { col, row, tileId: tileIds[id], fixed: constraint?.fixedTerrain || null, hardWater: constraint?.hardWater === true, kind: constraint?.skeletonKind || null },
+                    to: { col: neighborCol, row: neighborRow, tileId: tileIds[neighborId], fixed: neighborConstraint?.fixedTerrain || null, hardWater: neighborConstraint?.hardWater === true, kind: neighborConstraint?.skeletonKind || null }
+                });
+            }
         }
     }
     return issues;
@@ -572,12 +971,16 @@ function createTerrainRows(tileIds, width, height) {
         GEOGRAPHIC_TILE_BY_ID.get(tileIds[row * width + col])?.symbol || 'G').join(''));
 }
 
-function createPaletteRows(tileIds, fields, width, height) {
+function createPaletteRows(tileIds, fields, width, height, constraintField = null) {
     return Array.from({ length: height }, (_, row) => Array.from({ length: width }, (_, col) =>
-        getRegionalPalette(tileIds[row * width + col], fields[row * width + col])));
+        getRegionalPalette(
+            tileIds[row * width + col],
+            fields[row * width + col],
+            constraintField?.cells?.[row * width + col]
+        )));
 }
 
-function getRegionalPalette(tileId, field) {
+function getRegionalPalette(tileId, field, constraint = null) {
     if (['deep-water', 'shallow-water'].includes(tileId)) return 'coast';
     if (tileId === 'wetland') return 'wetland';
     if (tileId === 'crystal') return 'crystal';
@@ -600,19 +1003,38 @@ function getRegionalPalette(tileId, field) {
     })[biome] || GEOGRAPHIC_TILE_BY_ID.get(tileId)?.paletteId || 'meadow';
     if (tileId === 'sand' && Number(field?.land) < 0.7) return 'coast';
     if (tileId === 'mountain' && ['meadow', 'forest', 'taiga', 'tundra'].includes(regional)) return 'alpine';
+    const latitude = Math.abs(Number(constraint?.latitude) || 0);
+    if (latitude >= 45) {
+        if (regional === 'forest' || regional === 'jungle') return 'taiga';
+        if (regional === 'meadow' || regional === 'savanna' || regional === 'desert') return 'tundra';
+    } else if (latitude >= 42 && regional === 'jungle') {
+        return 'forest';
+    } else if (latitude <= 14) {
+        if (regional === 'forest') return 'jungle';
+        if (regional === 'meadow') return 'savanna';
+    }
     return regional;
 }
 
-function createElevationRows(fields, tileIds, width, height, seed, constraintField) {
+function createElevationRows(fields, tileIds, width, height, seed, constraintField, bakedCellIds = new Set()) {
     const rows = Array.from({ length: height }, () => Array(width).fill(0));
     for (let row = 0; row < height; row++) {
         for (let col = 0; col < width; col++) {
             const id = row * width + col;
             const spec = GEOGRAPHIC_TILE_BY_ID.get(tileIds[id]);
             if (spec?.tags.has('water')) continue;
-            const macro = Math.max(0, Math.floor(((fields[id].height || 20) - 19) / 14));
+            // Steeper macro scaling (was /14): when the FMG height field allows it, terrain climbs
+            // to high multi-tier terraces so compact views gain verticality — e.g. the east side of
+            // a view sitting several walkable tiers above the west.
+            const macro = Math.max(0, Math.floor(((fields[id].height || 20) - 19) / 11));
             const variance = constraintField?.cells?.[id]?.terrainVariance ?? 1;
-            const detail = valueNoise(col, row, 5.5, seed + 1709) * 1.25 * variance;
+            const globalCol = Number.isFinite(fields[id].globalCol)
+                ? fields[id].globalCol
+                : Math.round(Number(fields[id].globalX || 0) / WORLD_SAMPLE_SCALE);
+            const globalRow = Number.isFinite(fields[id].globalRow)
+                ? fields[id].globalRow
+                : Math.round(Number(fields[id].globalY || 0) / WORLD_SAMPLE_SCALE);
+            const detail = valueNoise(globalCol, globalRow, 5.5, seed + 1709) * 1.25 * variance;
             rows[row][col] = clampInteger(Math.round(macro + detail), 0, 6);
         }
     }
@@ -629,7 +1051,24 @@ function createElevationRows(fields, tileIds, width, height, seed, constraintFie
             }
         }
     }
+    // Baked settlement-core cells keep their baked elevation exactly (applied after smoothing so
+    // live smoothing around the core cannot drift the welded city terrain).
+    for (let row = 0; row < height; row++) {
+        for (let col = 0; col < width; col++) {
+            const id = row * width + col;
+            const baked = bakedCellIds.has(id) ? getBakedPartialCell(fields[id], true) : null;
+            if (baked && Number.isFinite(baked.elevation)) rows[row][col] = baked.elevation;
+        }
+    }
     return rows;
+}
+
+// Lookup into the partial baked chunk registry by global sample-grid coordinates. Baked cores are
+// keyed on the same rounded global grid the field sampler uses, so any view window that overlaps a
+// settlement core aligns cell-for-cell regardless of where the view is centered.
+function getBakedPartialCell(field, enabled = true) {
+    if (!enabled || !ACTIVE_PARTIAL_CHUNK_REGISTRY) return null;
+    return getPartialChunkCell(ACTIVE_PARTIAL_CHUNK_REGISTRY, field, WORLD_SAMPLE_SCALE);
 }
 
 function smoothTerraceClusters(rows, tileIds, width, height) {
@@ -656,10 +1095,11 @@ function smoothTerraceClusters(rows, tileIds, width, height) {
     }
 }
 
-function overlayGeographicWaterAndRoutes(rows, paletteRows, elevationRows, fields, width, height) {
+function overlayGeographicWaterAndRoutes(rows, paletteRows, elevationRows, fields, width, height, constraintField = null) {
     const mutable = rows.map((row) => row.split(''));
     for (let row = 0; row < height; row++) {
         for (let col = 0; col < width; col++) {
+            if (constraintField?.cells?.[row * width + col]?.blueprintFixed) continue;
             const field = fields[row * width + col];
             if (field.riverPathInfluence >= 0.35 && field.land >= 0.42) {
                 mutable[row][col] = field.riverPathInfluence > 0.72 ? '~' : 'B';
@@ -676,59 +1116,6 @@ function overlayGeographicWaterAndRoutes(rows, paletteRows, elevationRows, field
     for (let row = 0; row < height; row++) rows[row] = mutable[row].join('');
 }
 
-function stabilizeSettlementAnchors({ anchors, fields, width, height }) {
-    return anchors.map((anchor) => {
-        const searchRadius = anchor.walled ? 9 : 6;
-        let best = null;
-        for (let row = anchor.row - searchRadius; row <= anchor.row + searchRadius; row++) {
-            for (let col = anchor.col - searchRadius; col <= anchor.col + searchRadius; col++) {
-                if (col < 3 || row < 3 || col >= width - 3 || row >= height - 3) continue;
-                const centerField = fields[row * width + col] || {};
-                if ((Number(centerField.land) || 0) < 0.48 || isHardWaterField(centerField)) continue;
-                const bounds = createWallBounds(col, row, anchor.radius, width, height);
-                let sampled = 0;
-                let hardWater = 0;
-                let boundaryWater = 0;
-                let boundaryCells = 0;
-                for (let sampleRow = bounds.minRow; sampleRow <= bounds.maxRow; sampleRow += 2) {
-                    for (let sampleCol = bounds.minCol; sampleCol <= bounds.maxCol; sampleCol += 2) {
-                        const sample = fields[sampleRow * width + sampleCol] || {};
-                        const hard = isHardWaterField(sample);
-                        sampled++;
-                        if (hard) hardWater++;
-                        if (isWallBoundaryCell(sampleCol, sampleRow, bounds)) {
-                            boundaryCells++;
-                            if (hard) boundaryWater++;
-                        }
-                    }
-                }
-                const waterRatio = sampled ? hardWater / sampled : 1;
-                const boundaryRatio = boundaryCells ? boundaryWater / boundaryCells : 0;
-                const distance = Math.hypot(col - anchor.col, row - anchor.row);
-                const score = waterRatio * 36
-                    + (anchor.walled ? boundaryRatio * 28 : 0)
-                    + distance * 0.22
-                    + (1 - clamp01(centerField.land)) * 3
-                    - clamp01(centerField.routeInfluence) * 0.35;
-                if (!best || score < best.score) best = { col, row, bounds, score };
-            }
-        }
-        if (!best) return anchor;
-        return {
-            ...anchor,
-            col: best.col,
-            row: best.row,
-            wallBounds: best.bounds
-        };
-    });
-}
-
-function isHardWaterField(field) {
-    const land = clamp01(field?.land);
-    const river = Math.max(clamp01(field?.riverInfluence), clamp01(field?.riverPathInfluence));
-    return land <= 0.18 || (river >= 0.82 && land < 0.72);
-}
-
 function synthesizeSettlements({
     rows,
     paletteRows,
@@ -741,7 +1128,8 @@ function synthesizeSettlements({
     seed,
     index,
     anchors = [],
-    constraintField
+    constraintField,
+    skeleton
 }) {
     const mutable = rows.map((row) => row.split(''));
     const offsetX = Math.floor(width / 2);
@@ -754,9 +1142,13 @@ function synthesizeSettlements({
         assignedBuildings: 0,
         bakedBuildings: 0,
         fixedBakedAssignments: 0,
+        compactAdjacencyFallbacks: 0,
         forcedBuildingAnchors: 0,
         walledAreas: 0,
         wallCells: 0,
+        wallRings: 0,
+        keeps: 0,
+        wardWaves: 0,
         urbanAreaCells: 0,
         buildingFootprintCells: 0,
         fallbacks: 0
@@ -766,17 +1158,14 @@ function synthesizeSettlements({
         const entry = { ...sourceEntry };
         const radius = entry.radius;
         if (entry.col < 3 || entry.row < 3 || entry.col >= width - 3 || entry.row >= height - 3) continue;
-        if (!isLandSymbol(mutable[entry.row]?.[entry.col])) {
-            const repaired = findNearestLandCell(mutable, entry.col, entry.row, 8);
-            if (!repaired) continue;
-            entry.col = repaired.col;
-            entry.row = repaired.row;
-        }
         const settlement = {
             ...entry,
             radius,
-            walled: entry.burg.flags?.walls === true,
-            wallBounds: createWallBounds(entry.col, entry.row, radius, width, height),
+            walled: entry.walled === true,
+            wallBounds: entry.wallBounds,
+            wallRings: entry.wallRings || [],
+            wards: entry.wards || [],
+            castle: entry.castle || null,
             accent: mixRegionalAccent(
                 index.stateById.get(entry.burg.state)?.color,
                 index.cultureById.get(entry.burg.culture)?.color
@@ -788,6 +1177,7 @@ function synthesizeSettlements({
             elevationRows,
             settlement,
             constraintField,
+            skeleton,
             width,
             height
         });
@@ -801,53 +1191,17 @@ function synthesizeSettlements({
             width,
             height
         });
-        const area = {
-            col: settlement.wallBounds.minCol + 1,
-            row: settlement.wallBounds.minRow + 1,
-            width: Math.max(0, settlement.wallBounds.maxCol - settlement.wallBounds.minCol - 1),
-            height: Math.max(0, settlement.wallBounds.maxRow - settlement.wallBounds.minRow - 1)
-        };
-        const districts = ['civic', 'market', 'residential', 'artisan', 'garden'];
-        if (settlement.burg.flags?.port) districts.push('harbor');
-        const bakedOptions = {
-            rows: mutable.map((row) => row.join('')),
+        const bakedPlan = createWardBakedBuildingPlan({
+            mutable,
             elevationRows,
             inhibitorRows,
             districtRows,
-            area,
-            districts,
+            settlement,
             occupied,
-            seed: `${seed}:baked:${settlement.burg.id}`,
-            townId: settlement.burg.name,
-            minBuildings: 2,
-            maxBuildings: 2,
-            buffer: 0
-        };
-        let bakedPlan = createBakedBuildingPlan(bakedOptions);
-        if (!bakedPlan.diagnostics.complete) {
-            // A constrained coastal pocket may not fit a large landmark plus a second building.
-            // Re-plan the same area compact-first while keeping every hard inhibitor intact.
-            bakedPlan = createBakedBuildingPlan({ ...bakedOptions, compactFirst: true });
-        }
-        if (!bakedPlan.diagnostics.complete) {
-            const expandedMinCol = Math.max(1, settlement.wallBounds.minCol - 4);
-            const expandedMinRow = Math.max(1, settlement.wallBounds.minRow - 4);
-            const expandedMaxCol = Math.min(width - 2, settlement.wallBounds.maxCol + 4);
-            const expandedMaxRow = Math.min(height - 2, settlement.wallBounds.maxRow + 4);
-            const expandedPlan = createBakedBuildingPlan({
-                ...bakedOptions,
-                area: {
-                    col: expandedMinCol,
-                    row: expandedMinRow,
-                    width: expandedMaxCol - expandedMinCol + 1,
-                    height: expandedMaxRow - expandedMinRow + 1
-                },
-                districts: ['residential', 'artisan', 'garden'],
-                compactFirst: true,
-                relaxRoadAffinity: true
-            });
-            if (expandedPlan.buildings.length > bakedPlan.buildings.length) bakedPlan = expandedPlan;
-        }
+            width,
+            height,
+            fixedSeed: `${ACTIVE_WORLD.seed}:fixed-landmarks:${settlement.burg.id}`
+        });
         const parcelSites = createContextualParcelSites({
             mutable,
             elevationRows,
@@ -884,21 +1238,18 @@ function synthesizeSettlements({
         };
         if (sites.length) {
             const generatedMinimum = parcelSites.length
-                ? Math.min(
-                    parcelSites.length,
-                    Math.max(2, Math.ceil(parcelSites.length * (settlement.walled ? 0.74 : 0.5)))
-                )
+                ? Math.min(parcelSites.length, Math.max(1, Math.ceil(parcelSites.length * (settlement.walled ? 0.72 : 0.48))))
                 : 0;
             const minimumBuildings = bakedWave.sites.length + generatedMinimum;
+            const areas = createWardWaveAreas({
+                settlement,
+                sites,
+                bakedSiteIds: bakedWave.siteIds,
+                totalMinimum: minimumBuildings
+            });
             contextual = solveContextualBuildingWFC({
                 sites,
-                areas: [{
-                    id: `settlement-${settlement.burg.id}`,
-                    siteIds: sites.map((site) => site.id),
-                    minimumBuildings,
-                    walled: settlement.walled,
-                    priority: 1
-                }],
+                areas,
                 seed: `${seed}:building-wave:${settlement.burg.id}`,
                 minimumBuildingsPerArea: minimumBuildings,
                 modules: [...CONTEXTUAL_WFC_MODULES, ...bakedWave.modules],
@@ -912,6 +1263,7 @@ function synthesizeSettlements({
             paletteRows,
             elevationRows,
             constraintField,
+            settlement,
             offsetX,
             offsetY
         });
@@ -934,6 +1286,7 @@ function synthesizeSettlements({
             enterable: true
         }));
         const localBuildings = [...bakedBuildings, ...generatedBuildings];
+        applySettlementClimateToBuildings(localBuildings, settlement);
         for (const building of localBuildings) {
             reserveBuilding(occupied, building, offsetX, offsetY, 1);
             buildings.push(building);
@@ -949,10 +1302,12 @@ function synthesizeSettlements({
             generatedBuildings: generatedBuildings.length,
             bakedBuildings: bakedBuildings.length,
             fixedBakedAssignments: bakedWave.fixed.size,
+            compactAdjacencyFallbacks: bakedPlan.diagnostics.compactAdjacencyFallbacks,
             forcedBuildingAnchors: contextual.diagnostics.forcedBuildingAnchors || 0,
             siteBuildingRatio,
             wallCells: envelope.wallCells,
             urbanAreaCells: envelope.urbanCells,
+            constrainedInteriorCells: envelope.constrainedInteriorCells,
             buildingFootprintCells: footprintCells,
             moduleHistogram: contextual.diagnostics.moduleHistogram || {}
         };
@@ -961,9 +1316,13 @@ function synthesizeSettlements({
         aggregate.assignedBuildings += generatedBuildings.length + bakedBuildings.length;
         aggregate.bakedBuildings += bakedBuildings.length;
         aggregate.fixedBakedAssignments += bakedWave.fixed.size;
+        aggregate.compactAdjacencyFallbacks += bakedPlan.diagnostics.compactAdjacencyFallbacks;
         aggregate.forcedBuildingAnchors += contextual.diagnostics.forcedBuildingAnchors || 0;
         aggregate.walledAreas += settlement.walled ? 1 : 0;
         aggregate.wallCells += envelope.wallCells;
+        aggregate.wallRings += settlement.wallRings.length;
+        aggregate.keeps += bakedBuildings.filter((building) => building.blueprintId === 'castle-keep').length;
+        aggregate.wardWaves += new Set(sites.map((site) => site.areaId)).size;
         aggregate.urbanAreaCells += envelope.urbanCells;
         aggregate.buildingFootprintCells += footprintCells;
         aggregate.fallbacks += contextual.diagnostics.fallbacks || 0;
@@ -987,14 +1346,28 @@ function synthesizeSettlements({
     };
 }
 
-function stampSettlementEnvelope({ mutable, paletteRows, elevationRows, settlement, constraintField, width, height }) {
+function applySettlementClimateToBuildings(buildings, settlement) {
+    const latitude = Number(settlement.blueprint?.climate?.latitude) || 0;
+    const snowline = Number(settlement.blueprint?.climate?.snowline) || 100;
+    const cold = Math.abs(latitude) >= 45;
+    const tropical = Math.abs(latitude) <= 14;
+    for (const building of buildings) {
+        building.climate = { latitude, snowline };
+        building.roofTreatment = cold ? 'snow-capped' : tropical ? 'sun-bleached' : 'temperate';
+        if (cold && building.blueprintId !== 'castle-keep' && ['clay', 'market', 'thatch'].includes(building.roofStyle)) {
+            building.roofStyle = hashWaveSeed(`${building.id}:cold-roof`) % 2 ? 'slate' : 'copper';
+        }
+    }
+}
+
+function stampSettlementEnvelope({ mutable, paletteRows, elevationRows, settlement, constraintField, skeleton, width, height }) {
     const bounds = settlement.wallBounds;
     const elevations = [];
     let urbanCells = 0;
     for (let row = bounds.minRow + 1; row < bounds.maxRow; row++) {
         for (let col = bounds.minCol + 1; col < bounds.maxCol; col++) {
             const constraint = constraintField?.cells?.[row * width + col];
-            if (!constraint?.hardWater && !isWaterSymbol(mutable[row]?.[col])) {
+            if ((!constraint?.hardWater || constraint?.blueprintFixed) && !isWaterSymbol(mutable[row]?.[col])) {
                 elevations.push(Number(elevationRows[row]?.[col]) || 0);
             }
         }
@@ -1006,94 +1379,86 @@ function stampSettlementEnvelope({ mutable, paletteRows, elevationRows, settleme
             const constraint = constraintField?.cells?.[row * width + col];
             // The numeric FMG envelope remains authoritative even inside a settlement. Only
             // non-hard marsh/shore noise may be stabilized into urban ground.
-            if (constraint?.hardWater || mutable[row]?.[col] === 'W' || mutable[row]?.[col] === 'I') continue;
+            if ((constraint?.hardWater && !constraint?.blueprintFixed) ||
+                (!constraint?.blueprintFixed && (mutable[row]?.[col] === 'W' || mutable[row]?.[col] === 'I'))) continue;
             urbanCells++;
-            mutable[row][col] = (col + row) % 11 === 0 ? ',' : '.';
+            const localCol = col - settlement.col;
+            const localRow = row - settlement.row;
+            mutable[row][col] = (localCol + localRow) % 11 === 0 ? ',' : '.';
             const currentElevation = Number(elevationRows[row]?.[col]) || 0;
             elevationRows[row][col] = Math.max(plateau - 1, Math.min(plateau + 1, currentElevation));
         }
     }
 
     const center = { col: settlement.col, row: settlement.row };
-    for (let row = center.row - 2; row <= center.row + 2; row++) {
-        for (let col = center.col - 2; col <= center.col + 2; col++) {
-            const constraint = constraintField?.cells?.[row * width + col];
-            if (!mutable[row]?.[col] || constraint?.hardWater || isWaterSymbol(mutable[row][col])) continue;
-            mutable[row][col] = ';';
-            paletteRows[row][col] = 'path';
-            elevationRows[row][col] = plateau;
+    const gates = settlement.wallRings?.[0]?.gates || [];
+    let wallCells = 0;
+    for (const fixed of skeleton?.cells?.values?.() || []) {
+        if (Number(fixed.townId) !== Number(settlement.burg.id)) continue;
+        if (!mutable[fixed.row]?.[fixed.col]) continue;
+        if (fixed.kind === 'wall') {
+            mutable[fixed.row][fixed.col] = 'T';
+            paletteRows[fixed.row][fixed.col] = 'path';
+            elevationRows[fixed.row][fixed.col] = plateau;
+            wallCells++;
+        } else if (fixed.kind === 'gate' || fixed.kind === 'road') {
+            mutable[fixed.row][fixed.col] = fixed.kind === 'gate' ? ';' : 'R';
+            paletteRows[fixed.row][fixed.col] = 'path';
+            elevationRows[fixed.row][fixed.col] = plateau;
+        } else if (fixed.kind === 'castle-plot') {
+            mutable[fixed.row][fixed.col] = '.';
+            paletteRows[fixed.row][fixed.col] = 'path';
+            elevationRows[fixed.row][fixed.col] = plateau;
+        } else if (fixed.kind === 'dock') {
+            mutable[fixed.row][fixed.col] = 'R';
+            paletteRows[fixed.row][fixed.col] = 'path';
+            elevationRows[fixed.row][fixed.col] = Math.max(0, plateau - 1);
+        } else if (fixed.kind === 'bridge' || fixed.kind === 'ford') {
+            mutable[fixed.row][fixed.col] = fixed.kind === 'ford' ? '~' : 'R';
+            paletteRows[fixed.row][fixed.col] = 'path';
+            elevationRows[fixed.row][fixed.col] = Math.max(0, plateau - 1);
+        } else if (fixed.kind === 'waterfall') {
+            mutable[fixed.row][fixed.col] = '~';
+            paletteRows[fixed.row][fixed.col] = 'coast';
+            elevationRows[fixed.row][fixed.col] = clampInteger(
+                plateau + Math.max(0, (fixed.dropTiers || 1) - (fixed.tier || 0) - 1),
+                0,
+                6
+            );
+        } else if (fixed.kind === 'plunge-pool') {
+            mutable[fixed.row][fixed.col] = 'B';
+            paletteRows[fixed.row][fixed.col] = 'coast';
+            elevationRows[fixed.row][fixed.col] = Math.max(0, plateau - 1);
         }
     }
-
-    const fourGates = settlement.burg.population >= 220 || settlement.burg.flags?.plaza;
-    const gates = settlement.walled ? getWallGateCells(bounds, { fourGates }) : [];
-    const roadTargets = settlement.walled
-        ? gates
-        : CARDINALS.slice(0, settlement.burg.flags?.capital ? 4 : 3).map((direction) => ({
-            col: center.col + direction.x * settlement.radius,
-            row: center.row + direction.y * settlement.radius,
-            edge: direction.name
-        }));
-    for (const target of roadTargets) {
-        stampUrbanRoadLine(
-            mutable,
-            paletteRows,
-            elevationRows,
-            center,
-            target,
-            plateau,
-            width,
-            height,
-            constraintField
-        );
-    }
-    let wallCells = 0;
-    if (settlement.walled) {
-        const gateKeys = new Set(gates.map((gate) => `${gate.col},${gate.row}`));
-        for (let row = bounds.minRow; row <= bounds.maxRow; row++) {
-            for (let col = bounds.minCol; col <= bounds.maxCol; col++) {
-                if (!isWallBoundaryCell(col, row, bounds)) continue;
+    // Open fiefs have no ring gates, but still receive the parser-compiled fealty road. Give a
+    // tiny civic landing at the anchor without inventing additional road arms.
+    if (!settlement.walled) {
+        for (let row = center.row - 1; row <= center.row + 1; row++) {
+            for (let col = center.col - 1; col <= center.col + 1; col++) {
                 const constraint = constraintField?.cells?.[row * width + col];
-                if (constraint?.hardWater) continue;
-                if (gateKeys.has(`${col},${row}`)) {
-                    mutable[row][col] = 'R';
-                    paletteRows[row][col] = 'path';
-                    elevationRows[row][col] = plateau;
-                    continue;
-                }
-                mutable[row][col] = 'T';
+                if (!mutable[row]?.[col] || (constraint?.hardWater && !constraint?.blueprintFixed)) continue;
+                mutable[row][col] = ';';
                 paletteRows[row][col] = 'path';
                 elevationRows[row][col] = plateau;
-                wallCells++;
             }
         }
     }
     smoothRoadElevations(mutable, elevationRows);
-    return { plateau, gates, wallCells, urbanCells };
-}
-
-function stampUrbanRoadLine(mutable, paletteRows, elevationRows, from, to, plateau, width, height, constraintField) {
-    let col = clampInteger(from.col, 1, width - 2);
-    let row = clampInteger(from.row, 1, height - 2);
-    const targetCol = clampInteger(to.col, 1, width - 2);
-    const targetRow = clampInteger(to.row, 1, height - 2);
-    while (col !== targetCol) {
-        stampUrbanRoadCell(mutable, paletteRows, elevationRows, col, row, plateau, width, constraintField);
-        col += Math.sign(targetCol - col);
+    let developableUrbanCells = 0;
+    for (let row = bounds.minRow + 1; row < bounds.maxRow; row++) {
+        for (let col = bounds.minCol + 1; col < bounds.maxCol; col++) {
+            if (!isBuildableSymbol(mutable[row]?.[col])) continue;
+            if (nearestSymbolDistance(mutable, col, row, new Set(['R', ';']), 2) <= 2) developableUrbanCells++;
+        }
     }
-    while (row !== targetRow) {
-        stampUrbanRoadCell(mutable, paletteRows, elevationRows, col, row, plateau, width, constraintField);
-        row += Math.sign(targetRow - row);
-    }
-    stampUrbanRoadCell(mutable, paletteRows, elevationRows, col, row, plateau, width, constraintField);
-}
-
-function stampUrbanRoadCell(mutable, paletteRows, elevationRows, col, row, plateau, width, constraintField) {
-    const constraint = constraintField?.cells?.[row * width + col];
-    if (!mutable[row]?.[col] || constraint?.hardWater || isWaterSymbol(mutable[row][col]) || mutable[row][col] === 'T') return;
-    mutable[row][col] = 'R';
-    paletteRows[row][col] = 'path';
-    elevationRows[row][col] = plateau;
+    return {
+        plateau,
+        gates,
+        wallCells,
+        urbanCells: Math.max(1, developableUrbanCells),
+        constrainedInteriorCells: urbanCells
+    };
 }
 
 function createSettlementDistrictRows({ mutable, settlement, width, height }) {
@@ -1102,18 +1467,13 @@ function createSettlementDistrictRows({ mutable, settlement, width, height }) {
     for (let row = bounds.minRow + 1; row < bounds.maxRow; row++) {
         for (let col = bounds.minCol + 1; col < bounds.maxCol; col++) {
             if (isWaterSymbol(mutable[row]?.[col]) || mutable[row]?.[col] === 'T') continue;
-            const distance = Math.hypot(col - settlement.col, row - settlement.row);
-            const roadDistance = nearestSymbolDistance(mutable, col, row, new Set(['R', ';']), 4);
-            const waterDistance = settlement.burg.flags?.port
-                ? nearestSymbolDistance(mutable, col, row, new Set(['W', '~', 'B']), 8)
-                : Infinity;
-            if (distance <= 4) rows[row][col] = 'civic';
-            else if (waterDistance <= 5) rows[row][col] = 'harbor';
-            else if (roadDistance <= 1 && distance <= settlement.radius * 0.72) rows[row][col] = 'market';
-            else {
-                const variant = hashWaveSeed(`${settlement.burg.id}:${col}:${row}`) % 7;
-                rows[row][col] = variant === 0 ? 'artisan' : variant === 1 ? 'garden' : 'residential';
-            }
+            const ward = getSettlementWardAt(settlement, col, row);
+            const compiledDistrict = ward?.district || 'residential';
+            const roadDistance = nearestSymbolDistance(mutable, col, row, new Set(['R', ';', '=']), 3);
+            const waterDistance = nearestSymbolDistance(mutable, col, row, new Set(['W', '~', 'B']), 7);
+            if (compiledDistrict === 'harbor' && waterDistance > 6) rows[row][col] = 'artisan';
+            else if (compiledDistrict === 'market' && roadDistance > 2) rows[row][col] = 'residential';
+            else rows[row][col] = compiledDistrict;
         }
     }
     return rows;
@@ -1135,6 +1495,276 @@ function createPlacementInhibitorRows({ mutable, elevationRows, settlement, plat
         const global = clamp01((constraint?.inhibitor || 0) * (1 - (constraint?.urbanization || 0) * 0.72));
         return Math.max(local, global);
     }));
+}
+
+function createWardBakedBuildingPlan({
+    mutable,
+    elevationRows,
+    inhibitorRows,
+    districtRows,
+    settlement,
+    occupied,
+    width,
+    height,
+    fixedSeed
+}) {
+    const buildings = [];
+    const inheritedOccupiedCells = new Set(occupied instanceof Set ? occupied : []);
+    let occupiedCells = new Set(inheritedOccupiedCells);
+    let compactAdjacencyFallbacks = 0;
+
+    if (settlement.castle) {
+        const keepCandidates = [];
+        for (const rotation of getFixedKeepRotations(settlement)) {
+            try {
+                keepCandidates.push(createFixedBakedBuilding({
+                    blueprintId: 'castle-keep',
+                    centerCol: settlement.col,
+                    centerRow: settlement.row,
+                    rotation,
+                    width,
+                    height,
+                    elevationRows,
+                    seed: `${fixedSeed}:castle`,
+                    townId: settlement.burg.name,
+                    district: 'castle'
+                }));
+            } catch {
+                // A rotated door approach can be clipped while another orientation still fits.
+                // Keep valid candidates instead of discarding the entire reserved castle plot.
+            }
+        }
+        if (keepCandidates.length) {
+            const keep = keepCandidates.find((candidate) => fixedBuildingHasOpenApproach(candidate, mutable)) || keepCandidates[0];
+            buildings.push(keep);
+            reserveBuilding(occupiedCells, keep, Math.floor(width / 2), Math.floor(height / 2), 1);
+        } else {
+            // A clipped edge view may contain only part of a parser-reserved castle plot. The
+            // fixed skeleton remains present; the full keep appears when the seat is centered.
+        }
+    }
+
+    const desiredWardLandmarks = settlement.walled ? 2 : 1;
+    const wardOrder = [...(settlement.wards || [])]
+        .filter((ward) => ward.district !== 'castle')
+        .sort((left, right) => wardLandmarkPriority(right.district) - wardLandmarkPriority(left.district) ||
+            left.ring - right.ring);
+    let placedWardLandmarks = 0;
+    for (const ward of wardOrder) {
+        if (placedWardLandmarks >= desiredWardLandmarks) break;
+        const areaCells = [];
+        for (let row = settlement.wallBounds.minRow + 1; row < settlement.wallBounds.maxRow; row++) {
+            for (let col = settlement.wallBounds.minCol + 1; col < settlement.wallBounds.maxCol; col++) {
+                if (districtRows[row]?.[col] !== ward.district) continue;
+                if (mutable[row]?.[col] === 'T' || isWaterSymbol(mutable[row]?.[col])) continue;
+                areaCells.push({ col, row, district: ward.district });
+            }
+        }
+        if (!areaCells.length) continue;
+        const options = {
+            rows: mutable.map((row) => row.join('')),
+            elevationRows,
+            inhibitorRows,
+            districtRows,
+            area: { cells: areaCells },
+            districts: [ward.district],
+            occupied: occupiedCells,
+            seed: `${fixedSeed}:ward:${ward.ring}:${ward.district}`,
+            townId: settlement.burg.name,
+            minBuildings: 1,
+            maxBuildings: 1,
+            buffer: 0,
+            maxInhibitor: 0.9
+        };
+        let plan = createBakedBuildingPlan(options);
+        if (!plan.diagnostics.complete) {
+            plan = createBakedBuildingPlan({
+                ...options,
+                compactFirst: true,
+                relaxRoadAffinity: true
+            });
+        }
+        if (!plan.buildings.length) continue;
+        buildings.push(...plan.buildings);
+        occupiedCells = plan.occupied;
+        placedWardLandmarks++;
+    }
+
+    const minimumBakedBuildings = settlement.walled ? 2 : 1;
+    if (buildings.length < minimumBakedBuildings) {
+        const fallbackCells = [];
+        for (let row = settlement.wallBounds.minRow + 1; row < settlement.wallBounds.maxRow; row++) {
+            for (let col = settlement.wallBounds.minCol + 1; col < settlement.wallBounds.maxCol; col++) {
+                if (!isBuildableSymbol(mutable[row]?.[col])) continue;
+                fallbackCells.push({ col, row, district: districtRows[row]?.[col] || 'residential' });
+            }
+        }
+        const remaining = minimumBakedBuildings - buildings.length;
+        const fallback = createBakedBuildingPlan({
+            rows: mutable.map((row) => row.join('')),
+            elevationRows,
+            inhibitorRows,
+            districtRows,
+            area: { cells: fallbackCells },
+            occupied: occupiedCells,
+            seed: `${fixedSeed}:compact-fallback`,
+            townId: settlement.burg.name,
+            minBuildings: remaining,
+            maxBuildings: remaining,
+            buffer: 0,
+            maxInhibitor: 1,
+            compactFirst: true,
+            relaxRoadAffinity: true
+        });
+        if (fallback.buildings.length) {
+            buildings.push(...fallback.buildings);
+            occupiedCells = fallback.occupied;
+            placedWardLandmarks += fallback.buildings.length;
+        }
+    }
+
+    // Clipped coastal views can leave a legal cabin only in the keep's one-cell aesthetic
+    // buffer. The buffer is not a structural constraint: rebuild occupancy from exact existing
+    // footprints and reserved door landings, then run the same 4x5 minimum blueprint solver.
+    // Walls, water, elevations, inhibitors and approaches are still validated by the library.
+    if (buildings.length < minimumBakedBuildings) {
+        const compactOccupied = new Set(inheritedOccupiedCells);
+        const offsetX = Math.floor(width / 2);
+        const offsetY = Math.floor(height / 2);
+        for (const building of buildings) {
+            reserveBuilding(compactOccupied, building, offsetX, offsetY, 0);
+            const [approachCol, approachRow] = building.entrance?.approachGrid || [];
+            if (Number.isFinite(approachCol) && Number.isFinite(approachRow)) {
+                compactOccupied.add(`${approachCol},${approachRow}`);
+            }
+        }
+        const fallbackCells = [];
+        for (let row = settlement.wallBounds.minRow + 1; row < settlement.wallBounds.maxRow; row++) {
+            for (let col = settlement.wallBounds.minCol + 1; col < settlement.wallBounds.maxCol; col++) {
+                if (!isBuildableSymbol(mutable[row]?.[col])) continue;
+                fallbackCells.push({ col, row, district: districtRows[row]?.[col] || 'residential' });
+            }
+        }
+        const remaining = minimumBakedBuildings - buildings.length;
+        const compactFallback = createBakedBuildingPlan({
+            rows: mutable.map((row) => row.join('')),
+            elevationRows,
+            inhibitorRows,
+            districtRows,
+            area: { cells: fallbackCells },
+            occupied: compactOccupied,
+            seed: `${fixedSeed}:compact-adjacent-fallback`,
+            townId: settlement.burg.name,
+            minBuildings: remaining,
+            maxBuildings: remaining,
+            buffer: 0,
+            maxInhibitor: 1,
+            compactFirst: true,
+            relaxRoadAffinity: true
+        });
+        if (compactFallback.buildings.length) {
+            buildings.push(...compactFallback.buildings);
+            occupiedCells = new Set([...occupiedCells, ...compactFallback.occupied]);
+            placedWardLandmarks += compactFallback.buildings.length;
+            compactAdjacencyFallbacks += compactFallback.buildings.length;
+        }
+    }
+
+    return {
+        buildings,
+        occupied: occupiedCells,
+        diagnostics: Object.freeze({
+            requested: { min: (settlement.castle ? 1 : 0) + desiredWardLandmarks, max: (settlement.castle ? 1 : 0) + desiredWardLandmarks },
+            placed: buildings.length,
+            complete: buildings.length >= minimumBakedBuildings,
+            fixedKeep: buildings.some((building) => building.blueprintId === 'castle-keep'),
+            wardLandmarks: placedWardLandmarks,
+            compactAdjacencyFallbacks,
+            blueprintIds: buildings.map((building) => building.blueprintId),
+            strategy: compactAdjacencyFallbacks
+                ? 'fixed-castle-plus-per-ward-with-compact-adjacency'
+                : 'fixed-castle-plus-per-ward'
+        })
+    };
+}
+
+function getFixedKeepRotations(settlement) {
+    const edgeRotation = { north: 0, east: 1, south: 2, west: 3 };
+    const innermostRing = [...(settlement.wallRings || [])]
+        .sort((left, right) => Number(right.ring || 0) - Number(left.ring || 0))[0];
+    const aligned = (innermostRing?.gates || [])
+        .map((gate) => edgeRotation[gate.edge])
+        .filter(Number.isFinite);
+    return [...new Set([...aligned, 0, 1, 2, 3])];
+}
+
+function fixedBuildingHasOpenApproach(building, mutable) {
+    const [approachCol, approachRow] = building.entrance?.approachGrid || [];
+    const approachSymbol = mutable[approachRow]?.[approachCol];
+    if (!approachSymbol || approachSymbol === 'T' || isWaterSymbol(approachSymbol)) return false;
+    const offsetX = Math.floor((mutable[0]?.length || 0) / 2);
+    const offsetY = Math.floor(mutable.length / 2);
+    return (building.footprintCells || []).every((cell) => {
+        const symbol = mutable[building.y + cell.y + offsetY]?.[building.x + cell.x + offsetX];
+        return Boolean(symbol) && symbol !== 'T' && !isWaterSymbol(symbol);
+    });
+}
+
+function createWardWaveAreas({ settlement, sites, totalMinimum }) {
+    const groups = new Map();
+    for (const site of sites) {
+        const areaId = site.areaId || `settlement-${settlement.burg.id}-ward-open`;
+        if (!groups.has(areaId)) groups.set(areaId, []);
+        groups.get(areaId).push(site);
+    }
+    const totalSites = sites.length || 1;
+    let remainingMinimum = Math.min(totalMinimum, sites.length);
+    const areas = [...groups]
+        .sort(([left], [right]) => String(left).localeCompare(String(right)))
+        .map(([id, areaSites], index, all) => {
+            const ward = settlement.wards.find((candidate) => id === wardAreaId(settlement, candidate)) ||
+                getSettlementWardAt(settlement,
+                    Math.round(areaSites[0].x + Math.floor(settlement.wallBounds.width / 2)),
+                    Math.round(areaSites[0].y + Math.floor(settlement.wallBounds.height / 2)));
+            const proportional = index === all.length - 1
+                ? remainingMinimum
+                : Math.min(areaSites.length, Math.floor(totalMinimum * areaSites.length / totalSites));
+            const minimumBuildings = Math.min(areaSites.length, proportional);
+            remainingMinimum -= minimumBuildings;
+            return {
+                id,
+                siteIds: areaSites.map((site) => site.id),
+                minimumBuildings,
+                walled: settlement.walled,
+                priority: wardLandmarkPriority(ward?.district),
+                district: ward?.district || areaSites[0].district || 'residential',
+                wfcPriors: ward?.wfcPriors || {
+                    buildingDensity: settlement.walled ? 0.78 : 0.52,
+                    elevationVariance: settlement.walled ? 0.2 : 0.55,
+                    archetypeWeights: {}
+                }
+            };
+        });
+    if (!areas.length) {
+        areas.push({
+            id: `settlement-${settlement.burg.id}-ward-open`,
+            siteIds: [],
+            minimumBuildings: 0,
+            walled: settlement.walled,
+            priority: 0,
+            district: 'residential',
+            wfcPriors: { buildingDensity: 0.58, elevationVariance: 0.4, archetypeWeights: {} }
+        });
+    }
+    return areas;
+}
+
+function wardAreaId(settlement, ward) {
+    return `settlement-${settlement.burg.id}-ward-${ward?.ring ?? 0}-${ward?.district || 'residential'}`;
+}
+
+function wardLandmarkPriority(district) {
+    return ({ castle: 10, civic: 9, market: 8, harbor: 7, artisan: 5, residential: 4, garden: 3 })[district] || 1;
 }
 
 function createBakedWaveAnchors({
@@ -1167,7 +1797,10 @@ function createBakedWaveAnchors({
             width: building.width,
             height: building.height
         }, building.door.edge);
-        const isLandmark = ['clocktower', 'lighthouse'].includes(building.blueprintId);
+        const isLandmark = ['castle-keep', 'clocktower', 'lighthouse', 'market-hall', 'civic-hall'].includes(building.blueprintId);
+        const ward = settlement.wards.find((candidate) => candidate.district === building.district) ||
+            settlement.wards[settlement.wards.length - 1] || null;
+        const areaId = wardAreaId(settlement, ward);
         modules.push(Object.freeze({
             id: moduleId,
             label: building.name,
@@ -1196,7 +1829,9 @@ function createBakedWaveAnchors({
             y: building.y,
             width: building.width,
             height: building.height,
-            areaId: `settlement-${settlement.burg.id}`,
+            areaId,
+            district: ward?.district || building.district || 'civic',
+            wfcPriors: ward?.wfcPriors,
             allowedDoorEdges: [building.door.edge],
             reservedExteriorApproach: {
                 edge: building.door.edge,
@@ -1227,6 +1862,7 @@ function applyContextualTerrainAssignments({
     paletteRows,
     elevationRows,
     constraintField,
+    settlement,
     offsetX,
     offsetY
 }) {
@@ -1259,7 +1895,9 @@ function applyContextualTerrainAssignments({
                     mutable[row][col] = '~';
                     paletteRows[row][col] = 'coast';
                 } else {
-                    mutable[row][col] = (col + row) % 7 === 0 ? ',' : '.';
+                    const localCol = col - settlement.col;
+                    const localRow = row - settlement.row;
+                    mutable[row][col] = (localCol + localRow) % 7 === 0 ? ',' : '.';
                 }
             }
         }
@@ -1314,7 +1952,9 @@ function createContextualParcelSites({
     const bounds = settlement.wallBounds;
     for (let row = bounds.minRow + 1; row <= bounds.maxRow - 4; row++) {
         for (let col = bounds.minCol + 1; col <= bounds.maxCol - 3; col++) {
-            const hash = hashWaveSeed(`${seed}:parcel:${settlement.burg.id}:${col}:${row}`);
+            const localCol = col - settlement.col;
+            const localRow = row - settlement.row;
+            const hash = hashWaveSeed(`${seed}:parcel:${settlement.burg.id}:${localCol}:${localRow}`);
             const sizeClass = hash % 12;
             const smallRotated = ((hash >>> 4) % 2 === 1);
             const rectOptions = [{
@@ -1323,7 +1963,7 @@ function createContextualParcelSites({
                 width: smallRotated ? 5 : 4,
                 height: smallRotated ? 4 : 5
             }];
-            if (sizeClass >= 7) {
+            if (settlement.walled || sizeClass >= 7) {
                 const [largeWidth, largeHeight] = sizeClass < 10 ? [5, 6] : [6, 6];
                 const largeRotated = largeWidth !== largeHeight && ((hash >>> 7) % 2 === 1);
                 rectOptions.push({
@@ -1342,7 +1982,7 @@ function createContextualParcelSites({
                     occupied,
                     constraintField,
                     width,
-                    seed: `${seed}:parcel-door:${settlement.burg.id}:${col}:${row}:${rect.width}x${rect.height}`
+                    seed: `${seed}:parcel-door:${settlement.burg.id}:${localCol}:${localRow}:${rect.width}x${rect.height}`
                 });
                 if (!allowedDoorEdges.length) continue;
                 const centerCol = Math.round(rect.col + (rect.width - 1) / 2);
@@ -1353,9 +1993,14 @@ function createContextualParcelSites({
                     rect,
                     allowedDoorEdges,
                     roadDistance,
-                    score: roadDistance
-                        + rect.width * rect.height * 0.004
-                        + keyedUnit(`${seed}:parcel-score:${settlement.burg.id}:${col}:${row}:${rect.width}x${rect.height}`) * 0.7
+                    score: roadDistance * (settlement.walled ? 0.18 : 1)
+                        // Confinement should read as a town, not scattered cabins. Once slope,
+                        // water, walls and a legal door approach all pass, prefer the larger lot
+                        // inside walls; open fiefs retain the lighter small-lot bias.
+                        + rect.width * rect.height * (settlement.walled ? -0.035 : 0.004)
+                        + keyedUnit(
+                            `${seed}:parcel-score:${settlement.burg.id}:${localCol}:${localRow}:${rect.width}x${rect.height}`
+                        ) * (settlement.walled ? 0.2 : 0.7)
                 });
             }
         }
@@ -1364,7 +2009,9 @@ function createContextualParcelSites({
 
     const sites = [];
     const reserved = new Set(occupied instanceof Set ? occupied : []);
-    const target = clampInteger(6 + Math.sqrt(Math.max(1, settlement.burg.population)) * 0.58, 7, 17);
+    const target = settlement.walled
+        ? clampInteger(14 + Math.sqrt(Math.max(1, settlement.burg.population)) * 0.86, 16, 30)
+        : clampInteger(5 + Math.sqrt(Math.max(1, settlement.burg.population)) * 0.48, 6, 14);
     for (const candidate of candidates) {
         if (sites.length >= target) break;
         if (!canPlaceContextualParcel(candidate.rect, mutable, elevationRows, reserved)) continue;
@@ -1374,7 +2021,8 @@ function createContextualParcelSites({
             occupied: reserved,
             constraintField,
             width,
-            seed: `${seed}:selected-door:${settlement.burg.id}:${candidate.rect.col}:${candidate.rect.row}`
+            seed: `${seed}:selected-door:${settlement.burg.id}:` +
+                `${candidate.rect.col - settlement.col}:${candidate.rect.row - settlement.row}`
         });
         if (!allowedDoorEdges.length) continue;
         const allowedDoorEdge = allowedDoorEdges[0];
@@ -1385,13 +2033,16 @@ function createContextualParcelSites({
         const field = fields[id] || {};
         const constraint = constraintField?.cells?.[id] || {};
         const siteId = `burg-${settlement.burg.id}-parcel-${sites.length}`;
+        const ward = getSettlementWardAt(settlement, centerCol, centerRow) || settlement.wards[0] || null;
         sites.push({
             id: siteId,
             x: candidate.rect.col - offsetX,
             y: candidate.rect.row - offsetY,
             width: candidate.rect.width,
             height: candidate.rect.height,
-            areaId: `settlement-${settlement.burg.id}`,
+            areaId: wardAreaId(settlement, ward),
+            district: ward?.district || 'residential',
+            wfcPriors: ward?.wfcPriors,
             allowedDoorEdges: [allowedDoorEdge],
             reservedExteriorApproach: {
                 edge: allowedDoorEdge,
@@ -1486,155 +2137,6 @@ function finalizeContextualBuilding({ building, settlement, indexInTown, elevati
     };
 }
 
-function stampSettlementRoads(mutable, paletteRows, elevationRows, settlement, seed, width, height) {
-    const { col, row, radius, burg } = settlement;
-    const random = createWaveRandom(`${seed}:roads:${burg.id}`);
-    for (let y = row - 2; y <= row + 2; y++) {
-        for (let x = col - 2; x <= col + 2; x++) {
-            if (Math.abs(x - col) + Math.abs(y - row) > 3) continue;
-            if (!isLandSymbol(mutable[y]?.[x])) continue;
-            mutable[y][x] = ';';
-            paletteRows[y][x] = 'path';
-        }
-    }
-    const horizontalFirst = random() > 0.5;
-    const arms = horizontalFirst
-        ? [CARDINALS[0], CARDINALS[1], CARDINALS[2], CARDINALS[3]]
-        : [CARDINALS[2], CARDINALS[3], CARDINALS[0], CARDINALS[1]];
-    const armCount = burg.flags?.capital ? 4 : burg.population > 70 ? 3 : 2;
-    for (let armIndex = 0; armIndex < armCount; armIndex++) {
-        const direction = arms[armIndex];
-        const length = radius + Math.floor(random() * 4);
-        let x = col;
-        let y = row;
-        for (let step = 0; step <= length; step++) {
-            if (x < 1 || y < 1 || x >= width - 1 || y >= height - 1) break;
-            if (isLandSymbol(mutable[y]?.[x]) || mutable[y]?.[x] === 'B') {
-                mutable[y][x] = step <= 2 ? ';' : 'R';
-                paletteRows[y][x] = 'path';
-            }
-            x += direction.x;
-            y += direction.y;
-            if (step > 3 && step % 5 === 0 && random() > 0.58) {
-                x += direction.y;
-                y += direction.x;
-            }
-        }
-    }
-    smoothRoadElevations(mutable, elevationRows);
-}
-
-function createSettlementLots(mutable, elevationRows, settlement, occupied, seed, width, height) {
-    const lots = [];
-    const target = clampInteger(4 + Math.sqrt(Math.max(1, settlement.burg.population)) * 0.65, 5, 15);
-    const candidates = [];
-    for (let row = Math.max(2, settlement.row - settlement.radius); row <= Math.min(height - 3, settlement.row + settlement.radius); row++) {
-        for (let col = Math.max(2, settlement.col - settlement.radius); col <= Math.min(width - 3, settlement.col + settlement.radius); col++) {
-            const distance = Math.hypot(col - settlement.col, row - settlement.row);
-            if (distance < 4 || distance > settlement.radius) continue;
-            if (!isBuildableSymbol(mutable[row]?.[col])) continue;
-            const roadDistance = nearestSymbolDistance(mutable, col, row, new Set(['R', ';']), 5);
-            if (roadDistance < 2 || roadDistance > 4) continue;
-            const score = keyedUnit(`${seed}:lot:${settlement.burg.id}:${col}:${row}`) + roadDistance * 0.025 + distance * 0.002;
-            candidates.push({ col, row, score, roadDistance });
-        }
-    }
-    candidates.sort((a, b) => a.score - b.score || a.row - b.row || a.col - b.col);
-    for (const candidate of candidates) {
-        if (lots.length >= target) break;
-        const hash = hashWaveSeed(`${seed}:lot-size:${settlement.burg.id}:${candidate.col}:${candidate.row}`);
-        const lotWidth = 3 + (hash % 4);
-        const lotHeight = 3 + (Math.floor(hash / 7) % 4);
-        const left = candidate.col - Math.floor(lotWidth / 2);
-        const top = candidate.row - Math.floor(lotHeight / 2);
-        const rect = { col: left, row: top, width: lotWidth, height: lotHeight };
-        if (!canPlaceLot(rect, mutable, elevationRows, occupied, width, height)) continue;
-        lots.push(rect);
-        reserveRect(occupied, rect, 1);
-    }
-    if (lots.length < target) {
-        const fallbackOffsets = [];
-        for (const distance of [6, 11, 15]) {
-            fallbackOffsets.push(
-                { x: distance, y: 4 }, { x: distance, y: -4 },
-                { x: -distance, y: 4 }, { x: -distance, y: -4 },
-                { x: 4, y: distance }, { x: -4, y: distance },
-                { x: 4, y: -distance }, { x: -4, y: -distance }
-            );
-        }
-        fallbackOffsets.sort((a, b) =>
-            keyedUnit(`${seed}:fallback-lot:${settlement.burg.id}:${a.x}:${a.y}`) -
-            keyedUnit(`${seed}:fallback-lot:${settlement.burg.id}:${b.x}:${b.y}`));
-        for (const offset of fallbackOffsets) {
-            if (lots.length >= target) break;
-            const hash = hashWaveSeed(`${seed}:fallback-size:${settlement.burg.id}:${offset.x}:${offset.y}`);
-            const lotWidth = 3 + (hash % 3);
-            const lotHeight = 3 + (Math.floor(hash / 5) % 3);
-            const rect = {
-                col: settlement.col + offset.x - Math.floor(lotWidth / 2),
-                row: settlement.row + offset.y - Math.floor(lotHeight / 2),
-                width: lotWidth,
-                height: lotHeight
-            };
-            if (!canPlaceLot(rect, mutable, elevationRows, occupied, width, height)) continue;
-            lots.push(rect);
-            reserveRect(occupied, rect, 1);
-        }
-    }
-    return lots;
-}
-
-function createLotBuilding({ lot, settlement, indexInTown, offsetX, offsetY, elevationRows, mutable, seed }) {
-    const hash = hashWaveSeed(`${seed}:building:${settlement.burg.id}:${lot.col}:${lot.row}`);
-    const style = hash % 3 === 0 ? 'stone' : 'timber';
-    const footprintCells = createBuildingFootprint(lot.width, lot.height, hash);
-    const footprintSet = new Set(footprintCells.map((cell) => `${cell.x},${cell.y}`));
-    const door = chooseFootprintDoor({
-        col: lot.col,
-        row: lot.row,
-        width: lot.width,
-        height: lot.height,
-        footprintCells,
-        footprintSet,
-        mutable
-    });
-    const building = {
-        id: `generated-${settlement.burg.id}-${indexInTown}-${hash.toString(16).slice(0, 5)}`,
-        obstructionTag: `building:generated:${settlement.burg.id}:${indexInTown}`,
-        name: `${settlement.burg.name} ${indexInTown + 1}`,
-        x: lot.col - offsetX,
-        y: lot.row - offsetY,
-        width: lot.width,
-        height: lot.height,
-        footprintCells,
-        stories: 1,
-        style,
-        doorStyle: ['oak', 'painted', 'iron'][hash % 3],
-        door,
-        stairs: [],
-        stairCells: [],
-        baseElevation: dominantFootprintElevation(lot, footprintCells, elevationRows),
-        proceduralGenerated: true,
-        sourceType: 'formula-lot',
-        facadeVariant: hash % 17
-    };
-    if (indexInTown === 0 && lot.width >= 5 && lot.height >= 5) {
-        const flight = createStairFlight({
-            origin: { x: 1, y: 1 },
-            direction: 'east',
-            climbVoxels: 2,
-            footprintSet,
-            door,
-            configuration: STAIR_CONFIGURATION.SOLID_TRIANGULAR
-        });
-        if (flight) {
-            building.stories = 2;
-            building.stairCells = flight;
-        }
-    }
-    return building;
-}
-
 function applySettlementWave(buildings, mutableRows, elevationRows, settlement, seed) {
     if (!buildings.length) return;
     try {
@@ -1650,118 +2152,218 @@ function applySettlementWave(buildings, mutableRows, elevationRows, settlement, 
         for (const building of buildings) {
             const assignment = planned.assignments.get(building.id);
             if (!assignment) continue;
-            building.district = assignment.district;
+            const district = building.district || assignment.district;
+            const districtStyle = getBlueprintDistrictStyle(district);
+            building.district = district;
             building.districtPalette = {
                 ...assignment.palette,
-                roofs: [...(assignment.palette?.roofs || [])],
-                accent: mixColorNumbers(assignment.palette?.accent, settlement.accent, 0.44)
+                roofs: [...districtStyle.roofs],
+                accent: mixColorNumbers(districtStyle.accent, settlement.accent, 0.38)
             };
-            building.activity = assignment.activity;
-            building.archetype = assignment.archetype;
-            building.architectureStyle = assignment.archetype;
-            const roofs = assignment.palette?.roofs || ['gabled'];
+            building.activity = districtStyle.activity || assignment.activity;
+            building.archetype = contextualArchetype(building.wfcModuleId, district, assignment.archetype);
+            building.architectureStyle = building.archetype;
+            const roofs = districtStyle.roofs;
             building.roofStyle = roofs[hashWaveSeed(`${seed}:${building.id}:roof`) % roofs.length];
         }
     } catch (error) {
         if (!(error instanceof WaveFunctionCollapseError)) throw error;
         for (const [index, building] of buildings.entries()) {
-            building.district = index === 0 ? 'civic' : 'residential';
-            building.archetype = index === 0 ? 'hall' : 'cottage';
+            building.district = building.district || (index === 0 ? 'civic' : 'residential');
+            const style = getBlueprintDistrictStyle(building.district);
+            building.archetype = contextualArchetype(building.wfcModuleId, building.district, index === 0 ? 'hall' : 'cottage');
             building.architectureStyle = building.archetype;
-            building.roofStyle = ['gabled', 'clay', 'slate'][hashWaveSeed(`${seed}:${building.id}`) % 3];
-            building.districtPalette = { accent: settlement.accent, roofs: ['gabled', 'clay', 'slate'] };
+            building.roofStyle = style.roofs[hashWaveSeed(`${seed}:${building.id}`) % style.roofs.length];
+            building.districtPalette = { accent: mixColorNumbers(style.accent, settlement.accent, 0.38), roofs: [...style.roofs] };
         }
     }
 }
 
-function createBuildingFootprint(width, height, hash) {
-    const cells = [];
-    const variant = hash % 4;
-    for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-            const corner = (x === 0 || x === width - 1) && (y === 0 || y === height - 1);
-            const lCut = variant === 2 && x >= Math.ceil(width * 0.62) && y < Math.floor(height * 0.42);
-            const courtyard = variant === 3 && width >= 6 && height >= 6 && x > 1 && x < width - 2 && y > 1 && y < height - 2;
-            if (variant === 1 && corner && ((x + y + hash) % 3 === 0)) continue;
-            if (lCut || courtyard) continue;
-            cells.push({ x, y });
-        }
-    }
-    return cells.length >= 8 ? cells : Array.from({ length: height }, (_, y) =>
-        Array.from({ length: width }, (_, x) => ({ x, y }))).flat();
+function getBlueprintDistrictStyle(district) {
+    return ({
+        castle: { accent: 0x2f6fce, roofs: ['slate', 'copper', 'tower'], activity: 'guard' },
+        civic: { accent: 0xf2c35a, roofs: ['copper', 'slate', 'tower'], activity: 'gather' },
+        market: { accent: 0xf07b4f, roofs: ['market', 'clay', 'copper'], activity: 'trade' },
+        residential: { accent: 0x4fb7a7, roofs: ['gabled', 'clay', 'slate'], activity: 'home' },
+        artisan: { accent: 0xb56d43, roofs: ['clay', 'slate', 'thatch'], activity: 'craft' },
+        garden: { accent: 0x77b84e, roofs: ['thatch', 'gabled', 'copper'], activity: 'grow' },
+        harbor: { accent: 0x2fa7c4, roofs: ['copper', 'slate', 'clay'], activity: 'dock' }
+    })[district] || { accent: 0x4fb7a7, roofs: ['gabled', 'clay', 'slate'], activity: 'home' };
 }
 
-function chooseFootprintDoor({ col, row, footprintCells, footprintSet, mutable }) {
-    const candidates = [];
-    for (const cell of footprintCells) {
-        for (const direction of CARDINALS) {
-            const outsideKey = `${cell.x + direction.x},${cell.y + direction.y}`;
-            const insideKey = `${cell.x - direction.x},${cell.y - direction.y}`;
-            if (footprintSet.has(outsideKey) || !footprintSet.has(insideKey)) continue;
-            const isCorner = CARDINALS.filter((other) => !footprintSet.has(`${cell.x + other.x},${cell.y + other.y}`)).length >= 2;
-            if (isCorner) continue;
-            const outsideCol = col + cell.x + direction.x;
-            const outsideRow = row + cell.y + direction.y;
-            const roadDistance = nearestSymbolDistance(mutable, outsideCol, outsideRow, new Set(['R', ';']), 7);
-            candidates.push({
-                x: cell.x,
-                y: cell.y,
-                edge: direction.name,
-                score: roadDistance + Math.abs(cell.x - (col % Math.max(1, footprintCells.length))) * 0.001
-            });
-        }
-    }
-    return candidates.sort((a, b) => a.score - b.score || a.y - b.y || a.x - b.x)[0] || { x: 1, y: 0, edge: 'north' };
+function contextualArchetype(moduleId, district, fallback) {
+    if (district === 'castle') return 'manor';
+    return ({
+        'building-cabin': 'cottage',
+        'building-cottage': 'cottage',
+        'building-shop': 'bayfront',
+        'building-house': 'townhouse',
+        'building-workshop': 'workshop',
+        'building-hall': 'hall'
+    })[moduleId] || fallback || 'cottage';
 }
 
-function synthesizeDecorations({ rows, paletteRows, buildings, settlements, seed, width, height }) {
+function synthesizeDecorations({ rows, paletteRows, fields, buildings, settlements, skeleton, seed, width, height }) {
     const decorations = [];
     const blocked = new Set();
     const offsetX = Math.floor(width / 2);
     const offsetY = Math.floor(height / 2);
     for (const building of buildings) reserveBuilding(blocked, building, offsetX, offsetY, 1);
     for (const settlement of settlements) {
-        const x = settlement.col - offsetX;
-        const y = settlement.row - offsetY;
-        decorations.push({ type: 'fountain', x, y, matrixLandmark: true, district: 'civic', accent: 0x65e2a4 });
-        decorations.push(
-            { type: 'stall', x: x - 3, y: y - 2, rotation: Math.PI / 2, matrixLandmark: true, district: 'market', accent: 0xf07b4f },
-            { type: 'stall', x: x + 3, y: y + 2, rotation: -Math.PI / 2, matrixLandmark: true, district: 'market', accent: 0x4fb7a7 },
-            { type: 'lantern_cluster', x: x - 2, y: y + 2, matrixLandmark: true, district: 'market', accent: 0xf2c35a },
-            { type: 'banner', x: x + 2, y, matrixLandmark: true, district: 'market', accent: 0xff6fae }
-        );
-        const primaryGate = settlement.gates?.find((gate) => gate.edge === 'south') || settlement.gates?.[0];
-        if (primaryGate) {
-            decorations.push({
-                type: 'archway',
-                x: primaryGate.col - offsetX,
-                y: primaryGate.row - offsetY,
-                rotation: primaryGate.edge === 'east' || primaryGate.edge === 'west' ? Math.PI / 2 : 0,
-                matrixLandmark: true,
-                district: 'civic',
-                accent: settlement.accent
+        if (settlement.blueprint?.hierarchy === 'seat') {
+            const plaza = findWardDecorationCell({ rows, blocked, settlement, district: 'market', width, height, salt: 0 }) ||
+                findWardDecorationCell({ rows, blocked, settlement, district: 'civic', width, height, salt: 0 });
+            if (plaza) {
+                decorations.push({
+                    type: 'fountain', x: plaza.col - offsetX, y: plaza.row - offsetY,
+                    matrixLandmark: true, district: 'market', accent: 0xf2c35a, blueprintFixed: true
+                });
+                for (const [index, type] of ['stall', 'stall', 'lantern_cluster'].entries()) {
+                    const cell = findWardDecorationCell({
+                        rows, blocked, settlement, district: 'market', width, height,
+                        salt: index + 2, near: plaza
+                    });
+                    if (!cell) continue;
+                    decorations.push({
+                        type, x: cell.col - offsetX, y: cell.row - offsetY,
+                        rotation: index % 2 ? -Math.PI / 2 : Math.PI / 2,
+                        matrixLandmark: true, district: 'market',
+                        accent: [0xf07b4f, 0x4fb7a7, 0xf2c35a][index], blueprintFixed: true
+                    });
+                }
+            }
+            for (let index = 0; index < 2; index++) {
+                const castleCell = findWardDecorationCell({
+                    rows, blocked, settlement, district: 'castle', width, height, salt: 7 + index
+                });
+                if (!castleCell) continue;
+                decorations.push({
+                    type: index === 0 ? 'banner' : 'lantern_cluster',
+                    x: castleCell.col - offsetX,
+                    y: castleCell.row - offsetY,
+                    matrixLandmark: true,
+                    district: 'castle',
+                    accent: index === 0 ? 0x2f6fce : 0xf2c35a,
+                    blueprintFixed: true
+                });
+            }
+            for (const gate of settlement.gates || []) {
+                decorations.push({
+                    type: 'archway',
+                    x: gate.col - offsetX,
+                    y: gate.row - offsetY,
+                    rotation: gate.edge === 'east' || gate.edge === 'west' ? Math.PI / 2 : 0,
+                    matrixLandmark: true,
+                    district: 'civic',
+                    accent: settlement.accent,
+                    gatehouse: true,
+                    grand: gate.grand === true,
+                    widthTiles: gate.widthTiles || 1,
+                    blueprintFixed: true
+                });
+            }
+        } else {
+            const center = findWardDecorationCell({
+                rows, blocked, settlement, district: settlement.wards[0]?.district, width, height, salt: settlement.burg.id
             });
+            if (center) {
+                const liege = settlement.blueprint?.liegeBurgId;
+                decorations.push(
+                    {
+                        type: 'well', x: center.col - offsetX, y: center.row - offsetY,
+                        district: 'residential', accent: settlement.accent, blueprintFixed: true
+                    },
+                    {
+                        type: 'sign', x: center.col + 2 - offsetX, y: center.row - offsetY,
+                        district: 'residential', destinations: [settlement.burg.id, liege].filter(Boolean), blueprintFixed: true
+                    },
+                    {
+                        type: hashWaveSeed(`${seed}:fief-kit:${settlement.burg.id}`) % 2 ? 'garden' : 'cart',
+                        x: center.col - 2 - offsetX, y: center.row + 1 - offsetY,
+                        district: 'garden', blueprintFixed: true
+                    }
+                );
+            }
         }
+    }
+
+    const waterfallTops = [...(skeleton?.cells?.values?.() || [])]
+        .filter((cell) => cell.kind === 'waterfall' && cell.tier === 0)
+        .sort((left, right) => left.id - right.id);
+    for (const fixed of waterfallTops) {
+        decorations.push({
+            type: 'waterfall',
+            x: fixed.col - offsetX,
+            y: fixed.row - offsetY,
+            rotation: edgeRotation(fixed.edge),
+            direction: fixed.edge,
+            dropTiers: fixed.dropTiers,
+            widthTiles: fixed.widthTiles,
+            intensity: fixed.intensity,
+            plungePool: fixed.plungePool,
+            directiveId: fixed.directiveId,
+            blueprintFixed: true,
+            district: 'wilderness'
+        });
+    }
+    const dockAnchors = [...(skeleton?.cells?.values?.() || [])]
+        .filter((cell) => cell.kind === 'dock' && cell.step === 0)
+        .sort((left, right) => left.id - right.id);
+    for (const fixed of dockAnchors) {
+        decorations.push({
+            type: 'dock', x: fixed.col - offsetX, y: fixed.row - offsetY,
+            rotation: edgeRotation(fixed.edge), direction: fixed.edge, lengthTiles: fixed.length,
+            district: 'harbor', blueprintFixed: true
+        });
     }
     for (let row = 1; row < height - 1 && decorations.length < MAX_DECORATIONS; row++) {
         for (let col = 1; col < width - 1 && decorations.length < MAX_DECORATIONS; col++) {
             const key = `${col},${row}`;
             if (blocked.has(key) || !isDecorationGround(rows[row]?.[col])) continue;
             const palette = paletteRows[row]?.[col] || 'meadow';
-            const unit = keyedUnit(`${seed}:decor:${col}:${row}`);
+            const globalKey = globalFieldSampleKey(fields[row * width + col]);
+            const unit = keyedUnit(`${seed}:decor:${globalKey}`);
             const density = ['forest', 'jungle', 'taiga'].includes(palette) ? 0.082 : palette === 'meadow' ? 0.036 : 0.022;
             if (unit >= density) continue;
             if (decorations.some((item) => Math.hypot(item.x - (col - offsetX), item.y - (row - offsetY)) < 1.8)) continue;
             decorations.push({
-                type: getDecorationType(palette, keyedUnit(`${seed}:decor-type:${col}:${row}`)),
+                type: getDecorationType(palette, keyedUnit(`${seed}:decor-type:${globalKey}`)),
                 x: col - offsetX,
                 y: row - offsetY,
-                rotation: (hashWaveSeed(`${seed}:decor-rotation:${col}:${row}`) % 4) * Math.PI / 2,
+                rotation: (hashWaveSeed(`${seed}:decor-rotation:${globalKey}`) % 4) * Math.PI / 2,
                 biome: palette
             });
         }
     }
     return decorations;
+}
+
+function findWardDecorationCell({ rows, blocked, settlement, district, width, height, salt = 0, near = null }) {
+    const candidates = [];
+    for (let row = Math.max(1, settlement.wallBounds.minRow + 1); row < Math.min(height - 1, settlement.wallBounds.maxRow); row++) {
+        for (let col = Math.max(1, settlement.wallBounds.minCol + 1); col < Math.min(width - 1, settlement.wallBounds.maxCol); col++) {
+            if (blocked.has(`${col},${row}`)) continue;
+            if (!['G', 'F', 'H', 'S', 'P', 'R', '.', ',', ';'].includes(rows[row]?.[col])) continue;
+            const ward = getSettlementWardAt(settlement, col, row);
+            if (district && ward?.district !== district) continue;
+            const target = near || { col: settlement.col, row: settlement.row };
+            const localCol = col - settlement.col;
+            const localRow = row - settlement.row;
+            candidates.push({
+                col,
+                row,
+                score: Math.hypot(col - target.col, row - target.row) +
+                    keyedUnit(
+                        `${settlement.burg.id}:ward-decoration:${district}:${salt}:${localCol}:${localRow}`
+                    ) * 3
+            });
+        }
+    }
+    return candidates.sort((left, right) => left.score - right.score || left.row - right.row || left.col - right.col)[0] || null;
+}
+
+function edgeRotation(edge) {
+    return edge === 'east' ? Math.PI / 2 : edge === 'south' ? Math.PI : edge === 'west' ? -Math.PI / 2 : 0;
 }
 
 function createVisualVariantRows({ rows, paletteRows, seed, centerX, centerY, width, height }) {
@@ -1872,18 +2474,6 @@ function getDecorationType(palette, value) {
     return family[Math.min(family.length - 1, Math.floor(value * family.length))];
 }
 
-function canPlaceLot(rect, mutable, elevationRows, occupied, width, height) {
-    if (rect.col < 2 || rect.row < 2 || rect.col + rect.width >= width - 2 || rect.row + rect.height >= height - 2) return false;
-    const elevations = [];
-    for (let row = rect.row; row < rect.row + rect.height; row++) {
-        for (let col = rect.col; col < rect.col + rect.width; col++) {
-            if (!isBuildableSymbol(mutable[row]?.[col]) || occupied.has(`${col},${row}`)) return false;
-            elevations.push(Number(elevationRows[row]?.[col]) || 0);
-        }
-    }
-    return Math.max(...elevations) - Math.min(...elevations) <= 2;
-}
-
 function reserveRect(set, rect, padding = 0) {
     for (let row = rect.row - padding; row < rect.row + rect.height + padding; row++) {
         for (let col = rect.col - padding; col < rect.col + rect.width + padding; col++) set.add(`${col},${row}`);
@@ -1922,18 +2512,6 @@ function smoothRoadElevations(mutable, elevationRows) {
             }
         }
     }
-}
-
-function findNearestLandCell(mutable, centerCol, centerRow, radius) {
-    let best = null;
-    for (let row = centerRow - radius; row <= centerRow + radius; row++) {
-        for (let col = centerCol - radius; col <= centerCol + radius; col++) {
-            if (!isLandSymbol(mutable[row]?.[col])) continue;
-            const distance = Math.hypot(col - centerCol, row - centerRow);
-            if (!best || distance < best.distance) best = { col, row, distance };
-        }
-    }
-    return best;
 }
 
 function nearestSymbolDistance(rows, centerCol, centerRow, symbols, radius) {
@@ -2012,6 +2590,10 @@ function isDecorationGround(symbol) {
 
 function isWaterSymbol(symbol) {
     return ['W', '~', 'B', 'I'].includes(symbol);
+}
+
+function snapWorldSampleCoordinate(value) {
+    return round(Math.round(Number(value) / WORLD_SAMPLE_SCALE) * WORLD_SAMPLE_SCALE, 6);
 }
 
 function clamp01(value) {

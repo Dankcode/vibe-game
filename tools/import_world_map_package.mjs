@@ -12,18 +12,22 @@ import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+    compileWorldBlueprints,
+    SETTLEMENT_BLUEPRINT_GENERATION_VERSION
+} from './compile_world_blueprints.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const REPO_ROOT = path.resolve(__dirname, '..');
-const DEFAULT_SOURCE_DIR = path.join(REPO_ROOT, 'world-map-source');
+const DEFAULT_SOURCE_DIR = path.join(REPO_ROOT, 'map-data-package');
 const OUTPUT_MODULE = path.join(REPO_ROOT, 'client', 'src', 'data', 'ActiveWorldData.js');
 const OUTPUT_ASSET_DIR = path.join(REPO_ROOT, 'client', 'public', 'assets', 'maps');
 const OUTPUT_ASSET = path.join(OUTPUT_ASSET_DIR, 'map-data.png');
 const ASSET_PUBLIC_PATH = '/assets/maps/map-data.png';
 const WORLD_ID = 'auzoryia';
 const WORLD_NAME = 'Auzoryia';
-const GENERATION_VERSION = 'fmg-constrained-wfc-v2';
+const GENERATION_VERSION = SETTLEMENT_BLUEPRINT_GENERATION_VERSION;
 const ROUTE_POINT_STEP = 2;
 
 async function main(argv = process.argv.slice(2)) {
@@ -48,9 +52,12 @@ async function main(argv = process.argv.slice(2)) {
         provinces: compactColorEntities(source.entities?.provinces),
         burgs: (source.entities?.burgs || []).map((burg) => compactBurg(burg, cells))
     };
+    const settlementBlueprints = compileWorldBlueprints(source, {
+        generationVersion: GENERATION_VERSION
+    });
 
     const contentHash = createHash('sha256')
-        .update(JSON.stringify({ generationVersion: GENERATION_VERSION, geography }))
+        .update(JSON.stringify({ generationVersion: GENERATION_VERSION, geography, settlementBlueprints }))
         .digest('hex');
     const image = source.image || {};
     const world = {
@@ -78,7 +85,7 @@ async function main(argv = process.argv.slice(2)) {
 
     await mkdir(OUTPUT_ASSET_DIR, { recursive: true });
     await copyFile(imageFile, OUTPUT_ASSET);
-    await writeModule({ world, geography });
+    await writeModule({ world, geography, settlementBlueprints });
 
     console.log(JSON.stringify({
         ok: true,
@@ -92,6 +99,10 @@ async function main(argv = process.argv.slice(2)) {
         routes: geography.routes.length,
         rivers: geography.rivers.length,
         burgAnchors: geography.burgs.length,
+        settlementBlueprints: settlementBlueprints.blueprints.length,
+        settlementClusters: settlementBlueprints.clusters.length,
+        settlementBlueprintBytes: settlementBlueprints.coverage.blueprintBytes,
+        settlementCoverageUnexplained: settlementBlueprints.coverage.unexplainedFields.length,
         excludedTownPayloads: true
     }, null, 2));
 }
@@ -223,6 +234,7 @@ async function writeModule(payload) {
         '// Dedicated town/building JSON payloads are intentionally excluded.\n\n';
     const source = `${banner}export const ACTIVE_WORLD = ${JSON.stringify(payload.world, null, 2)};\n\n` +
         `export const ACTIVE_GEOGRAPHY = ${JSON.stringify(payload.geography, null, 2)};\n\n` +
+        `export const ACTIVE_SETTLEMENT_BLUEPRINTS = ${JSON.stringify(payload.settlementBlueprints, null, 2)};\n\n` +
         'export const ACTIVE_TOWNS = Object.freeze({});\n';
     await writeFile(OUTPUT_MODULE, source);
 }

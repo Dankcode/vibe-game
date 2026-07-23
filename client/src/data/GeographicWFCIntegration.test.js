@@ -9,8 +9,11 @@ import {
 } from './FantasyWorldData.js';
 import { BUILDING_PARTS, TILE_SYMBOL_LIBRARY, isBlockWalkable } from './TileLibrary.js';
 
-const EXPECTED_WORLD_LOCATIONS = 50;
-const MINIMUM_URBAN_FOOTPRINT_RATIO = 0.45;
+const EXPECTED_WORLD_LOCATIONS = 60;
+// Physical footprints deliberately leave room for the fixed gates, roads, plazas and keep
+// approaches. Parcel WFC occupancy is checked separately; 43% keeps the town visually dense
+// without treating its required public circulation as failed building coverage.
+const MINIMUM_URBAN_FOOTPRINT_RATIO = 0.43;
 const HARD_WATER_SYMBOLS = new Set(['W', 'I']);
 const DIRECTIONS = Object.freeze([
     Object.freeze({ edge: 'north', x: 0, y: -1 }),
@@ -22,7 +25,7 @@ const DIRECTIONS = Object.freeze([
 let cachedLocationResults;
 const cachedRuntimePlans = new Map();
 
-test('all 50 FMG locations generate without terrain or building WFC contradictions', () => {
+test('all 60 FMG locations generate without terrain or building WFC contradictions', () => {
     const results = getLocationResults();
     assert.equal(results.length, EXPECTED_WORLD_LOCATIONS);
 
@@ -44,6 +47,30 @@ test('all 50 FMG locations generate without terrain or building WFC contradictio
     }
 
     assert.equal(failures.length, 0, formatFailures('location generation failures', failures));
+});
+
+test('every view projects at most one seat wall system with fixed rings and an enterable keep', () => {
+    const failures = [];
+
+    for (const result of successfulLocationResults()) {
+        const buildings = result.plan.generation?.buildingWfc || {};
+        if ((buildings.walledAreas || 0) > 1) {
+            failures.push(`${locationLabel(result.location)} projected ${buildings.walledAreas} independent wall systems`);
+        }
+        if ((buildings.walledAreas || 0) === 1) {
+            if (buildings.wallRings !== 3) {
+                failures.push(`${locationLabel(result.location)} projected ${buildings.wallRings} rings instead of 3`);
+            }
+            if ((buildings.keeps || 0) < 1) {
+                failures.push(`${locationLabel(result.location)} omitted the fixed enterable keep`);
+            }
+            if ((buildings.bakedBuildings || 0) < 2) {
+                failures.push(`${locationLabel(result.location)} emitted fewer than two baked landmarks`);
+            }
+        }
+    }
+
+    assert.equal(failures.length, 0, formatFailures('blueprint settlement hierarchy failures', failures));
 });
 
 test('runtime building stamping preserves every non-gate city wall and hard-water cell', () => {

@@ -21,6 +21,7 @@ const CARDINALS = Object.freeze({
 });
 
 const DISTRICT_STYLE = Object.freeze({
+    castle: Object.freeze({ accent: 0x2f6fce, roofs: Object.freeze(['tower', 'slate', 'copper']), activity: 'guard' }),
     civic: Object.freeze({ accent: 0xf2c35a, roofs: Object.freeze(['copper', 'slate', 'tower']), activity: 'gather' }),
     market: Object.freeze({ accent: 0xf07b4f, roofs: Object.freeze(['market', 'clay', 'copper']), activity: 'trade' }),
     residential: Object.freeze({ accent: 0x4fb7a7, roofs: Object.freeze(['gabled', 'clay', 'slate']), activity: 'home' }),
@@ -30,6 +31,24 @@ const DISTRICT_STYLE = Object.freeze({
 });
 
 const RAW_BLUEPRINTS = [
+    blueprint({
+        id: 'castle-keep',
+        name: 'Crownward Keep',
+        layout: [
+            '####D####',
+            '#.......#',
+            '#.......#',
+            '#.......#',
+            '#.......#',
+            '#.......#',
+            '#.......#',
+            '#.......#',
+            '#########'
+        ],
+        districts: ['castle', 'civic'],
+        style: 'stone', stories: 3, archetype: 'manor', architectureStyle: 'keep', roofStyle: 'tower',
+        roomType: 'hall', priority: 12, roadRange: 8, terrain: 'settlement'
+    }),
     blueprint({
         id: 'market-hall',
         name: 'Festival Market Hall',
@@ -250,7 +269,7 @@ export function createBakedBuildingPlan({
     if (buildings.length < requestedMin) {
         const used = new Set(buildings.map((building) => building.blueprintId));
         const fallbackBlueprints = RAW_BLUEPRINTS
-            .filter((candidate) => candidate.terrain !== 'coast')
+            .filter((candidate) => candidate.terrain !== 'coast' && candidate.id !== 'castle-keep')
             .sort((left, right) => compactFirst
                 ? left.width * left.height - right.width * right.height || right.priority - left.priority
                 : 0);
@@ -300,6 +319,76 @@ export function createBakedBuildingPlan({
 
 export function placeBakedBuildingsInArea(options = {}) {
     return createBakedBuildingPlan(options).buildings;
+}
+
+/**
+ * Materialize a named code-authored blueprint at an exact parser-reserved plot. This is used for
+ * fixed skeleton landmarks such as a seat's keep: variant seeds may restyle its facade, but may
+ * never move its footprint, door approach or stair routing.
+ */
+export function createFixedBakedBuilding({
+    blueprintId,
+    centerCol,
+    centerRow,
+    rotation = 0,
+    width,
+    height,
+    elevationRows = [],
+    seed = 'fixed-baked-building',
+    townId = 'town',
+    district = 'castle',
+    index = 0
+} = {}) {
+    const entry = BAKED_BUILDING_BLUEPRINTS[blueprintId];
+    if (!entry) throw new Error(`Unknown baked building blueprint ${String(blueprintId)}.`);
+    const safeWidth = Math.max(1, Math.floor(Number(width) || elevationRows[0]?.length || 1));
+    const safeHeight = Math.max(1, Math.floor(Number(height) || elevationRows.length || 1));
+    const shape = rotateBlueprint(entry, clampInteger(rotation, 0, 3));
+    const col = Math.round(Number(centerCol) || 0) - Math.floor(shape.width / 2);
+    const row = Math.round(Number(centerRow) || 0) - Math.floor(shape.height / 2);
+    const direction = CARDINALS[shape.door.edge];
+    const approach = {
+        col: col + shape.door.x + direction.x,
+        row: row + shape.door.y + direction.y
+    };
+    if (col < 0 || row < 0 || col + shape.width > safeWidth || row + shape.height > safeHeight ||
+        approach.col < 0 || approach.row < 0 || approach.col >= safeWidth || approach.row >= safeHeight) {
+        throw new Error(`Fixed baked blueprint ${entry.id} does not fit its reserved plot.`);
+    }
+    const elevations = shape.footprintCells.map((cell) =>
+        Number(elevationRows[row + cell.y]?.[col + cell.x]) || 0);
+    const baseElevation = mode(elevations);
+    const candidate = {
+        col,
+        row,
+        rotation: shape.rotation,
+        shape,
+        approach,
+        district,
+        baseElevation,
+        inhibitor: 0,
+        approachInhibitor: 0,
+        elevationSpan: elevations.length ? Math.max(...elevations) - Math.min(...elevations) : 0,
+        waterDistance: Infinity,
+        roadDistance: 0
+    };
+    const context = {
+        seed: String(seed),
+        townId: String(townId),
+        districtSet: new Set([district]),
+        offsetX: Math.floor(safeWidth / 2),
+        offsetY: Math.floor(safeHeight / 2)
+    };
+    const building = materializeBuilding(entry, candidate, context, index);
+    return {
+        ...building,
+        fixedSkeleton: true,
+        sourceType: 'fixed-baked-blueprint',
+        placementConstraints: {
+            ...building.placementConstraints,
+            parserReserved: true
+        }
+    };
 }
 
 export function validateBakedBuilding(building) {
@@ -638,6 +727,7 @@ function resolveCandidateDistrict(center, context) {
 }
 
 function blueprintMatchesDistrictContext(entry, districts) {
+    if (entry.id === 'castle-keep' && !districts.has('castle')) return false;
     return !districts.size || entry.districts.some((district) => districts.has(district));
 }
 

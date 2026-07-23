@@ -425,6 +425,8 @@ export function bakeContextualBuildings({
             wfcModuleId: moduleId,
             areaId,
             siteId,
+            district: site.district || null,
+            wfcPriors: site.wfcPriors || null,
             stories: spec.tags.includes('civic') ? 2 : 1,
             style: spec.tags.includes('craft') ? 'timber' : 'storybook'
         };
@@ -683,6 +685,8 @@ function resolveSiteContexts(sites, areas, geographicInhibitor) {
         const confinement = unit(explicitConfinement, area?.walled === false ? 0 : area ? 1 : 0);
         contexts.set(site.id, Object.freeze({
             areaId: area?.id ?? site.areaId ?? null,
+            district: String(area?.district ?? site.district ?? 'residential'),
+            wfcPriors: normalizeWardPriors(area?.wfcPriors ?? site.wfcPriors),
             confinement,
             geography: normalizeGeographicPrior(site.geography, geographicInhibitor),
             reservedForAccess: site.reservedForAccess === true,
@@ -713,9 +717,17 @@ function moduleAllowedAtSite(module, site, context) {
 
 function contextualModuleWeight(module, context) {
     const geography = context.geography;
+    const priors = context.wfcPriors || normalizeWardPriors();
     let weight = module.weight;
     if (module.kind === 'building') {
-        weight *= 1 + context.confinement * 5.5 + geography.settlementInfluence * 4;
+        weight *= (0.42 + priors.buildingDensity * 2.4) *
+            (1 + context.confinement * 5.5 + geography.settlementInfluence * 4);
+        // Dense, walled wards should use the legal capacity of larger parcels instead of
+        // resolving every lot to the minimum 4x5 cabin. The JSON-derived density prior controls
+        // this footprint preference, so sparse/open settlements still favor small buildings.
+        const footprintArea = Number(module.footprintWidth) * Number(module.footprintHeight);
+        const extraFootprint = Math.max(0, footprintArea - 20);
+        weight *= 1 + extraFootprint / 12 * priors.buildingDensity * context.confinement;
         if (module.tags.includes('landmark')) weight *= 0.32 + geography.settlementInfluence;
     } else if (module.tags.includes('water')) {
         weight *= 0.1 + (1 - geography.land) * 7 + geography.riverInfluence * 4;
@@ -727,6 +739,11 @@ function contextualModuleWeight(module, context) {
         weight *= 0.45 + geography.treeCover * 3;
     } else {
         weight *= 0.8 + geography.land * 2.2;
+    }
+    weight *= districtModuleBias(module, context.district);
+    weight *= archetypePriorBias(module, priors.archetypeWeights);
+    if (module.kind !== 'building' && !module.tags.includes('access')) {
+        weight *= Math.max(0.2, 1.35 - priors.buildingDensity);
     }
     // Confidence sharpens the preferred weights in addition to reducing domain size. This is
     // how geography inhibits local chaos without becoming hand-authored building data.
@@ -750,10 +767,13 @@ function validateAreaMinimums(assignment, contract) {
 
 function buildDiagnostics(contract, assignment, buildings) {
     const moduleHistogram = {};
+    const districtHistogram = {};
     let insideBuildings = 0;
     let outsideBuildings = 0;
     for (const [siteId, moduleId] of assignment) {
         moduleHistogram[moduleId] = (moduleHistogram[moduleId] || 0) + 1;
+        const district = contract.contexts.get(siteId)?.district || 'residential';
+        districtHistogram[district] = (districtHistogram[district] || 0) + 1;
         if (contract.moduleById.get(moduleId)?.kind !== 'building') continue;
         if (contract.contexts.get(siteId).confinement >= 0.5) insideBuildings++;
         else outsideBuildings++;
@@ -768,6 +788,7 @@ function buildDiagnostics(contract, assignment, buildings) {
         forcedBuildingAnchors: [...contract.fixed].filter(([, moduleId]) => contract.moduleById.get(moduleId)?.kind === 'building').length,
         meanDomainSize: domainSizes.length ? domainSizes.reduce((sum, value) => sum + value, 0) / domainSizes.length : 0,
         moduleHistogram: Object.freeze(moduleHistogram),
+        districtHistogram: Object.freeze(districtHistogram),
         contradictions: 0,
         fallbacks: 0
     });
@@ -814,9 +835,75 @@ function normalizeAreas(areas, defaultMinimum) {
             siteIds: new Set(area?.siteIds || []),
             minimumBuildings: Math.max(0, integer(area?.minimumBuildings, defaultMinimum)),
             priority: finite(area?.priority, 0),
-            walled: area?.walled !== false
+            walled: area?.walled !== false,
+            district: String(area?.district || 'residential'),
+            wfcPriors: normalizeWardPriors(area?.wfcPriors)
         };
     }).sort((a, b) => compareIds(a.id, b.id));
+}
+
+function normalizeWardPriors(value = {}) {
+    const source = value && typeof value === 'object' ? value : {};
+    const archetypeWeights = {};
+    for (const [key, raw] of Object.entries(source.archetypeWeights || {})) {
+        const weight = Number(raw);
+        if (Number.isFinite(weight) && weight > 0) archetypeWeights[String(key)] = weight;
+    }
+    return Object.freeze({
+        buildingDensity: unit(source.buildingDensity, 0.58),
+        elevationVariance: unit(source.elevationVariance, 0.35),
+        archetypeWeights: Object.freeze(archetypeWeights)
+    });
+}
+
+function districtModuleBias(module, district) {
+    const tags = new Set(module.tags || []);
+    const kind = String(district || 'residential');
+    if (kind === 'castle') {
+        if (tags.has('civic') || tags.has('landmark')) return 3.2;
+        if (module.kind === 'building') return 0.72;
+        return tags.has('access') ? 1.8 : 0.28;
+    }
+    if (kind === 'civic') {
+        if (tags.has('civic') || tags.has('landmark')) return 2.8;
+        if (tags.has('access') || tags.has('settlement')) return 1.45;
+    }
+    if (kind === 'market') {
+        if (tags.has('merchant') || tags.has('craft')) return 2.45;
+        if (module.id === 'settlement-square' || tags.has('access')) return 1.8;
+    }
+    if (kind === 'harbor') {
+        if (tags.has('merchant') || tags.has('craft')) return 2.05;
+        if (tags.has('water') || tags.has('access')) return 1.65;
+    }
+    if (kind === 'artisan' && (tags.has('craft') || tags.has('merchant'))) return 2.3;
+    if (kind === 'residential' && tags.has('home')) return 2.15;
+    if (kind === 'garden' && (tags.has('home') || tags.has('trees'))) return 1.65;
+    return 1;
+}
+
+function archetypePriorBias(module, weights) {
+    if (!weights || typeof weights !== 'object') return 1;
+    const aliases = [
+        module.id,
+        module.id.replace(/^building-/, ''),
+        ...(module.id === 'building-hall' ? ['hall', 'market', 'keep', 'garrison', 'manor'] : []),
+        ...(module.id === 'building-house' ? ['house', 'home'] : []),
+        ...(module.id === 'building-shop' ? ['shop', 'inn', 'market'] : []),
+        ...(module.id === 'building-workshop' ? ['workshop', 'warehouse'] : [])
+    ];
+    let multiplier;
+    for (const alias of aliases) {
+        const value = Number(weights[alias]);
+        if (Number.isFinite(value)) multiplier = Number.isFinite(multiplier) ? Math.max(multiplier, value) : value;
+    }
+    for (const tag of module.tags || []) {
+        const value = Number(weights[tag]);
+        if (Number.isFinite(value)) multiplier = Number.isFinite(multiplier)
+            ? Math.max(multiplier, value)
+            : value;
+    }
+    return Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1;
 }
 
 function normalizeModules(modules) {

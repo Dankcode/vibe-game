@@ -77,6 +77,7 @@ export function createTownTileRows(townPlan) {
     applyVisualVariantRowsToTileRows(tileRows, townPlan.visualVariantRows);
     applyPaletteRowsToTileRows(tileRows, townPlan.paletteRows);
     applyTownElevationsToTileRows(tileRows, townPlan.elevationRows, buildings);
+    applyBlueprintWallHeightsToTileRows(tileRows, townPlan.wallHeightRows, townPlan.elevationRows);
     applyBuildingStoriesToTileRows(tileRows, buildings);
     applyBuildingFloorTexturesToTileRows(tileRows, buildings);
     applyBuildingDoorTexturesToTileRows(tileRows, buildings);
@@ -88,6 +89,7 @@ export function createTownTileRows(townPlan) {
     tileRows.contentHash = townPlan.contentHash;
     tileRows.visualVariantRows = (townPlan.visualVariantRows || []).slice();
     tileRows.paletteRows = (townPlan.paletteRows || []).map((row) => row.slice());
+    tileRows.wallHeightRows = (townPlan.wallHeightRows || []).map((row) => row.slice());
     tileRows.townName = townPlan.townName;
     tileRows.townCenter = townPlan.center;
     tileRows.theme = townPlan.theme ? { ...townPlan.theme } : undefined;
@@ -206,6 +208,28 @@ function applyTownElevationsToTileRows(tileRows, elevationRows = [], buildings =
     }
 
     stabilizeBuildingElevation(tileRows, elevationRows, buildings, { apron: 1 });
+
+    return tileRows;
+}
+
+export function applyBlueprintWallHeightsToTileRows(tileRows, wallHeightRows = [], elevationRows = []) {
+    if (!Array.isArray(tileRows) || tileRows.length === 0 || !Array.isArray(wallHeightRows)) return tileRows;
+
+    for (let y = 0; y < tileRows.length; y++) {
+        for (let x = 0; x < (tileRows[y]?.length || 0); x++) {
+            const cell = tileRows[y][x];
+            const wallHeight = Number(wallHeightRows[y]?.[x]);
+            if (!Number.isFinite(wallHeight) || wallHeight <= 0) continue;
+            if (cell?.element !== ELEMENTS.STRUCTURE || cell.building !== BUILDING_PARTS.WALL || cell.texture !== TEXTURE_IDS.TOWN_WALL) continue;
+
+            const baseElevation = clampElevation(elevationRows[y]?.[x]);
+            const heightVoxels = Math.max(3, Math.min(9, Math.floor(wallHeight)));
+            cell.buildingBaseElevation = baseElevation;
+            cell.buildingGroundElevation = baseElevation;
+            cell.buildingGroundFloorZ = baseElevation;
+            cell.height = baseElevation + heightVoxels - 1;
+        }
+    }
 
     return tileRows;
 }

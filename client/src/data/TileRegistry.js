@@ -172,10 +172,12 @@ export const TILE_VISUAL_PALETTES = Object.freeze({
         paletteVariant(0xc4b9b5, 0x8d7b78, 0xe6d5d1, 0xfff0ec)
     ]),
     townWall: Object.freeze([
-        paletteVariant(0xffc36e, 0xd8893c, 0xffe29a, 0xfff1bd),
-        paletteVariant(0xf3b874, 0xc97943, 0xffd795, 0xffeab8),
-        paletteVariant(0xeebd86, 0xc58450, 0xffdca8, 0xffedcb),
-        paletteVariant(0xffad73, 0xcf6746, 0xffcd98, 0xffe5ba)
+        paletteVariant(0xc7c9bd, 0x747b7b, 0xe1e4da, 0xf4f6ef),
+        paletteVariant(0xb8c1c4, 0x697579, 0xd7dfe0, 0xf0f4f3),
+        paletteVariant(0xd2cbbd, 0x817b72, 0xe9e2d5, 0xf9f5ec),
+        paletteVariant(0xb9c5ba, 0x6f7d73, 0xd8e3d8, 0xf1f7f0),
+        paletteVariant(0xc8c2c5, 0x7d747b, 0xe2dce1, 0xf6f1f5),
+        paletteVariant(0xc2c9d0, 0x707a86, 0xdde4eb, 0xf4f8fc)
     ]),
     storybookWall: Object.freeze([
         paletteVariant(0xf2ead8, 0xa9a18f, 0xfff7e8, 0xffffff),
@@ -246,6 +248,9 @@ export const TILE_DEFINITIONS = {
         sideColor: 0x087da7,
         roughness: 0.35,
         moveCost: Infinity,
+        waterDepth: 'deep',
+        crossing: null,
+        traversal: 'blocked',
         pattern: 'water',
         visualPalette: 'water'
     },
@@ -309,8 +314,14 @@ const VARIANT_OVERRIDES = {
     },
     [`${ELEMENTS.HYDRO}:1`]: {
         label: 'Shallow Water',
+        walkable: true,
+        habitats: ['shore', 'shallow-water', 'ford'],
         topColor: 0x56e0dc,
         sideColor: 0x198fa8,
+        moveCost: 1.6,
+        waterDepth: 'shallow',
+        crossing: 'ford',
+        traversal: 'wade',
         pattern: 'waterShallow',
         visualPalette: 'shallowWater'
     },

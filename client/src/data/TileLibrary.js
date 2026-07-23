@@ -173,10 +173,27 @@ export function createVoxelBlock({
 } = {}) {
     const textureValue = clampInteger(texture, 0);
     const blockElement = clampInteger(element, ELEMENTS.VOID);
-    const buildingPart = clampInteger(building, BUILDING_PARTS.NONE);
+    // Voxel construction is the final shared choke point for runtime maps and compiled chunks.
+    // Never allow stale wall/window/door metadata to turn an environmental block into structure.
+    const buildingPart = blockElement === ELEMENTS.STRUCTURE
+        ? clampInteger(building, BUILDING_PARTS.NONE)
+        : BUILDING_PARTS.NONE;
     const normalizedPaletteId = normalizePaletteId(paletteId);
     const definition = getTileDefinition(blockElement, textureValue, normalizedPaletteId);
     const walkable = isBlockWalkable(blockElement, textureValue, buildingPart);
+    const buildingReference = blockElement === ELEMENTS.STRUCTURE
+        ? normalizeVoxelBuildingReference({
+            buildingGroundFloorZ,
+            buildingFloorHeight,
+            buildingLevelIndex,
+            buildingLevelTag,
+            buildingLevelKind,
+            buildingPartTag,
+            buildingAnchorZ,
+            buildingPlacementZ,
+            buildingPlacementTag
+        })
+        : {};
     const block = {
         z: clampInteger(z, 0),
         element: blockElement,
@@ -191,17 +208,7 @@ export function createVoxelBlock({
             ...definition,
             walkable
         },
-        ...normalizeVoxelBuildingReference({
-            buildingGroundFloorZ,
-            buildingFloorHeight,
-            buildingLevelIndex,
-            buildingLevelTag,
-            buildingLevelKind,
-            buildingPartTag,
-            buildingAnchorZ,
-            buildingPlacementZ,
-            buildingPlacementTag
-        })
+        ...buildingReference
     };
     return {
         ...block,

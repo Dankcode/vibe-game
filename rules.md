@@ -25,7 +25,7 @@
 - City walls should remain several blocks thick, include walkable interior passages, and use gates/doors that connect those passages to streets.
 - City-wall passages, gates, walkways, and wall-stair structures must share one obstruction group tag per town, `city-wall:<town>`. Every city-wall structure column counts as inside that city-wall obstruction group, but ordinary city interior ground must not.
 - Obstruction mechanics may hide meshes for visibility, but must never remove or weaken collision data.
-- Every active voxel ID except air/0 must register explicit AABB collision metadata in runtime voxel blocks and compiled magic-voxel block registries.
+- Every active voxel ID except air/0 must register explicit AABB collision metadata in runtime voxel blocks.
 - Building perimeter shells must remain closed after stamping; perimeter cells must be solid wall or designated lower/upper window wall parts unless the cell is a validated door.
 - Every generated/imported building must carry a stable JSON `obstructionTag` identifying its obstruction group. Use `building:<town>:<building>` unless a source package supplies a stronger stable tag.
 - Buildings on uneven terrain must flatten their footprint or raise the immediate apron into a coherent plateau before floor and wall vectors are placed.
@@ -43,7 +43,7 @@
 - All city and building layout corrections should be implemented in generator/importer code and then regenerated, not patched town-by-town.
 - Do not solve map or city issues by reading/iterating across all generated map data JSON files or full active-world payloads. Learn the pattern from the generator/importer math, schemas, symbols, and a small targeted sample, then implement a deterministic mathematical rule.
 - Cities and maps must be generated strictly through shared mathematical formulas and generator/importer rules, not manually tuned data edits.
-- The only active source package folder is `world-map-source/`. Keep map-package names in source metadata if needed, but runtime world id/name must remain static until intentionally renamed.
+- The only active source package folder is `map-data-package/`; `world-map-source/` is legacy-only. Keep map-package names in source metadata if needed, but runtime world id/name must remain static until intentionally renamed.
 - FNG/matrix building imports must derive building bounds and footprints from vector cells, room tiles, footprint cells, or rasterized polygon outlines when available. Use `grid_rect` only as fallback metadata, not as proof that a building is rectangular.
 - Furniture and loose items should stay within one tile footprint and should be placed only on validated interior cells.
 
@@ -80,16 +80,25 @@
 - No isolated elevation or terrain cells of any class: raised or special-material cells must belong to clusters (≥ 8 cells for relief) or be absorbed into the dominant neighboring level. The sand-cluster rule generalizes to all terrain classes and elevation.
 - Buildings flatten to plateaus relative to the terraced base; per-cell random elevation noise is forbidden.
 
-## Geographic Terrain + Building WFC (implemented — 2026-07-14)
+## Blueprint-First Terrain + Building WFC (implemented — 2026-07-23)
 
-- The active FMG import is geography-only. Runtime generation may use numeric map-scale cells, height, biome, route, river, state/culture, population, capital/port, and wall flags as constraints; it must not inspect town or building JSON payloads.
-- Terrain and parcel/building collapse are coupled through one deterministic constraint field. The FMG-derived `inhibitor` reduces domain size and terrain variance as confidence/urbanization rises; hard global water remains a fixed terrain assignment.
-- A wall flag creates a mathematical wall envelope with fixed wall/gate cells. Inside that confinement, terrain domains are limited to stable urban ground/roads/plaza and at least 70% of eligible parcel assignments should resolve to buildings. Outside it, terrain modules retain higher entropy.
+- The importer/compiler may read only the active `map-data-package/manifest.json`, global `map-data.json`, and burg summaries embedded in that global payload. Runtime code must never import source-package JSON, and neither compile nor runtime code may open town/building file JSON payloads.
+- `tools/compile_world_blueprints.mjs` owns settlement hierarchy and fixed-node invention. It must emit exactly one seat per cluster, unwalled fiefs linked to a seat gate, compiled wall rings/gates/castle/roads/water, ward priors, climate, district directives, and a coverage report with every FMG field consumed or explained.
+- Runtime order is immutable: project one related cluster → stamp fixed blueprint skeleton → collapse terrain around fixed land/water → solve one building wave per ward → add compatible baked landmarks. `WorldConstraintField` may scale/project compiled geometry into a view but may not use a replay seed to move, add, or remove wall, gate, castle, road, bridge, ford, dock, or waterfall nodes.
+- A view may contain at most one wall system. Fiefs remain open settlements. Capital seats have three aligned ring passages and an enterable keep in the innermost castle ward; compiled ring `heightVoxels` must become actual voxel-column height above local terrain.
+- Terrain and parcel/building collapse are coupled through the projected blueprint constraint field. The compiled `inhibitor` and ward priors reduce domain size and terrain variance as confidence/urbanization rises. Uncertain macro shoreline inside a compiled wall envelope is soft, inhibited terrain that may be stabilized for buildings; parser-authored waterfalls, plunge pools, fords, and every fixed skeleton node remain hard assignments. Inside wall confinement, at least 70% of eligible parcel assignments should resolve to buildings; outside it, terrain modules retain higher entropy.
+- Terrain WFC randomness, node ids, chunk ids, elevation detail, settlement surface patterns, and wilderness decorations must be keyed by canonical global sample coordinates or settlement-relative coordinates, never viewport-local row/column ids. Terrain must solve in complete globally aligned 8×8 chunks with a seam halo before the 72×54 view is cropped.
+- Moving a view center by exactly one world sample must preserve every overlapping terrain id, elevation, final tile symbol, palette id, and visual-variant code for the same replay variant.
+- Replaying a location with a different variant may change ward interiors, roofs, palette micro-variants, and living detail, but the fixed skeleton hash and all parser-authored nodes must stay identical.
+- Waterfall decorations consume the compiled `dropTiers`, `widthTiles`, intensity, bearing, plunge-pool, and outflow directives. The renderer must assemble the complete tiered cascade and must not add a competing heuristic waterfall at that location.
 - Every enterable building must retain a contiguous free 2×3 or 3×2 interior block after walls, stairs, and furniture are reserved. The smallest legal cabin has a 4×5 exterior footprint and a 2×3 interior.
-- Baked landmarks come from the code-native `BakedBuildingLibrary`, not town/building payloads. Area-aware placement should inject two compatible, non-overlapping landmarks when a settlement area can host them, while preserving road-facing entrances and inhibitor/elevation limits.
+- Baked landmarks come from the code-native `BakedBuildingLibrary`, not town/building payloads. Area-aware placement should inject compatible, non-overlapping landmarks per ward, including the fixed keep where required, while preserving road-facing entrances and inhibitor/elevation limits.
+- A clipped walled seat must still receive at least two baked landmarks. If the normal ward solver fails only because a keep's decorative one-cell buffer consumes the last legal lot, a compact fallback may rebuild occupancy from exact footprints plus door approaches and rerun the same 4×5 cabin solver with zero aesthetic padding; it may not overwrite walls, water, roads, existing footprints, or approaches.
+- Partial baked terrain is a separate optimization from baked landmarks. `BakedChunkData.js` may contain only terrain ids and elevations on the canonical world sample lattice. It must match the active schema, generation version, sample scale, chunk size, and world content hash; stale registries are ignored. A reset solve must disable baked input, and seam repair must preserve every compatible baked cell.
+- Compiler coverage must use explicit source-field patterns. A new nested FMG field remains unexplained until a formula consumes it or an explicit import-boundary reason is recorded; broad descendant-prefix acceptance is forbidden.
 - Contextual and baked placement must fail with an explicit contradiction when constraints are unsatisfiable; invalid cabins, overlapping footprints, and silent fallback layouts are forbidden.
 - Building-wave output must produce visible structural variety through massing, facade, material, roof, district palette, rooms, doors, stairs, furniture, and landmark silhouettes—not metadata alone.
-- Landmark archetypes (`clocktower`, `lighthouse`, `hall`, `market`, `inn`, `chapel`) must be area-appropriate and may not overlap or erase roads, gates, wall passages, or door approaches.
+- Landmark archetypes (`keep`, `clocktower`, `lighthouse`, `hall`, `market`, `inn`, `chapel`) must be area-appropriate and may not overlap or erase roads, gates, wall passages, or door approaches.
 
 ## Topographic Visual Matrix (implemented — see context.md "PLAN 9" status)
 

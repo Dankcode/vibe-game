@@ -1,7 +1,13 @@
 import * as THREE from 'three';
 import { Tile } from '../entities/Tile.js';
 import { ObstructionHider } from './ObstructionHider.js';
-import { ELEMENTS, getTileDefinition, isTileWalkable, tileSupportsHabitat } from '../data/TileRegistry.js';
+import {
+    ELEMENTS,
+    getTileDefinition,
+    isTileWalkable,
+    resolveWorldPaletteVariant,
+    tileSupportsHabitat
+} from '../data/TileRegistry.js';
 import { BUILDING_PARTS, createTileCell, createVoxelBlock, createVoxelMatrix, getTopVoxel, getVoxelColumn } from '../data/TileLibrary.js';
 import { planBuildingFurniture } from './FurniturePlanner.js';
 
@@ -111,7 +117,7 @@ export class WorldGenerator {
         this.registerTerrainDepthDetails();
     }
 
-    registerTerrainDepthDetails() {
+    registerTerrainDepthDetails(options = {}) {
         this.clearTerrainDepthDetails();
         if (!this.surfaceMap.size) return;
 
@@ -120,6 +126,10 @@ export class WorldGenerator {
         const rockStrata = [];
         const mossPuffs = [];
         const waterfallCandidates = [];
+        const reservedWaterfalls = (Array.isArray(options) ? options : options.reservedWaterfalls || [])
+            .filter((decoration) => decoration?.type === 'waterfall')
+            .map((decoration) => ({ x: Number(decoration.x), y: Number(decoration.y) }))
+            .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
         const worldSeed = `${this.voxelMatrix?.seed || 0}:${this.voxelMatrix?.variant || 0}`;
         const directions = [
             { dx: 0, dy: -1, ox: 0, oz: -0.49, rotationY: 0 },
@@ -132,6 +142,7 @@ export class WorldGenerator {
             if (surface.element !== ELEMENTS.GEO || !surface.definition?.walkable) continue;
             const isMeadow = tileSupportsHabitat(surface.element, surface.textureValue, 'meadow') ||
                 tileSupportsHabitat(surface.element, surface.textureValue, 'forest-edge');
+            const detailPaletteId = surface.paletteId || surface.definition?.paletteId || 'meadow';
 
             for (const direction of directions) {
                 const neighbor = this.surfaceMap.get(this.getColumnKey(
@@ -156,7 +167,8 @@ export class WorldGenerator {
                         rotationY: direction.rotationY,
                         sx: 0.72 + ((edgeSeed >>> 8) % 18) / 100,
                         sy: 0.78,
-                        sz: 1
+                        sz: 1,
+                        paletteId: detailPaletteId
                     });
                 }
 
@@ -169,7 +181,8 @@ export class WorldGenerator {
                         rotationY: direction.rotationY,
                         sx: 0.5 + ((edgeSeed >>> 12) % 36) / 100,
                         sy: Math.min(2.5, 0.72 + drop * 0.34),
-                        sz: 0.74
+                        sz: 0.74,
+                        paletteId: detailPaletteId
                     });
                 }
 
@@ -181,11 +194,15 @@ export class WorldGenerator {
                         rotationY: (edgeSeed % 8) * Math.PI / 4,
                         sx: 0.68 + ((edgeSeed >>> 10) % 24) / 100,
                         sy: 0.42,
-                        sz: 0.68 + ((edgeSeed >>> 16) % 24) / 100
+                        sz: 0.68 + ((edgeSeed >>> 16) % 24) / 100,
+                        paletteId: detailPaletteId
                     });
                 }
 
-                if (neighbor?.element === ELEMENTS.HYDRO && waterfallCandidates.length < 40) {
+                const reservedDirective = reservedWaterfalls.some((point) =>
+                    Math.hypot(point.x - surface.x, point.y - surface.y) < 2.25
+                );
+                if (!reservedDirective && neighbor?.element === ELEMENTS.HYDRO && waterfallCandidates.length < 40) {
                     waterfallCandidates.push({
                         surface,
                         neighbor,
@@ -197,22 +214,22 @@ export class WorldGenerator {
             }
         }
 
-        this.addInstancedTerrainDetail(
+        this.addPaletteInstancedTerrainDetails(
             group,
-            new THREE.BoxGeometry(0.9, 0.16, 0.18),
-            WorldGenerator.getTerrainDetailMaterial('grassLip'),
+            () => new THREE.BoxGeometry(0.9, 0.16, 0.18),
+            'grassLip',
             grassyLips
         );
-        this.addInstancedTerrainDetail(
+        this.addPaletteInstancedTerrainDetails(
             group,
-            new THREE.BoxGeometry(0.78, 0.42, 0.2),
-            WorldGenerator.getTerrainDetailMaterial('cliffStrata'),
+            () => new THREE.BoxGeometry(0.78, 0.42, 0.2),
+            'cliffStrata',
             rockStrata
         );
-        this.addInstancedTerrainDetail(
+        this.addPaletteInstancedTerrainDetails(
             group,
-            new THREE.SphereGeometry(0.24, 6, 4),
-            WorldGenerator.getTerrainDetailMaterial('cliffMoss'),
+            () => new THREE.SphereGeometry(0.24, 6, 4),
+            'cliffMoss',
             mossPuffs
         );
 
@@ -234,6 +251,23 @@ export class WorldGenerator {
         });
         this.threeManager.addToWorld(group);
         this.terrainDetailGroup = group;
+    }
+
+    addPaletteInstancedTerrainDetails(group, createGeometry, materialKey, transforms) {
+        const transformsByPalette = new Map();
+        for (const transform of transforms) {
+            const paletteId = resolveWorldPaletteVariant(transform.paletteId, 0).paletteId;
+            if (!transformsByPalette.has(paletteId)) transformsByPalette.set(paletteId, []);
+            transformsByPalette.get(paletteId).push(transform);
+        }
+        for (const [paletteId, paletteTransforms] of transformsByPalette.entries()) {
+            this.addInstancedTerrainDetail(
+                group,
+                createGeometry(),
+                WorldGenerator.getTerrainDetailMaterial(materialKey, paletteId),
+                paletteTransforms
+            );
+        }
     }
 
     addInstancedTerrainDetail(group, geometry, material, transforms) {
@@ -297,6 +331,9 @@ export class WorldGenerator {
         this.generateFromArray(mapArray, legend);
         const buildings = Array.isArray(options) ? options : (options.buildings || []);
         const decorations = Array.isArray(options) ? [] : (options.decorations || mapArray.decorations || []);
+        if (decorations.some((decoration) => decoration?.type === 'waterfall')) {
+            this.registerTerrainDepthDetails({ reservedWaterfalls: decorations });
+        }
         this.registerBuildingBlueprints(buildings);
         this.registerWorldDecorations(decorations);
     }
@@ -642,7 +679,19 @@ export class WorldGenerator {
             if (group.userData.rotor) {
                 group.userData.rotor.rotation.z = elapsedSeconds * 0.72 + group.userData.lifePhase;
             }
-            if (group.userData.waterPulse) {
+            if (Array.isArray(group.userData.waterPulses)) {
+                for (const [index, entry] of group.userData.waterPulses.entries()) {
+                    const mesh = entry?.mesh;
+                    if (!mesh) continue;
+                    const pulse = Math.sin(elapsedSeconds * (2.05 + index * 0.08) + group.userData.lifePhase + index * 0.7);
+                    const baseScale = entry.baseScale || { x: 1, y: 1, z: 1 };
+                    mesh.scale.set(
+                        baseScale.x * (0.985 + (pulse + 1) * 0.012),
+                        baseScale.y * (0.965 + (pulse + 1) * 0.035),
+                        baseScale.z
+                    );
+                }
+            } else if (group.userData.waterPulse) {
                 const pulse = Math.sin(elapsedSeconds * 2.4 + group.userData.lifePhase);
                 group.userData.waterPulse.scale.y = 0.94 + pulse * 0.06;
                 group.userData.waterPulse.material.emissiveIntensity = 0.22 + (pulse + 1) * 0.05;
@@ -693,10 +742,11 @@ export class WorldGenerator {
         else if (type === 'cart') this.addDecorCart(group, decoration.rotation || 0);
         else if (type === 'garden') this.addDecorGarden(group);
         else if (type === 'fountain') this.addDecorFountain(group);
-        else if (type === 'archway') this.addDecorArchway(group, decoration.rotation || 0);
+        else if (type === 'archway') this.addDecorArchway(group, decoration);
         else if (type === 'banner') this.addDecorBanner(group, decoration.rotation || 0);
         else if (type === 'lantern_cluster') this.addDecorLanternCluster(group, decoration.rotation || 0);
-        else if (type === 'waterfall') this.addDecorWaterfall(group, decoration.rotation || 0);
+        else if (type === 'waterfall') this.addDecorWaterfall(group, decoration);
+        else if (type === 'dock') this.addDecorDock(group, decoration);
         else if (type === 'overlook') this.addDecorOverlook(group, decoration.rotation || 0);
         else if (type === 'windmill') this.addDecorWindmill(group, decoration.rotation || 0);
         else if (type === 'clock_tower') this.addDecorClockTower(group, decoration.rotation || 0);
@@ -711,7 +761,7 @@ export class WorldGenerator {
         else if (type === 'plant' || type === 'shrub') group.scale.setScalar(1.34);
 
         group.traverse((child) => {
-            child.castShadow = true;
+            child.castShadow = !child.material?.transparent;
             child.receiveShadow = true;
             child.raycast = () => {};
         });
@@ -1002,7 +1052,14 @@ export class WorldGenerator {
         group.userData.landmarkKind = 'fountain';
     }
 
-    addDecorArchway(group, rotation = 0) {
+    addDecorArchway(group, decoration = 0) {
+        if (decoration && typeof decoration === 'object' && decoration.gatehouse) {
+            this.addDecorGatehouse(group, decoration);
+            return;
+        }
+        const rotation = typeof decoration === 'object'
+            ? Number(decoration.rotation || 0)
+            : Number(decoration || 0);
         const stone = WorldGenerator.getDecorationMaterial(
             group.userData.district === 'garden' ? 'stoneMoss' : 'stoneLight'
         );
@@ -1025,6 +1082,76 @@ export class WorldGenerator {
         crest.rotation.z = Math.PI / 4;
         group.add(crest);
         group.userData.landmarkKind = 'archway';
+    }
+
+    addDecorGatehouse(group, decoration = {}) {
+        const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
+        const widthTiles = clamp(Math.floor(Number(decoration.widthTiles) || 1), 1, 3);
+        const grand = decoration.grand === true || widthTiles >= 3;
+        const passageWidth = 0.68 + widthTiles * 0.58;
+        const towerHeight = grand ? 2.7 : widthTiles > 1 ? 2.35 : 2.05;
+        const towerWidth = grand ? 0.92 : 0.76;
+        const towerDepth = grand ? 1.02 : 0.86;
+        const towerX = passageWidth / 2 + towerWidth / 2;
+        const stone = WorldGenerator.getDecorationMaterial('fortressStone');
+        const darkStone = WorldGenerator.getDecorationMaterial('stoneGrey');
+        const accent = WorldGenerator.getDistrictAccentMaterial(group.userData.accent) ||
+            WorldGenerator.getDecorationMaterial('bannerBlue');
+        const gold = WorldGenerator.getDecorationMaterial('bannerGold');
+        const glow = WorldGenerator.getDecorationMaterial('lampGlow');
+        group.rotation.y = Number(decoration.rotation || 0);
+
+        for (const side of [-1, 1]) {
+            const tower = new THREE.Mesh(new THREE.BoxGeometry(towerWidth, towerHeight, towerDepth), stone);
+            tower.position.set(side * towerX, towerHeight / 2, 0);
+            group.add(tower);
+            const footing = new THREE.Mesh(new THREE.BoxGeometry(towerWidth + 0.14, 0.22, towerDepth + 0.14), darkStone);
+            footing.position.set(side * towerX, 0.11, 0);
+            group.add(footing);
+            const cap = new THREE.Mesh(new THREE.BoxGeometry(towerWidth + 0.12, 0.18, towerDepth + 0.12), darkStone);
+            cap.position.set(side * towerX, towerHeight + 0.03, 0);
+            group.add(cap);
+
+            for (const offset of [-0.29, 0.29]) {
+                const frontMerlon = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.34, 0.2), stone);
+                frontMerlon.position.set(side * towerX + offset, towerHeight + 0.27, -towerDepth / 2 + 0.08);
+                group.add(frontMerlon);
+                const rearMerlon = frontMerlon.clone();
+                rearMerlon.position.z = towerDepth / 2 - 0.08;
+                group.add(rearMerlon);
+            }
+
+            const slit = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.48, 0.04), glow);
+            slit.position.set(side * towerX, towerHeight * 0.58, -towerDepth / 2 - 0.025);
+            group.add(slit);
+            const banner = new THREE.Mesh(new THREE.BoxGeometry(0.34, grand ? 0.82 : 0.58, 0.035), accent);
+            banner.position.set(side * towerX, towerHeight * 0.78, -towerDepth / 2 - 0.055);
+            group.add(banner);
+            const bannerStripe = new THREE.Mesh(new THREE.BoxGeometry(0.07, grand ? 0.52 : 0.36, 0.045), gold);
+            bannerStripe.position.copy(banner.position);
+            bannerStripe.position.z -= 0.025;
+            bannerStripe.rotation.z = Math.PI / 4;
+            group.add(bannerStripe);
+        }
+
+        const lintelHeight = grand ? 0.52 : 0.42;
+        const lintel = new THREE.Mesh(
+            new THREE.BoxGeometry(passageWidth + 0.16, lintelHeight, towerDepth * 0.82),
+            stone
+        );
+        lintel.position.y = towerHeight - lintelHeight / 2 - 0.08;
+        group.add(lintel);
+        const arch = new THREE.Mesh(new THREE.TorusGeometry(0.54, 0.11, 8, 22, Math.PI), darkStone);
+        arch.position.set(0, towerHeight - lintelHeight - 0.12, -towerDepth * 0.43);
+        arch.scale.x = passageWidth / 1.08;
+        group.add(arch);
+        const crest = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.42, 0.1), accent);
+        crest.position.set(0, towerHeight + 0.22, -towerDepth * 0.43);
+        crest.rotation.z = Math.PI / 4;
+        group.add(crest);
+
+        group.userData.landmarkKind = 'gatehouse';
+        group.userData.gatehouse = { widthTiles, grand };
     }
 
     addDecorBanner(group, rotation = 0) {
@@ -1072,27 +1199,197 @@ export class WorldGenerator {
         group.userData.landmarkKind = 'lantern-cluster';
     }
 
-    addDecorWaterfall(group, rotation = 0) {
+    addDecorWaterfall(group, decoration = {}) {
+        const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
+        const dropTiers = clamp(Math.floor(Number(decoration.dropTiers ?? decoration.tiers) || 1), 1, 5);
+        const widthTiles = clamp(Number(decoration.widthTiles ?? decoration.width) || 1, 1, 3);
+        const rawIntensity = Number(decoration.intensity ?? decoration.discharge ?? 1);
+        const intensity = clamp(
+            Number.isFinite(rawIntensity)
+                ? rawIntensity <= 1
+                    ? 0.62 + rawIntensity * 0.46
+                    : 0.78 + Math.log10(rawIntensity + 1) * 0.18
+                : 1,
+            0.58,
+            1.42
+        );
+        const poolDirective = decoration.plungePool ?? decoration.plunge_pool ?? true;
+        const poolOptions = poolDirective && typeof poolDirective === 'object' ? poolDirective : {};
+        const hasPlungePool = poolDirective !== false;
+        const rotation = Number.isFinite(Number(decoration.rotation))
+            ? Number(decoration.rotation)
+            : THREE.MathUtils.degToRad(Number(decoration.bearing) || 0);
         const water = WorldGenerator.getDecorationMaterial('waterBright');
         const foam = WorldGenerator.getDecorationMaterial('waterFoam');
         const rock = WorldGenerator.getDecorationMaterial('stoneMoss');
+        const tierDrop = clamp(Number(decoration.tierHeight) || 0.92, 0.72, 1.18);
+        const cascadeWidth = widthTiles * (0.68 + intensity * 0.12);
+        const waterPulses = [];
         group.rotation.y = rotation;
-        const backing = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.9, 0.18), rock);
-        backing.position.y = -0.42;
-        group.add(backing);
-        const cascade = new THREE.Mesh(new THREE.BoxGeometry(0.56, 1.82, 0.08), water);
-        cascade.position.set(0, -0.4, -0.12);
-        group.add(cascade);
-        const topFoam = new THREE.Mesh(new THREE.SphereGeometry(0.3, 7, 5), foam);
-        topFoam.position.set(0, 0.48, -0.14);
-        topFoam.scale.set(1.45, 0.2, 0.48);
+
+        for (let tier = 0; tier < dropTiers; tier++) {
+            const topY = -tier * tierDrop + 0.48;
+            const bottomY = topY - tierDrop;
+            const centerY = (topY + bottomY) / 2;
+            const backing = new THREE.Mesh(
+                new THREE.BoxGeometry(cascadeWidth + 0.42, tierDrop + 0.2, 0.24),
+                rock
+            );
+            backing.position.set(0, centerY - 0.02, 0.015);
+            group.add(backing);
+
+            const cascade = new THREE.Mesh(
+                new THREE.BoxGeometry(cascadeWidth, tierDrop * 0.92, 0.065),
+                water
+            );
+            cascade.position.set(0, centerY, -0.145);
+            cascade.renderOrder = 8;
+            group.add(cascade);
+            waterPulses.push({ mesh: cascade, baseScale: { x: 1, y: 1, z: 1 } });
+
+            const ledge = new THREE.Mesh(
+                new THREE.BoxGeometry(cascadeWidth + 0.5, 0.16, 0.46),
+                rock
+            );
+            ledge.position.set(0, bottomY + 0.025, -0.005);
+            group.add(ledge);
+
+            const tierFoam = new THREE.Mesh(new THREE.SphereGeometry(0.24, 8, 5), foam);
+            tierFoam.position.set(0, bottomY + 0.13, -0.18);
+            tierFoam.scale.set(cascadeWidth * 1.75, 0.24 + intensity * 0.035, 0.62);
+            tierFoam.renderOrder = 9;
+            group.add(tierFoam);
+        }
+
+        const topFoam = new THREE.Mesh(new THREE.SphereGeometry(0.25, 8, 5), foam);
+        topFoam.position.set(0, 0.52, -0.15);
+        topFoam.scale.set(cascadeWidth * 1.65, 0.22, 0.54);
+        topFoam.renderOrder = 9;
         group.add(topFoam);
-        const baseFoam = new THREE.Mesh(new THREE.SphereGeometry(0.36, 7, 5), foam);
-        baseFoam.position.set(0, -1.28, -0.22);
-        baseFoam.scale.set(1.55, 0.24, 0.62);
-        group.add(baseFoam);
-        group.userData.waterPulse = cascade;
+
+        const totalDrop = dropTiers * tierDrop;
+        if (hasPlungePool) {
+            const poolRadius = clamp(
+                Number(poolOptions.radiusTiles ?? poolOptions.radius) || cascadeWidth * (0.76 + intensity * 0.08),
+                0.62,
+                2.7
+            );
+            const poolY = 0.48 - totalDrop;
+            const pool = new THREE.Mesh(
+                new THREE.CylinderGeometry(poolRadius, poolRadius * 1.08, 0.075, 18),
+                water
+            );
+            pool.position.set(0, poolY - 0.025, -poolRadius * 0.42);
+            pool.renderOrder = 7;
+            group.add(pool);
+
+            const foamRing = new THREE.Mesh(
+                new THREE.TorusGeometry(poolRadius * 0.72, 0.055, 6, 22),
+                foam
+            );
+            foamRing.rotation.x = Math.PI / 2;
+            foamRing.position.set(0, poolY + 0.025, -poolRadius * 0.42);
+            foamRing.scale.z = 0.72;
+            foamRing.renderOrder = 9;
+            group.add(foamRing);
+
+            if (poolOptions.outflow !== false && decoration.outflow !== false) {
+                const outflowLength = clamp(
+                    Number(poolOptions.outflowLength ?? decoration.outflowLength) || 1.1 + widthTiles * 0.22,
+                    0.7,
+                    2.4
+                );
+                const outflow = new THREE.Mesh(
+                    new THREE.BoxGeometry(Math.max(0.42, cascadeWidth * 0.56), 0.045, outflowLength),
+                    water
+                );
+                outflow.position.set(0, poolY - 0.01, -poolRadius - outflowLength * 0.38);
+                outflow.renderOrder = 7;
+                group.add(outflow);
+            }
+
+            const mistCount = clamp(Math.round(10 + dropTiers * 4 + intensity * 7), 12, 36);
+            const mistPositions = [];
+            for (let index = 0; index < mistCount; index++) {
+                const angle = index * 2.399963229728653;
+                const radius = poolRadius * (0.18 + ((index * 37) % 65) / 100);
+                mistPositions.push(
+                    Math.cos(angle) * radius,
+                    poolY + 0.12 + ((index * 29) % 52) / 100,
+                    -poolRadius * 0.42 + Math.sin(angle) * radius * 0.62
+                );
+            }
+            const mistGeometry = new THREE.BufferGeometry();
+            mistGeometry.setAttribute('position', new THREE.Float32BufferAttribute(mistPositions, 3));
+            const mist = new THREE.Points(mistGeometry, WorldGenerator.getWaterfallMistMaterial());
+            mist.renderOrder = 10;
+            group.add(mist);
+        }
+
+        group.userData.waterPulses = waterPulses;
+        group.userData.waterfall = Object.freeze({
+            dropTiers,
+            widthTiles,
+            intensity,
+            plungePool: hasPlungePool,
+            totalDrop
+        });
         group.userData.landmarkKind = 'waterfall';
+    }
+
+    addDecorDock(group, decoration = {}) {
+        const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
+        const lengthTiles = clamp(Math.floor(Number(decoration.lengthTiles ?? decoration.length) || 4), 3, 8);
+        const direction = String(decoration.direction || '').toLowerCase();
+        group.rotation.y = ({
+            north: 0,
+            east: -Math.PI / 2,
+            south: Math.PI,
+            west: Math.PI / 2
+        })[direction] ?? Number(decoration.rotation || 0);
+
+        const planks = WorldGenerator.getDecorationMaterial('crateWood');
+        const posts = WorldGenerator.getDecorationMaterial('darkWood');
+        const rope = WorldGenerator.getDecorationMaterial('bannerGold');
+        const accent = WorldGenerator.getDistrictAccentMaterial(group.userData.accent) ||
+            WorldGenerator.getDecorationMaterial('bannerBlue');
+        const deckWidth = 1.62;
+        const stepLength = 0.88;
+        for (let step = 0; step < lengthTiles; step++) {
+            const z = -step * stepLength;
+            const board = new THREE.Mesh(new THREE.BoxGeometry(deckWidth, 0.13, stepLength * 0.92), planks);
+            board.position.set(0, 0.08 + (step % 2) * 0.008, z);
+            group.add(board);
+            for (const seam of [-0.49, 0, 0.49]) {
+                const strip = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.014, stepLength * 0.88), posts);
+                strip.position.set(seam, 0.155, z);
+                group.add(strip);
+            }
+            if (step % 2 !== 0 && step !== lengthTiles - 1) continue;
+            for (const side of [-1, 1]) {
+                const post = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.08, 1.02, 7), posts);
+                post.position.set(side * deckWidth * 0.48, 0.46, z);
+                group.add(post);
+            }
+        }
+
+        const railLength = Math.max(1.2, (lengthTiles - 1) * stepLength);
+        for (const side of [-1, 1]) {
+            const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, railLength, 6), rope);
+            rail.rotation.x = Math.PI / 2;
+            rail.position.set(side * deckWidth * 0.48, 0.72, -railLength / 2);
+            group.add(rail);
+        }
+
+        const endZ = -(lengthTiles - 1) * stepLength;
+        const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.05, 1.52, 7), posts);
+        mast.position.set(0, 0.84, endZ);
+        group.add(mast);
+        const pennant = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.32, 0.035), accent);
+        pennant.position.set(0.27, 1.37, endZ);
+        group.add(pennant);
+        group.userData.landmarkKind = 'dock';
+        group.userData.dock = Object.freeze({ lengthTiles, direction: direction || null });
     }
 
     addDecorOverlook(group, rotation = 0) {
@@ -1532,6 +1829,75 @@ export class WorldGenerator {
             ].includes(voxel.building);
     }
 
+    static resolveBuildingRoofProfile(building = {}) {
+        const architecture = String(building.architectureStyle || '').toLowerCase();
+        const roofStyle = String(building.roofStyle || '').toLowerCase();
+        const archetype = String(building.archetype || '').toLowerCase();
+        const district = String(building.district || '').toLowerCase();
+        const isKeep = architecture === 'keep' ||
+            archetype === 'keep' ||
+            building.blueprintId === 'castle-keep';
+        const isTower = !isKeep && (
+            archetype === 'tower' ||
+            architecture === 'tower' ||
+            roofStyle === 'tower'
+        );
+        const flatTokens = new Set([
+            'arcade',
+            'civic',
+            'courtyard',
+            'flat',
+            'flat-roof',
+            'market',
+            'parapet',
+            'stepped',
+            'terrace'
+        ]);
+        const explicitlyFlat = !isKeep && !isTower && (
+            flatTokens.has(architecture) ||
+            flatTokens.has(roofStyle) ||
+            flatTokens.has(archetype) ||
+            ['civic', 'market'].includes(district)
+        );
+        const ordinaryGabledArchetypes = new Set([
+            'bayfront',
+            'cottage',
+            'house',
+            'inn',
+            'residence',
+            'shop',
+            'townhouse',
+            'warehouse',
+            'workshop'
+        ]);
+        const gabledStyles = new Set([
+            'bayfront',
+            'clay',
+            'copper',
+            'crosswing',
+            'gabled',
+            'lean-to',
+            'slate',
+            'thatch'
+        ]);
+        const isGabled = !isKeep && !isTower && !explicitlyFlat && (
+            gabledStyles.has(architecture) ||
+            gabledStyles.has(roofStyle) ||
+            ordinaryGabledArchetypes.has(archetype) ||
+            ['artisan', 'garden', 'harbor', 'residential'].includes(district)
+        );
+        return {
+            architecture,
+            roofStyle,
+            archetype,
+            district,
+            isKeep,
+            isTower,
+            isGabled,
+            isFlatParapet: explicitlyFlat || (!isKeep && !isTower && !isGabled)
+        };
+    }
+
     createBuildingRoof(building, surfaceY, state) {
         const roof = new THREE.Group();
         const visualSeed = WorldGenerator.hashVisualSeed(
@@ -1561,13 +1927,25 @@ export class WorldGenerator {
         const startZ = -(building.height - 1) / 2;
 
         const footprint = this.getBuildingFootprint(building);
-        const architecture = String(building.architectureStyle || '').toLowerCase();
-        const roofStyle = String(building.roofStyle || '').toLowerCase();
-        const isTower = building.archetype === 'tower' || architecture === 'tower' || roofStyle === 'tower';
-        const isGabled = ['gabled', 'bayfront', 'crosswing', 'lean-to'].includes(architecture) ||
-            ['gabled', 'clay', 'copper', 'thatch'].includes(roofStyle);
+        const roofProfile = WorldGenerator.resolveBuildingRoofProfile(building);
+        const { isKeep, isTower, isGabled } = roofProfile;
+        roof.userData.roofProfile = isKeep
+            ? 'keep'
+            : isTower
+                ? 'tower'
+                : isGabled
+                    ? 'gabled'
+                    : 'flat-parapet';
 
-        if (isTower) {
+        if (isKeep) {
+            this.addKeepRoofGeometry(roof, building, {
+                roofMaterial,
+                trimMaterial,
+                startX,
+                startZ,
+                footprint
+            });
+        } else if (isTower) {
             const radius = Math.max(1.3, Math.min(building.width, building.height) * 0.58);
             const cap = new THREE.Mesh(new THREE.ConeGeometry(radius, 2.28, 4), roofMaterial);
             cap.rotation.y = Math.PI / 4;
@@ -1579,7 +1957,7 @@ export class WorldGenerator {
             const finial = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), trimMaterial);
             finial.position.y = 2.34;
             roof.add(finial);
-        } else if (isGabled && !['courtyard', 'market', 'arcade'].includes(architecture)) {
+        } else if (isGabled) {
             const ridgeAlongZ = building.height >= building.width;
             const span = ridgeAlongZ ? building.width : building.height;
             const run = Math.max(1, span / 2 + 0.35);
@@ -1660,12 +2038,13 @@ export class WorldGenerator {
             roofMaterial,
             trimMaterial,
             visualSeed,
+            isKeep,
             isTower,
             isGabled
         });
 
         roof.traverse((child) => {
-            child.castShadow = true;
+            child.castShadow = !child.material?.transparent;
             child.receiveShadow = true;
             child.raycast = () => {};
             child.renderOrder = 12;
@@ -1674,8 +2053,86 @@ export class WorldGenerator {
         return roof;
     }
 
+    addKeepRoofGeometry(roof, building, options) {
+        const { roofMaterial, trimMaterial, startX, startZ, footprint } = options;
+        const stone = WorldGenerator.getDecorationMaterial('fortressStone');
+        const gold = WorldGenerator.getDecorationMaterial('bannerGold');
+        const windowGlow = WorldGenerator.getDecorationMaterial('windowGlow');
+        const width = Math.max(3, Number(building.width) || 3);
+        const height = Math.max(3, Number(building.height) || 3);
+        const deck = new THREE.Mesh(new THREE.BoxGeometry(width + 0.18, 0.3, height + 0.18), stone);
+        deck.position.y = 0.16;
+        roof.add(deck);
+
+        const merlonGeometry = new THREE.BoxGeometry(0.34, 0.42, 0.34);
+        const merlonPositions = new Map();
+        const addMerlon = (x, z) => {
+            const key = `${Math.round(x * 20)},${Math.round(z * 20)}`;
+            if (merlonPositions.has(key)) return;
+            merlonPositions.set(key, { x, z });
+        };
+        for (const { x: localX, y: localY } of footprint.cells) {
+            const x = startX + localX;
+            const z = startZ + localY;
+            if (!footprint.set.has(`${localX},${localY - 1}`)) addMerlon(x, z - 0.47);
+            if (!footprint.set.has(`${localX},${localY + 1}`)) addMerlon(x, z + 0.47);
+            if (!footprint.set.has(`${localX - 1},${localY}`)) addMerlon(x - 0.47, z);
+            if (!footprint.set.has(`${localX + 1},${localY}`)) addMerlon(x + 0.47, z);
+        }
+        for (const position of merlonPositions.values()) {
+            const merlon = new THREE.Mesh(merlonGeometry, stone);
+            merlon.position.set(position.x, 0.53, position.z);
+            roof.add(merlon);
+        }
+
+        const cornerInset = 0.58;
+        const cornerX = Math.max(0.88, width / 2 - cornerInset);
+        const cornerZ = Math.max(0.88, height / 2 - cornerInset);
+        for (const [index, [x, z]] of [
+            [-cornerX, -cornerZ],
+            [cornerX, -cornerZ],
+            [cornerX, cornerZ],
+            [-cornerX, cornerZ]
+        ].entries()) {
+            const turret = new THREE.Group();
+            turret.position.set(x, 0, z);
+            const tower = new THREE.Mesh(new THREE.BoxGeometry(1.06, 1.18, 1.06), stone);
+            tower.position.y = 0.83;
+            turret.add(tower);
+
+            const cap = new THREE.Mesh(new THREE.ConeGeometry(0.76, 0.82, 4), roofMaterial);
+            cap.rotation.y = Math.PI / 4;
+            cap.position.y = 1.82;
+            turret.add(cap);
+
+            const windowZ = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.34, 0.045), windowGlow);
+            windowZ.position.set(0, 0.88, Math.sign(z || 1) * 0.555);
+            turret.add(windowZ);
+            const windowX = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.34, 0.28), windowGlow);
+            windowX.position.set(Math.sign(x || 1) * 0.555, 0.88, 0);
+            turret.add(windowX);
+
+            const finial = new THREE.Mesh(new THREE.SphereGeometry(0.085, 7, 5), gold);
+            finial.position.y = 2.28 + (index % 2) * 0.06;
+            turret.add(finial);
+            roof.add(turret);
+        }
+
+        const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.05, 2.15, 7), gold);
+        mast.position.y = 1.34;
+        roof.add(mast);
+        const royalFlag = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.46, 0.045), trimMaterial);
+        royalFlag.position.set(0.39, 2.03, 0);
+        roof.add(royalFlag);
+        const flagChevron = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.28, 0.055), gold);
+        flagChevron.position.set(0.39, 2.03, -0.03);
+        flagChevron.rotation.z = Math.PI / 4;
+        roof.add(flagChevron);
+        roof.userData.keep = true;
+    }
+
     addRoofSilhouetteDetails(roof, building, options) {
-        const { roofMaterial, trimMaterial, visualSeed, isTower, isGabled } = options;
+        const { roofMaterial, trimMaterial, visualSeed, isKeep, isTower, isGabled } = options;
         const architecture = String(building.architectureStyle || '').toLowerCase();
         const district = String(building.district || '').toLowerCase();
         const archetype = String(building.archetype || '').toLowerCase();
@@ -1683,6 +2140,8 @@ export class WorldGenerator {
         const width = Math.max(1, building.width || 1);
         const height = Math.max(1, building.height || 1);
         const isLighthouse = building.blueprintId === 'lighthouse';
+
+        if (isKeep) return;
 
         if (isLighthouse) {
             const gallery = new THREE.Mesh(
@@ -2345,7 +2804,7 @@ export class WorldGenerator {
 
     static getRoofMaterial(style, variant = 0) {
         if (!WorldGenerator.roofMaterialCache) WorldGenerator.roofMaterialCache = new Map();
-        const styleKey = style || 'timber';
+        const styleKey = String(style || 'timber').toLowerCase();
         const variantIndex = Math.abs(Math.floor(Number(variant) || 0)) % 4;
         const key = `${styleKey}:${variantIndex}`;
         if (!WorldGenerator.roofMaterialCache.has(key)) {
@@ -2362,13 +2821,142 @@ export class WorldGenerator {
                 market: [0xf0a544, 0xd95b74, 0x4fa4a0, 0x8b62bc]
             };
             const palette = colors[styleKey] || colors.timber;
-            WorldGenerator.roofMaterialCache.set(key, new THREE.MeshStandardMaterial({
-                color: palette[variantIndex],
-                roughness: 0.76,
-                metalness: 0.02
-            }));
+            const baseColor = palette[variantIndex];
+            const texture = WorldGenerator.createRoofTexture(styleKey, baseColor, variantIndex);
+            const material = new THREE.MeshStandardMaterial({
+                color: texture ? 0xffffff : baseColor,
+                map: texture || null,
+                roughness: styleKey === 'thatch' ? 0.94 : styleKey === 'copper' ? 0.66 : 0.8,
+                metalness: styleKey === 'copper' ? 0.1 : 0.02
+            });
+            WorldGenerator.roofMaterialCache.set(key, material);
         }
         return WorldGenerator.roofMaterialCache.get(key);
+    }
+
+    static createRoofTexture(style, baseColor, variant = 0) {
+        if (typeof document === 'undefined') return null;
+        const canvas = document.createElement('canvas');
+        canvas.width = 96;
+        canvas.height = 96;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return null;
+        ctx.imageSmoothingEnabled = false;
+        const css = (value) => `#${(Number(value) & 0xffffff).toString(16).padStart(6, '0')}`;
+        const shade = (amount) => {
+            const red = Math.max(0, Math.min(255, (baseColor >> 16) + amount));
+            const green = Math.max(0, Math.min(255, ((baseColor >> 8) & 0xff) + amount));
+            const blue = Math.max(0, Math.min(255, (baseColor & 0xff) + amount));
+            return css((red << 16) | (green << 8) | blue);
+        };
+        const highlight = shade(28);
+        const midtone = shade(10);
+        const shadow = shade(-34);
+        const deepShadow = shade(-52);
+        ctx.fillStyle = css(baseColor);
+        ctx.fillRect(0, 0, 96, 96);
+
+        if (style === 'thatch') {
+            for (let row = -8; row < 104; row += 12) {
+                ctx.globalAlpha = 1;
+                ctx.fillStyle = ((row / 12 + variant) & 1) ? midtone : css(baseColor);
+                ctx.fillRect(0, row, 96, 9);
+                ctx.strokeStyle = shadow;
+                ctx.globalAlpha = 0.62;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(0, row + 9);
+                ctx.lineTo(96, row + 9);
+                ctx.stroke();
+                for (let x = -10 + ((row + variant * 7) % 13); x < 104; x += 9) {
+                    ctx.strokeStyle = (x + row) % 3 ? highlight : deepShadow;
+                    ctx.globalAlpha = 0.32;
+                    ctx.beginPath();
+                    ctx.moveTo(x, row + 1);
+                    ctx.lineTo(x + 5, row + 8);
+                    ctx.stroke();
+                }
+            }
+        } else if (style === 'copper') {
+            for (let row = 0; row < 96; row += 24) {
+                for (let col = 0; col < 96; col += 24) {
+                    ctx.globalAlpha = 1;
+                    ctx.fillStyle = ((row + col) / 24 + variant) % 3 === 0 ? midtone : css(baseColor);
+                    ctx.fillRect(col + 2, row + 2, 20, 20);
+                    ctx.strokeStyle = shadow;
+                    ctx.globalAlpha = 0.72;
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(col + 1, row + 1, 22, 22);
+                }
+            }
+            ctx.fillStyle = variant % 2 ? '#7ad1b4' : '#66c5ab';
+            ctx.globalAlpha = 0.3;
+            for (let index = 0; index < 14; index++) {
+                const x = (index * 29 + variant * 17) % 91;
+                const y = (index * 43 + variant * 11) % 91;
+                ctx.fillRect(x, y, 4 + (index % 3) * 2, 3 + (index % 2) * 2);
+            }
+        } else if (['clay', 'courtyard', 'gabled', 'market'].includes(style)) {
+            const tileWidth = 18;
+            const rowHeight = 15;
+            for (let row = -rowHeight; row < 96 + rowHeight; row += rowHeight) {
+                const offset = ((Math.floor(row / rowHeight) + variant) & 1) * (tileWidth / 2);
+                for (let col = -tileWidth + offset; col < 96 + tileWidth; col += tileWidth) {
+                    ctx.globalAlpha = 1;
+                    ctx.fillStyle = ((col / tileWidth + row / rowHeight + variant) & 1) ? midtone : css(baseColor);
+                    ctx.fillRect(col + 1, row + 1, tileWidth - 2, rowHeight - 2);
+                    ctx.strokeStyle = shadow;
+                    ctx.globalAlpha = 0.68;
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(col, row);
+                    ctx.lineTo(col, row + rowHeight - 2);
+                    ctx.quadraticCurveTo(col + tileWidth / 2, row + rowHeight + 3, col + tileWidth, row + rowHeight - 2);
+                    ctx.lineTo(col + tileWidth, row);
+                    ctx.stroke();
+                }
+            }
+            if (style === 'market') {
+                ctx.fillStyle = highlight;
+                ctx.globalAlpha = 0.16;
+                for (let x = (variant % 3) * 12; x < 96; x += 36) ctx.fillRect(x, 0, 10, 96);
+            }
+        } else {
+            const tileWidth = 20;
+            const rowHeight = 16;
+            for (let row = -rowHeight; row < 96 + rowHeight; row += rowHeight) {
+                const offset = ((Math.floor(row / rowHeight) + variant) & 1) * (tileWidth / 2);
+                for (let col = -tileWidth + offset; col < 96 + tileWidth; col += tileWidth) {
+                    ctx.globalAlpha = 1;
+                    ctx.fillStyle = ((col / tileWidth + row / rowHeight + variant) & 1) ? midtone : css(baseColor);
+                    ctx.beginPath();
+                    ctx.moveTo(col + 1, row + 1);
+                    ctx.lineTo(col + tileWidth - 1, row + 1);
+                    ctx.lineTo(col + tileWidth - 3, row + rowHeight - 4);
+                    ctx.lineTo(col + tileWidth / 2, row + rowHeight);
+                    ctx.lineTo(col + 3, row + rowHeight - 4);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.strokeStyle = deepShadow;
+                    ctx.globalAlpha = 0.58;
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                }
+            }
+        }
+
+        ctx.globalAlpha = 0.2;
+        ctx.fillStyle = highlight;
+        ctx.fillRect(0, 0, 96, 3);
+        ctx.globalAlpha = 1;
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+        texture.magFilter = THREE.NearestFilter;
+        texture.minFilter = THREE.LinearMipmapLinearFilter;
+        texture.needsUpdate = true;
+        return texture;
     }
 
     static hashVisualSeed(value) {
@@ -2394,40 +2982,96 @@ export class WorldGenerator {
         return WorldGenerator.districtAccentMaterialCache.get(key);
     }
 
-    static getTerrainDetailMaterial(key) {
+    static resolveTerrainDetailPreset(key, paletteId = 'meadow') {
+        const fixedPresets = {
+            waterfall: {
+                color: 0x53d8ed,
+                emissive: 0x14566a,
+                emissiveIntensity: 0.2,
+                roughness: 0.24,
+                metalness: 0.0,
+                transparent: true,
+                opacity: 0.82,
+                depthWrite: false
+            },
+            waterFoam: {
+                color: 0xd9fbff,
+                emissive: 0x4ea9b7,
+                emissiveIntensity: 0.15,
+                roughness: 0.34,
+                metalness: 0.0,
+                transparent: true,
+                opacity: 0.82,
+                depthWrite: false
+            }
+        };
+        if (fixedPresets[key]) return fixedPresets[key];
+
+        const palette = resolveWorldPaletteVariant(paletteId, 0);
+        const top = new THREE.Color(palette.topColor);
+        const side = new THREE.Color(palette.sideColor);
+        const accent = new THREE.Color(palette.accentColor);
+        let color = side.clone();
+        let roughness = 0.94;
+        let metalness = 0.01;
+
+        if (key === 'grassLip') {
+            color = top.clone().lerp(accent, 0.14);
+            roughness = 0.91;
+            metalness = 0;
+        } else if (key === 'cliffMoss') {
+            // "Moss" is a silhouette detail, not a universal green material: in arid,
+            // polar, coastal, and magical biomes it becomes ochre scrub, frost, sea
+            // growth, or crystal bloom using the same world-palette contract.
+            color = accent.clone().lerp(top, 0.22).multiplyScalar(0.84);
+            roughness = palette.paletteId === 'crystal' ? 0.68 : 0.9;
+            metalness = palette.paletteId === 'crystal' ? 0.07 : 0;
+        } else {
+            color = side.clone().lerp(accent, 0.12);
+        }
+
+        const preset = {
+            color: color.getHex(),
+            roughness,
+            metalness
+        };
+        if (palette.paletteId === 'crystal') {
+            preset.emissive = color.clone().multiplyScalar(0.18).getHex();
+            preset.emissiveIntensity = key === 'cliffMoss' ? 0.16 : 0.08;
+        }
+        return preset;
+    }
+
+    static getTerrainDetailMaterial(key, paletteId = 'meadow') {
         if (!WorldGenerator.terrainDetailMaterialCache) WorldGenerator.terrainDetailMaterialCache = new Map();
-        if (!WorldGenerator.terrainDetailMaterialCache.has(key)) {
-            const presets = {
-                grassLip: { color: 0x79c856, roughness: 0.91, metalness: 0.0 },
-                cliffStrata: { color: 0x7f6659, roughness: 0.94, metalness: 0.01 },
-                cliffMoss: { color: 0x3e9154, roughness: 0.9, metalness: 0.0 },
-                waterfall: {
-                    color: 0x53d8ed,
-                    emissive: 0x14566a,
-                    emissiveIntensity: 0.2,
-                    roughness: 0.24,
-                    metalness: 0.0,
-                    transparent: true,
-                    opacity: 0.82,
-                    depthWrite: false
-                },
-                waterFoam: {
-                    color: 0xd9fbff,
-                    emissive: 0x4ea9b7,
-                    emissiveIntensity: 0.15,
-                    roughness: 0.34,
-                    metalness: 0.0,
-                    transparent: true,
-                    opacity: 0.82,
-                    depthWrite: false
-                }
-            };
+        const resolvedPaletteId = resolveWorldPaletteVariant(paletteId, 0).paletteId;
+        const cacheKey = `${key}:${['waterfall', 'waterFoam'].includes(key) ? 'shared' : resolvedPaletteId}`;
+        if (!WorldGenerator.terrainDetailMaterialCache.has(cacheKey)) {
+            const material = new THREE.MeshStandardMaterial(
+                WorldGenerator.resolveTerrainDetailPreset(key, resolvedPaletteId)
+            );
+            material.name = `terrain-detail:${key}:${resolvedPaletteId}`;
             WorldGenerator.terrainDetailMaterialCache.set(
-                key,
-                new THREE.MeshStandardMaterial(presets[key] || presets.cliffStrata)
+                cacheKey,
+                material
             );
         }
-        return WorldGenerator.terrainDetailMaterialCache.get(key);
+        return WorldGenerator.terrainDetailMaterialCache.get(cacheKey);
+    }
+
+    static getWaterfallMistMaterial() {
+        if (!WorldGenerator.waterfallMistMaterial) {
+            WorldGenerator.waterfallMistMaterial = new THREE.PointsMaterial({
+                color: 0xe9fdff,
+                size: 0.12,
+                transparent: true,
+                opacity: 0.52,
+                depthWrite: false,
+                blending: THREE.AdditiveBlending,
+                sizeAttenuation: true
+            });
+        }
+        return WorldGenerator.waterfallMistMaterial;
     }
 
     static getTrimMaterial(style) {
@@ -2586,6 +3230,7 @@ export class WorldGenerator {
                 barkBrown: { color: 0x5b3822, roughness: 0.88, metalness: 0.01 },
                 stoneGrey: { color: 0x737a72, roughness: 0.86, metalness: 0.02 },
                 stoneLight: { color: 0xb6b9ad, roughness: 0.82, metalness: 0.02 },
+                fortressStone: { color: 0xbfc4bc, roughness: 0.9, metalness: 0.01 },
                 stoneMoss: { color: 0x70886c, roughness: 0.9, metalness: 0.01 },
                 brickWarm: { color: 0xa75d47, roughness: 0.88, metalness: 0.01 },
                 strawRoof: { color: 0xb89a4a, roughness: 0.92, metalness: 0.01 },
