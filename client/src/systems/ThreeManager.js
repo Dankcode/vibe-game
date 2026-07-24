@@ -77,6 +77,8 @@ export class ThreeManager {
         this.entityGroup = new THREE.Group();
         this.scene.add(this.entityGroup);
 
+        this.playerLODRadius = 32;
+        this.atmosphereLODRadius = null;
         this.createAtmosphericDepth();
 
         this.cameraZoom = 0.94;
@@ -85,6 +87,10 @@ export class ThreeManager {
         
         this.raycaster = new THREE.Raycaster();
         this.pathLine = null;
+        this.pathLineSourcePoints = [];
+        this.pathLineVersion = 0;
+        this.lastPathLODKey = null;
+        this.lastPathLODCounts = { totalSegments: 0, visibleSegments: 0 };
 
         window.addEventListener('resize', () => this.onWindowResize());
     }
@@ -146,11 +152,21 @@ export class ThreeManager {
 
     getIntersectedTile(mouseNDC) {
         this.raycaster.setFromCamera(mouseNDC, this.camera);
-        const intersects = this.raycaster.intersectObjects(this.worldGroup.children);
-        if (intersects.length > 0) {
-            return intersects[0].object.userData.tile; // Grab the exact tile defined in Tile.js
-        }
-        return null;
+        const visibleTileMeshes = this.worldGroup.children.filter((object) =>
+            ThreeManager.isLODSelectableTileObject(object)
+        );
+        const intersects = this.raycaster.intersectObjects(visibleTileMeshes, false);
+        return intersects[0]?.object?.userData?.tile || null;
+    }
+
+    static isLODSelectableTileObject(object) {
+        const tile = object?.userData?.tile;
+        return Boolean(
+            object?.visible &&
+            tile &&
+            tile.visibleByRange !== false &&
+            tile.hiddenByObstruction !== true
+        );
     }
 
     renderPathLine(pathNodes, worldGenerator) {
@@ -160,16 +176,19 @@ export class ThreeManager {
             this.pathLine.material.dispose();
             this.pathLine = null;
         }
+        this.pathLineSourcePoints = [];
+        this.pathLineVersion = (this.pathLineVersion || 0) + 1;
+        this.lastPathLODKey = null;
+        this.lastPathLODCounts = { totalSegments: 0, visibleSegments: 0 };
 
         if (!pathNodes || pathNodes.length < 2) return;
 
-        const points = [];
         for (const node of pathNodes) {
             const z = (Number.isFinite(node.z) ? node.z : worldGenerator.getElevation(node.x, node.y)) + 1.1; // float slightly above
-            points.push(new THREE.Vector3(node.x, z, node.y)); 
+            this.pathLineSourcePoints.push(new THREE.Vector3(node.x, z, node.y));
         }
 
-        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        const geometry = new THREE.BufferGeometry();
         const material = new THREE.LineBasicMaterial({
             color: 0x00ffcc, // Cyan glowing line
             transparent: true,
@@ -177,8 +196,71 @@ export class ThreeManager {
             depthTest: false
         });
 
-        this.pathLine = new THREE.Line(geometry, material);
+        this.pathLine = new THREE.LineSegments(geometry, material);
+        this.pathLine.visible = false;
         this.scene.add(this.pathLine);
+    }
+
+    updatePathLineLOD(centerX, centerY, radius, worldGenerator) {
+        if (!this.pathLine || this.pathLineSourcePoints.length < 2) {
+            return { totalSegments: 0, visibleSegments: 0 };
+        }
+        const lodCenterX = Math.round(centerX);
+        const lodCenterY = Math.round(centerY);
+        const lodKey = [
+            this.pathLineVersion || 0,
+            worldGenerator?.lodContentVersion || 0,
+            lodCenterX,
+            lodCenterY,
+            radius
+        ].join(':');
+        if (this.lastPathLODKey === lodKey) return this.lastPathLODCounts;
+        const points = [];
+        let totalSegments = 0;
+        let visibleSegments = 0;
+        for (let index = 1; index < this.pathLineSourcePoints.length; index += 1) {
+            totalSegments += 1;
+            const previous = this.pathLineSourcePoints[index - 1];
+            const current = this.pathLineSourcePoints[index];
+            const previousVisible = worldGenerator.isObjectInsidePlayerLOD(
+                previous.x,
+                previous.z,
+                0,
+                lodCenterX,
+                lodCenterY,
+                radius
+            );
+            const currentVisible = worldGenerator.isObjectInsidePlayerLOD(
+                current.x,
+                current.z,
+                0,
+                lodCenterX,
+                lodCenterY,
+                radius
+            );
+            if (!previousVisible || !currentVisible) continue;
+            points.push(previous, current);
+            visibleSegments += 1;
+        }
+        this.pathLine.geometry.dispose();
+        this.pathLine.geometry = new THREE.BufferGeometry().setFromPoints(points);
+        this.pathLine.visible = visibleSegments > 0;
+        this.lastPathLODKey = lodKey;
+        this.lastPathLODCounts = { totalSegments, visibleSegments };
+        return this.lastPathLODCounts;
+    }
+
+    updatePlayerLOD(centerX, centerY, radius, worldGenerator) {
+        const safeRadius = Math.max(0, Number(radius) || 0);
+        this.playerLODRadius = safeRadius;
+        if (this.atmosphereGroup) {
+            this.atmosphereGroup.position.x = centerX;
+            this.atmosphereGroup.position.z = centerY;
+        }
+        if (this.atmosphereLODRadius !== safeRadius) {
+            this.updateAtmosphericDepthLOD(safeRadius);
+        }
+        return this.updatePathLineLOD(centerX, centerY, safeRadius, worldGenerator);
     }
 
     onWindowResize() {
@@ -239,18 +321,7 @@ export class ThreeManager {
 
     createAtmosphericDepth() {
         this.atmosphereGroup = new THREE.Group();
-        const positions = [];
-        for (let index = 0; index < 180; index++) {
-            const angle = index * 2.399963229728653;
-            const radius = 8 + ((index * 47) % 720) / 10;
-            positions.push(
-                Math.cos(angle) * radius,
-                1.5 + ((index * 29) % 85) / 10,
-                Math.sin(angle) * radius
-            );
-        }
         const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
         const material = new THREE.PointsMaterial({
             color: 0xfff2a6,
             size: 0.11,
@@ -261,9 +332,41 @@ export class ThreeManager {
             sizeAttenuation: true
         });
         this.depthMotes = new THREE.Points(geometry, material);
-        this.depthMotes.frustumCulled = false;
+        this.depthMotes.frustumCulled = true;
         this.atmosphereGroup.add(this.depthMotes);
         this.scene.add(this.atmosphereGroup);
+        this.updateAtmosphericDepthLOD(this.playerLODRadius);
+    }
+
+    updateAtmosphericDepthLOD(radius) {
+        if (!this.depthMotes) return;
+        const positions = ThreeManager.createAtmosphereLODPositions(radius);
+        this.depthMotes.geometry.dispose();
+        this.depthMotes.geometry = new THREE.BufferGeometry();
+        this.depthMotes.geometry.setAttribute(
+            'position',
+            new THREE.Float32BufferAttribute(positions, 3)
+        );
+        this.depthMotes.geometry.computeBoundingSphere();
+        this.atmosphereLODRadius = Math.max(0, Number(radius) || 0);
+    }
+
+    static createAtmosphereLODPositions(radius, count = 180) {
+        const maximumRadius = Math.max(0, (Number(radius) || 0) - 1);
+        const minimumRadius = Math.min(6, maximumRadius * 0.35);
+        const radiusSpan = Math.max(0, maximumRadius - minimumRadius);
+        const positions = [];
+        for (let index = 0; index < count; index++) {
+            const angle = index * 2.399963229728653;
+            const normalizedRadius = ((index * 47) % 720) / 719;
+            const particleRadius = minimumRadius + normalizedRadius * radiusSpan;
+            positions.push(
+                Math.cos(angle) * particleRadius,
+                1.5 + ((index * 29) % 85) / 10,
+                Math.sin(angle) * particleRadius
+            );
+        }
+        return positions;
     }
 
     addToWorld(object) {

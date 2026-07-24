@@ -1,0 +1,509 @@
+{
+  "schema": "openai.presentation.layout/v4",
+  "unit": "px",
+  "slide": {
+    "aid": "sl/1gp8cf",
+    "id": "1gp8cf",
+    "slide": 2,
+    "layoutId": "ac3e513c-1b54-4d5e-a754-d99c0034abfc",
+    "layoutName": "Title Slide",
+    "layoutType": "title",
+    "masterLayoutId": "8695e5cf-c08a-43bb-9da8-b086588fb24e",
+    "masterLayoutName": "Master",
+    "backgroundColor": "#FFFFFF",
+    "frame": {
+      "left": 0,
+      "top": 0,
+      "width": 720,
+      "height": 960
+    }
+  },
+  "theme": {
+    "colorSchemeName": "ChatGPT",
+    "colors": {
+      "accent1": "#156082",
+      "accent2": "#E97132",
+      "accent3": "#196B24",
+      "accent4": "#0F9ED5",
+      "accent5": "#A02B93",
+      "accent6": "#4EA72E",
+      "bg1": "#FFFFFF",
+      "bg2": "#000000",
+      "tx1": "#1F1F1F",
+      "tx2": "#FFFFFF",
+      "dk1": "#000000",
+      "lt1": "#FFFFFF",
+      "dk2": "#0E2841",
+      "lt2": "#E8E8E8",
+      "hlink": "#467886",
+      "folHlink": "#96607D"
+    },
+    "typefaces": [
+      "+mn-lt"
+    ]
+  },
+  "inheritedLayers": [
+    {
+      "scope": "layout",
+      "id": "ac3e513c-1b54-4d5e-a754-d99c0034abfc",
+      "name": "Title Slide",
+      "type": "title",
+      "parentLayoutId": "8695e5cf-c08a-43bb-9da8-b086588fb24e",
+      "elements": []
+    },
+    {
+      "scope": "master",
+      "id": "8695e5cf-c08a-43bb-9da8-b086588fb24e",
+      "name": "Master",
+      "type": "master",
+      "elements": []
+    }
+  ],
+  "elements": [
+    {
+      "order": 1,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/tsryxwr2",
+      "id": "1",
+      "name": "title-2",
+      "bbox": [
+        16,
+        30,
+        462,
+        44
+      ],
+      "geometry": "rect",
+      "text": "DIO Mouse Model | Terminal Endpoints",
+      "textPreview": "DIO Mouse Model | Terminal Endpoints",
+      "resolvedFontSize": 18,
+      "resolvedTextStyle": {
+        "fontSize": 18,
+        "typeface": "+mn-lt",
+        "color": "#1F4E9C",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "DIO Mouse Model | Terminal Endpoints"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "DIO Mouse Model | Terminal Endpoints",
+          "resolvedTextStyle": {
+            "fontSize": 18,
+            "color": "#1F4E9C",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "DIO Mouse Model | Terminal Endpoints",
+              "fontSize": 18,
+              "color": "#1F4E9C",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 2,
+      "kind": "image",
+      "scope": "slide",
+      "aid": "im/ri1szax8",
+      "id": "2",
+      "bbox": [
+        485,
+        27,
+        228,
+        43
+      ],
+      "alt": "Southern Model Organisms logo",
+      "contentType": "image/png",
+      "imageFit": "contain",
+      "asset": {
+        "assetId": "722f0d82-9412-47f6-accc-e6f9250d3ecf",
+        "contentType": "image/png",
+        "byteLength": 53728
+      }
+    },
+    {
+      "order": 3,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/rqpgvm9c",
+      "id": "3",
+      "name": "study-banner-2",
+      "bbox": [
+        53,
+        91,
+        662,
+        40
+      ],
+      "geometry": "rightArrow",
+      "fillColor": "#30C0B4",
+      "lineWidth": 0
+    },
+    {
+      "order": 4,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/43yh07al",
+      "id": "4",
+      "name": "study-banner-text-2",
+      "bbox": [
+        68,
+        98,
+        625,
+        26
+      ],
+      "geometry": "rect",
+      "text": "Organ and adipose-depot pharmacodynamics",
+      "textPreview": "Organ and adipose-depot pharmacodynamics",
+      "resolvedFontSize": 15,
+      "resolvedTextStyle": {
+        "fontSize": 15,
+        "typeface": "+mn-lt",
+        "color": "#FFFFFF",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Organ and adipose-depot pharmacodynamics"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Organ and adipose-depot pharmacodynamics",
+          "resolvedTextStyle": {
+            "fontSize": 15,
+            "color": "#FFFFFF",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Organ and adipose-depot pharmacodynamics",
+              "fontSize": 15,
+              "color": "#FFFFFF",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 5,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/5o7ytcr6",
+      "id": "5",
+      "name": "intro-2",
+      "bbox": [
+        67,
+        134,
+        634,
+        40
+      ],
+      "geometry": "rect",
+      "text": "Endpoint liver, adipose-depot and tissue weights support organ-level interpretation of the treatment response.",
+      "textPreview": "Endpoint liver, adipose-depot and tissue weights support organ-level interpretation of the treatment response.",
+      "resolvedFontSize": 12.51,
+      "resolvedTextStyle": {
+        "fontSize": 12.51,
+        "typeface": "+mn-lt",
+        "color": "#55657B",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Endpoint liver, adipose-depot and tissue weights support organ-level interpretation of the treatment"
+          },
+          {
+            "index": 2,
+            "text": "response."
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Endpoint liver, adipose-depot and tissue weights support organ-level interpretation of the treatment response.",
+          "resolvedTextStyle": {
+            "fontSize": 12.51,
+            "color": "#55657B",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Endpoint liver, adipose-depot and tissue weights support organ-level interpretation of the treatment response.",
+              "fontSize": 12.51,
+              "color": "#55657B",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 6,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/i1gfyhsf",
+      "id": "6",
+      "name": "side-tab-2",
+      "bbox": [
+        3,
+        178,
+        39,
+        619
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#7E1FAD",
+      "lineWidth": 0
+    },
+    {
+      "order": 7,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/j2pgrm90",
+      "id": "7",
+      "name": "side-tab-text-2",
+      "bbox": [
+        -271,
+        472.5,
+        587,
+        30
+      ],
+      "rotation": 270,
+      "geometry": "rect",
+      "text": "TERMINAL ENDPOINTS",
+      "textPreview": "TERMINAL ENDPOINTS",
+      "resolvedFontSize": 11.51,
+      "resolvedTextStyle": {
+        "fontSize": 11.51,
+        "typeface": "+mn-lt",
+        "color": "#FFFFFF",
+        "bold": true,
+        "alignment": "center",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "TERMINAL ENDPOINTS"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "TERMINAL ENDPOINTS",
+          "resolvedTextStyle": {
+            "fontSize": 11.51,
+            "color": "#FFFFFF",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "TERMINAL ENDPOINTS",
+              "fontSize": 11.51,
+              "color": "#FFFFFF",
+              "bold": true,
+              "alignment": "center"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 8,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/wzexw7ap",
+      "id": "8",
+      "name": "figure-frame-2",
+      "bbox": [
+        57,
+        178,
+        650,
+        619
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#FFFFFF",
+      "lineColor": "#D6E0EF",
+      "lineWidth": 1
+    },
+    {
+      "order": 9,
+      "kind": "image",
+      "scope": "slide",
+      "aid": "im/grq90vyl",
+      "id": "9",
+      "bbox": [
+        61,
+        182,
+        642,
+        611
+      ],
+      "alt": "Ten-panel terminal organ and adipose depot weights in the HFD-induced C57BL/6 obese mouse model.",
+      "contentType": "image/png",
+      "imageCrop": {
+        "left": 0.02,
+        "top": 0.07,
+        "right": 0.02,
+        "bottom": 0.1
+      },
+      "imageFit": "contain",
+      "asset": {
+        "assetId": "3d6ef397-c66a-4c3d-86e8-1ce4eb72ce6b",
+        "contentType": "image/png",
+        "byteLength": 308410
+      }
+    },
+    {
+      "order": 10,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/1on2pwni",
+      "id": "10",
+      "name": "caption-2",
+      "bbox": [
+        53,
+        803,
+        658,
+        53
+      ],
+      "geometry": "rect",
+      "text": "Fig. 2. Semaglutide-containing arms reduced multiple adipose depots and organ weights; the combination arm paired broad fat-depot reductions with bimagrumab-supported lean-tissue outcomes. Source slide 12.",
+      "textPreview": "Fig. 2. Semaglutide-containing arms reduced multiple adipose depots and organ weights; the combination arm paired broad fat-depot reducti...",
+      "resolvedFontSize": 10.51,
+      "resolvedTextStyle": {
+        "fontSize": 10.51,
+        "typeface": "+mn-lt",
+        "color": "#24324A",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Fig. 2. Semaglutide-containing arms reduced multiple adipose depots and organ weights; the combination arm paired broad fat-depot"
+          },
+          {
+            "index": 2,
+            "text": "reductions with bimagrumab-supported lean-tissue outcomes. Source slide 12."
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Fig. 2. Semaglutide-containing arms reduced multiple adipose depots and organ weights; the combination arm paired broad fat-depot reductions with bimagrumab-supported lean-tissue outcomes. Source slide 12.",
+          "resolvedTextStyle": {
+            "fontSize": 10.51,
+            "color": "#24324A",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Fig. 2. Semaglutide-containing arms reduced multiple adipose depots and organ weights; the combination arm paired broad fat-depot reductions with bimagrumab-supported lean-tissue outcomes. Source slide 12.",
+              "fontSize": 10.51,
+              "color": "#24324A",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 11,
+      "kind": "image",
+      "scope": "slide",
+      "aid": "im/bm5cr2pk",
+      "id": "11",
+      "bbox": [
+        0,
+        861,
+        720,
+        99
+      ],
+      "alt": "Southern Model Organisms contact footer",
+      "contentType": "image/png",
+      "imageFit": "cover",
+      "asset": {
+        "assetId": "d4265416-0b94-4759-ac79-929e80b799a3",
+        "contentType": "image/png",
+        "byteLength": 177694
+      }
+    }
+  ],
+  "composeRuns": []
+}

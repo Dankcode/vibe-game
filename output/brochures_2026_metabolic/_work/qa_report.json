@@ -1,0 +1,132 @@
+{
+  "dio": {
+    "deck": "/Users/lx/Documents/GitHub/vibe-game/output/brochures_2026_metabolic/DIO_Obesity_Model/DIO_Obesity_2page_brochure.pptx",
+    "size_bytes": 1056639,
+    "issues": [],
+    "slide_checks": [
+      {
+        "slide_part": "ppt/slides/slide1.xml",
+        "pictures": 3,
+        "shapes": 10,
+        "placeholders": 0,
+        "notes": 1
+      },
+      {
+        "slide_part": "ppt/slides/slide2.xml",
+        "pictures": 3,
+        "shapes": 8,
+        "placeholders": 0,
+        "notes": 1
+      }
+    ],
+    "layout_checks": [
+      {
+        "layout": "slide-01.layout.json",
+        "elements": 13,
+        "slide_frame": {
+          "left": 0,
+          "top": 0,
+          "width": 720,
+          "height": 960
+        }
+      },
+      {
+        "layout": "slide-02.layout.json",
+        "elements": 11,
+        "slide_frame": {
+          "left": 0,
+          "top": 0,
+          "width": 720,
+          "height": 960
+        }
+      }
+    ]
+  },
+  "cardio": {
+    "deck": "/Users/lx/Documents/GitHub/vibe-game/output/brochures_2026_metabolic/Cardiovascular_Atherosclerosis_Model/ApoE_KO_Atherosclerosis_2page_brochure.pptx",
+    "size_bytes": 4918859,
+    "issues": [],
+    "slide_checks": [
+      {
+        "slide_part": "ppt/slides/slide1.xml",
+        "pictures": 3,
+        "shapes": 10,
+        "placeholders": 0,
+        "notes": 1
+      },
+      {
+        "slide_part": "ppt/slides/slide2.xml",
+        "pictures": 3,
+        "shapes": 8,
+        "placeholders": 0,
+        "notes": 1
+      }
+    ],
+    "layout_checks": [
+      {
+        "layout": "slide-01.layout.json",
+        "elements": 13,
+        "slide_frame": {
+          "left": 0,
+          "top": 0,
+          "width": 720,
+          "height": 960
+        }
+      },
+      {
+        "layout": "slide-02.layout.json",
+        "elements": 11,
+        "slide_frame": {
+          "left": 0,
+          "top": 0,
+          "width": 720,
+          "height": 960
+        }
+      }
+    ]
+  },
+  "mash": {
+    "deck": "/Users/lx/Documents/GitHub/vibe-game/output/brochures_2026_metabolic/MASH_GAN_Diet_Model/GAN_Diet_MASH_2page_brochure.pptx",
+    "size_bytes": 3986736,
+    "issues": [],
+    "slide_checks": [
+      {
+        "slide_part": "ppt/slides/slide1.xml",
+        "pictures": 3,
+        "shapes": 10,
+        "placeholders": 0,
+        "notes": 1
+      },
+      {
+        "slide_part": "ppt/slides/slide2.xml",
+        "pictures": 3,
+        "shapes": 8,
+        "placeholders": 0,
+        "notes": 1
+      }
+    ],
+    "layout_checks": [
+      {
+        "layout": "slide-01.layout.json",
+        "elements": 13,
+        "slide_frame": {
+          "left": 0,
+          "top": 0,
+          "width": 720,
+          "height": 960
+        }
+      },
+      {
+        "layout": "slide-02.layout.json",
+        "elements": 11,
+        "slide_frame": {
+          "left": 0,
+          "top": 0,
+          "width": 720,
+          "height": 960
+        }
+      }
+    ]
+  },
+  "passed": true
+}

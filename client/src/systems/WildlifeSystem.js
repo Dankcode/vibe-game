@@ -44,10 +44,34 @@ export class WildlifeSystem {
         return animal;
     }
 
-    update(deltaSeconds) {
+    update(deltaSeconds, centerX = null, centerY = null, radius = this.worldGenerator.visibleTileRadius) {
         for (const animal of this.wildlife) {
             animal.update(deltaSeconds);
         }
+        if (Number.isFinite(centerX) && Number.isFinite(centerY)) {
+            return this.updateVisibility(centerX, centerY, radius);
+        }
+        return null;
+    }
+
+    updateVisibility(centerX, centerY, radius = this.worldGenerator.visibleTileRadius) {
+        let visible = 0;
+        for (const animal of this.wildlife) {
+            const isVisible = this.worldGenerator.isObjectInsidePlayerLOD(
+                animal.gridX,
+                animal.gridY,
+                0.5,
+                centerX,
+                centerY,
+                radius
+            );
+            animal.setLODVisible(isVisible);
+            if (isVisible) visible += 1;
+        }
+        return {
+            total: this.wildlife.length,
+            visible
+        };
     }
 
     destroy() {

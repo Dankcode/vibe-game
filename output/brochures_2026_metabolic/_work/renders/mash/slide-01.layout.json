@@ -1,0 +1,595 @@
+{
+  "schema": "openai.presentation.layout/v4",
+  "unit": "px",
+  "slide": {
+    "aid": "sl/9pw46f",
+    "id": "9pw46f",
+    "slide": 1,
+    "layoutId": "1822de43-d051-42af-acbe-a3301355d884",
+    "layoutName": "Title Slide",
+    "layoutType": "title",
+    "masterLayoutId": "798ead32-9c51-4d47-99ec-09c98271a501",
+    "masterLayoutName": "Master",
+    "backgroundColor": "#FFFFFF",
+    "frame": {
+      "left": 0,
+      "top": 0,
+      "width": 720,
+      "height": 960
+    }
+  },
+  "theme": {
+    "colorSchemeName": "ChatGPT",
+    "colors": {
+      "accent1": "#156082",
+      "accent2": "#E97132",
+      "accent3": "#196B24",
+      "accent4": "#0F9ED5",
+      "accent5": "#A02B93",
+      "accent6": "#4EA72E",
+      "bg1": "#FFFFFF",
+      "bg2": "#000000",
+      "tx1": "#1F1F1F",
+      "tx2": "#FFFFFF",
+      "dk1": "#000000",
+      "lt1": "#FFFFFF",
+      "dk2": "#0E2841",
+      "lt2": "#E8E8E8",
+      "hlink": "#467886",
+      "folHlink": "#96607D"
+    },
+    "typefaces": [
+      "+mn-lt"
+    ]
+  },
+  "inheritedLayers": [
+    {
+      "scope": "layout",
+      "id": "1822de43-d051-42af-acbe-a3301355d884",
+      "name": "Title Slide",
+      "type": "title",
+      "parentLayoutId": "798ead32-9c51-4d47-99ec-09c98271a501",
+      "elements": []
+    },
+    {
+      "scope": "master",
+      "id": "798ead32-9c51-4d47-99ec-09c98271a501",
+      "name": "Master",
+      "type": "master",
+      "elements": []
+    }
+  ],
+  "elements": [
+    {
+      "order": 1,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/8fulkvy1",
+      "id": "1",
+      "name": "title-1",
+      "bbox": [
+        16,
+        30,
+        462,
+        48
+      ],
+      "geometry": "rect",
+      "text": "GAN Diet-Induced MASH Mouse Model",
+      "textPreview": "GAN Diet-Induced MASH Mouse Model",
+      "resolvedFontSize": 20,
+      "resolvedTextStyle": {
+        "fontSize": 20,
+        "typeface": "+mn-lt",
+        "color": "#1F4E9C",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "GAN Diet-Induced MASH Mouse Model"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "GAN Diet-Induced MASH Mouse Model",
+          "resolvedTextStyle": {
+            "fontSize": 20,
+            "color": "#1F4E9C",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "GAN Diet-Induced MASH Mouse Model",
+              "fontSize": 20,
+              "color": "#1F4E9C",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 2,
+      "kind": "image",
+      "scope": "slide",
+      "aid": "im/mhozixcv",
+      "id": "2",
+      "bbox": [
+        485,
+        27,
+        228,
+        43
+      ],
+      "alt": "Southern Model Organisms logo",
+      "contentType": "image/png",
+      "imageFit": "contain",
+      "asset": {
+        "assetId": "de471173-1175-423d-a6ad-7e9f789274cb",
+        "contentType": "image/png",
+        "byteLength": 53728
+      }
+    },
+    {
+      "order": 3,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/mtc3ilgv",
+      "id": "3",
+      "name": "header-band-1",
+      "bbox": [
+        0,
+        86,
+        720,
+        94
+      ],
+      "geometry": "rect",
+      "fillColor": "#4874CB",
+      "lineWidth": 0
+    },
+    {
+      "order": 4,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/hknmx0fi",
+      "id": "4",
+      "name": "description-1",
+      "bbox": [
+        14,
+        94,
+        692,
+        79
+      ],
+      "geometry": "rect",
+      "text": "Translational MASH platform combining systemic metabolic measures, liver biochemistry and histopathology. The source studies profile FGF21-pathway efficacy across body weight, glucose, insulin, AST/ALT, liver triglycerides, steatosis, fibrosis and NAS components.",
+      "textPreview": "Translational MASH platform combining systemic metabolic measures, liver biochemistry and histopathology. The source studies profile FGF2...",
+      "resolvedFontSize": 14,
+      "resolvedTextStyle": {
+        "fontSize": 14,
+        "typeface": "+mn-lt",
+        "color": "#FFFFFF",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 3,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Translational MASH platform combining systemic metabolic measures, liver biochemistry and"
+          },
+          {
+            "index": 2,
+            "text": "histopathology. The source studies profile FGF21-pathway efficacy across body weight, glucose, insulin,"
+          },
+          {
+            "index": 3,
+            "text": "AST/ALT, liver triglycerides, steatosis, fibrosis and NAS components."
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Translational MASH platform combining systemic metabolic measures, liver biochemistry and histopathology. The source studies profile FGF21-pathway efficacy across body weight, glucose, insulin, AST/ALT, liver triglycerides, steatosis, fibrosis and NAS components.",
+          "resolvedTextStyle": {
+            "fontSize": 14,
+            "color": "#FFFFFF",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Translational MASH platform combining systemic metabolic measures, liver biochemistry and histopathology. The source studies profile FGF21-pathway efficacy across body weight, glucose, insulin, AST/ALT, liver triglycerides, steatosis, fibrosis and NAS components.",
+              "fontSize": 14,
+              "color": "#FFFFFF",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 5,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/wjelovyx",
+      "id": "5",
+      "name": "study-banner-1",
+      "bbox": [
+        53,
+        187,
+        662,
+        40
+      ],
+      "geometry": "rightArrow",
+      "fillColor": "#30C0B4",
+      "lineWidth": 0
+    },
+    {
+      "order": 6,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/vi5kvqxc",
+      "id": "6",
+      "name": "study-banner-text-1",
+      "bbox": [
+        68,
+        194,
+        625,
+        26
+      ],
+      "geometry": "rect",
+      "text": "FGF21 pathway efficacy in GAN diet-induced MASH",
+      "textPreview": "FGF21 pathway efficacy in GAN diet-induced MASH",
+      "resolvedFontSize": 15,
+      "resolvedTextStyle": {
+        "fontSize": 15,
+        "typeface": "+mn-lt",
+        "color": "#FFFFFF",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "FGF21 pathway efficacy in GAN diet-induced MASH"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "FGF21 pathway efficacy in GAN diet-induced MASH",
+          "resolvedTextStyle": {
+            "fontSize": 15,
+            "color": "#FFFFFF",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "FGF21 pathway efficacy in GAN diet-induced MASH",
+              "fontSize": 15,
+              "color": "#FFFFFF",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 7,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/uhw3mlgr",
+      "id": "7",
+      "name": "intro-1",
+      "bbox": [
+        67,
+        230,
+        634,
+        40
+      ],
+      "geometry": "rect",
+      "text": "A 42-day study compares chow/PBS, GAN/PBS and GAN/FGF21 groups across systemic and hepatic endpoints.",
+      "textPreview": "A 42-day study compares chow/PBS, GAN/PBS and GAN/FGF21 groups across systemic and hepatic endpoints.",
+      "resolvedFontSize": 12.51,
+      "resolvedTextStyle": {
+        "fontSize": 12.51,
+        "typeface": "+mn-lt",
+        "color": "#55657B",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "A 42-day study compares chow/PBS, GAN/PBS and GAN/FGF21 groups across systemic and hepatic"
+          },
+          {
+            "index": 2,
+            "text": "endpoints."
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "A 42-day study compares chow/PBS, GAN/PBS and GAN/FGF21 groups across systemic and hepatic endpoints.",
+          "resolvedTextStyle": {
+            "fontSize": 12.51,
+            "color": "#55657B",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "A 42-day study compares chow/PBS, GAN/PBS and GAN/FGF21 groups across systemic and hepatic endpoints.",
+              "fontSize": 12.51,
+              "color": "#55657B",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 8,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/5o7m1kfe",
+      "id": "8",
+      "name": "side-tab-1",
+      "bbox": [
+        3,
+        264,
+        39,
+        533
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#EE822F",
+      "lineWidth": 0
+    },
+    {
+      "order": 9,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/4nelsfy9",
+      "id": "9",
+      "name": "side-tab-text-1",
+      "bbox": [
+        -228,
+        515.5,
+        501,
+        30
+      ],
+      "rotation": 270,
+      "geometry": "rect",
+      "text": "42-DAY FGF21 STUDY",
+      "textPreview": "42-DAY FGF21 STUDY",
+      "resolvedFontSize": 11.51,
+      "resolvedTextStyle": {
+        "fontSize": 11.51,
+        "typeface": "+mn-lt",
+        "color": "#FFFFFF",
+        "bold": true,
+        "alignment": "center",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "42-DAY FGF21 STUDY"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "42-DAY FGF21 STUDY",
+          "resolvedTextStyle": {
+            "fontSize": 11.51,
+            "color": "#FFFFFF",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "42-DAY FGF21 STUDY",
+              "fontSize": 11.51,
+              "color": "#FFFFFF",
+              "bold": true,
+              "alignment": "center"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 10,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/ap4rmlw3",
+      "id": "10",
+      "name": "figure-frame-1",
+      "bbox": [
+        57,
+        271,
+        650,
+        527
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#FFFFFF",
+      "lineColor": "#D6E0EF",
+      "lineWidth": 1
+    },
+    {
+      "order": 11,
+      "kind": "image",
+      "scope": "slide",
+      "aid": "im/4radkvu1",
+      "id": "11",
+      "bbox": [
+        61,
+        275,
+        642,
+        519
+      ],
+      "alt": "FGF21 mechanism graphic and nine efficacy panels in GAN-diet mice, including body weight, glucose, insulin, liver enzymes and liver lipid endpoints.",
+      "contentType": "image/png",
+      "imageCrop": {
+        "left": 0.01,
+        "top": 0.07,
+        "right": 0.01,
+        "bottom": 0.03
+      },
+      "imageFit": "contain",
+      "asset": {
+        "assetId": "f63010e5-9c22-4933-a901-aa82e731035c",
+        "contentType": "image/png",
+        "byteLength": 803619
+      }
+    },
+    {
+      "order": 12,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/wrm9ove9",
+      "id": "12",
+      "name": "caption-1",
+      "bbox": [
+        53,
+        803,
+        658,
+        53
+      ],
+      "geometry": "rect",
+      "text": "Fig. 1. FGF21 treatment produced sustained weight loss and improved fasting glucose, insulin, liver enzymes and hepatic lipid measures versus GAN-diet vehicle. Source slide 31.",
+      "textPreview": "Fig. 1. FGF21 treatment produced sustained weight loss and improved fasting glucose, insulin, liver enzymes and hepatic lipid measures ve...",
+      "resolvedFontSize": 10.51,
+      "resolvedTextStyle": {
+        "fontSize": 10.51,
+        "typeface": "+mn-lt",
+        "color": "#24324A",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Fig. 1. FGF21 treatment produced sustained weight loss and improved fasting glucose, insulin, liver enzymes and hepatic lipid"
+          },
+          {
+            "index": 2,
+            "text": "measures versus GAN-diet vehicle. Source slide 31."
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Fig. 1. FGF21 treatment produced sustained weight loss and improved fasting glucose, insulin, liver enzymes and hepatic lipid measures versus GAN-diet vehicle. Source slide 31.",
+          "resolvedTextStyle": {
+            "fontSize": 10.51,
+            "color": "#24324A",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Fig. 1. FGF21 treatment produced sustained weight loss and improved fasting glucose, insulin, liver enzymes and hepatic lipid measures versus GAN-diet vehicle. Source slide 31.",
+              "fontSize": 10.51,
+              "color": "#24324A",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 13,
+      "kind": "image",
+      "scope": "slide",
+      "aid": "im/ipsvilcb",
+      "id": "13",
+      "bbox": [
+        0,
+        861,
+        720,
+        99
+      ],
+      "alt": "Southern Model Organisms contact footer",
+      "contentType": "image/png",
+      "imageFit": "cover",
+      "asset": {
+        "assetId": "ec460119-b870-4eb7-9af8-09393dfbc67e",
+        "contentType": "image/png",
+        "byteLength": 177694
+      }
+    }
+  ],
+  "composeRuns": []
+}

@@ -1,0 +1,509 @@
+{
+  "schema": "openai.presentation.layout/v4",
+  "unit": "px",
+  "slide": {
+    "aid": "sl/suav9v",
+    "id": "suav9v",
+    "slide": 2,
+    "layoutId": "0e189f07-1f2f-4bed-9e8c-5292f0a28e2e",
+    "layoutName": "Title Slide",
+    "layoutType": "title",
+    "masterLayoutId": "31337ba0-c157-4d77-bfbd-9ea344303fa3",
+    "masterLayoutName": "Master",
+    "backgroundColor": "#FFFFFF",
+    "frame": {
+      "left": 0,
+      "top": 0,
+      "width": 720,
+      "height": 960
+    }
+  },
+  "theme": {
+    "colorSchemeName": "ChatGPT",
+    "colors": {
+      "accent1": "#156082",
+      "accent2": "#E97132",
+      "accent3": "#196B24",
+      "accent4": "#0F9ED5",
+      "accent5": "#A02B93",
+      "accent6": "#4EA72E",
+      "bg1": "#FFFFFF",
+      "bg2": "#000000",
+      "tx1": "#1F1F1F",
+      "tx2": "#FFFFFF",
+      "dk1": "#000000",
+      "lt1": "#FFFFFF",
+      "dk2": "#0E2841",
+      "lt2": "#E8E8E8",
+      "hlink": "#467886",
+      "folHlink": "#96607D"
+    },
+    "typefaces": [
+      "+mn-lt"
+    ]
+  },
+  "inheritedLayers": [
+    {
+      "scope": "layout",
+      "id": "0e189f07-1f2f-4bed-9e8c-5292f0a28e2e",
+      "name": "Title Slide",
+      "type": "title",
+      "parentLayoutId": "31337ba0-c157-4d77-bfbd-9ea344303fa3",
+      "elements": []
+    },
+    {
+      "scope": "master",
+      "id": "31337ba0-c157-4d77-bfbd-9ea344303fa3",
+      "name": "Master",
+      "type": "master",
+      "elements": []
+    }
+  ],
+  "elements": [
+    {
+      "order": 1,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/q54f2twr",
+      "id": "1",
+      "name": "title-2",
+      "bbox": [
+        16,
+        30,
+        462,
+        44
+      ],
+      "geometry": "rect",
+      "text": "Atherosclerosis Model | Histopathology",
+      "textPreview": "Atherosclerosis Model | Histopathology",
+      "resolvedFontSize": 18,
+      "resolvedTextStyle": {
+        "fontSize": 18,
+        "typeface": "+mn-lt",
+        "color": "#1F4E9C",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Atherosclerosis Model | Histopathology"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Atherosclerosis Model | Histopathology",
+          "resolvedTextStyle": {
+            "fontSize": 18,
+            "color": "#1F4E9C",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Atherosclerosis Model | Histopathology",
+              "fontSize": 18,
+              "color": "#1F4E9C",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 2,
+      "kind": "image",
+      "scope": "slide",
+      "aid": "im/s3i103ux",
+      "id": "2",
+      "bbox": [
+        485,
+        27,
+        228,
+        43
+      ],
+      "alt": "Southern Model Organisms logo",
+      "contentType": "image/png",
+      "imageFit": "contain",
+      "asset": {
+        "assetId": "b666f715-6e18-4670-8798-bb5fd04a80a6",
+        "contentType": "image/png",
+        "byteLength": 53728
+      }
+    },
+    {
+      "order": 3,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/srmx43ex",
+      "id": "3",
+      "name": "study-banner-2",
+      "bbox": [
+        53,
+        91,
+        662,
+        40
+      ],
+      "geometry": "rightArrow",
+      "fillColor": "#30C0B4",
+      "lineWidth": 0
+    },
+    {
+      "order": 4,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/fudwzid8",
+      "id": "4",
+      "name": "study-banner-text-2",
+      "bbox": [
+        68,
+        98,
+        625,
+        26
+      ],
+      "geometry": "rect",
+      "text": "Aortic-root histology confirms lesion burden",
+      "textPreview": "Aortic-root histology confirms lesion burden",
+      "resolvedFontSize": 15,
+      "resolvedTextStyle": {
+        "fontSize": 15,
+        "typeface": "+mn-lt",
+        "color": "#FFFFFF",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Aortic-root histology confirms lesion burden"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Aortic-root histology confirms lesion burden",
+          "resolvedTextStyle": {
+            "fontSize": 15,
+            "color": "#FFFFFF",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Aortic-root histology confirms lesion burden",
+              "fontSize": 15,
+              "color": "#FFFFFF",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 5,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/et4f6dwn",
+      "id": "5",
+      "name": "intro-2",
+      "bbox": [
+        67,
+        134,
+        634,
+        40
+      ],
+      "geometry": "rect",
+      "text": "Oil Red O staining and quantitative lesion area provide tissue-level validation of disease severity and treatment response.",
+      "textPreview": "Oil Red O staining and quantitative lesion area provide tissue-level validation of disease severity and treatment response.",
+      "resolvedFontSize": 12.51,
+      "resolvedTextStyle": {
+        "fontSize": 12.51,
+        "typeface": "+mn-lt",
+        "color": "#55657B",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Oil Red O staining and quantitative lesion area provide tissue-level validation of disease severity and"
+          },
+          {
+            "index": 2,
+            "text": "treatment response."
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Oil Red O staining and quantitative lesion area provide tissue-level validation of disease severity and treatment response.",
+          "resolvedTextStyle": {
+            "fontSize": 12.51,
+            "color": "#55657B",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Oil Red O staining and quantitative lesion area provide tissue-level validation of disease severity and treatment response.",
+              "fontSize": 12.51,
+              "color": "#55657B",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 6,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/1wfe18ve",
+      "id": "6",
+      "name": "side-tab-2",
+      "bbox": [
+        3,
+        178,
+        39,
+        619
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#7E1FAD",
+      "lineWidth": 0
+    },
+    {
+      "order": 7,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/0v6x83et",
+      "id": "7",
+      "name": "side-tab-text-2",
+      "bbox": [
+        -271,
+        472.5,
+        587,
+        30
+      ],
+      "rotation": 270,
+      "geometry": "rect",
+      "text": "OIL RED O HISTOLOGY",
+      "textPreview": "OIL RED O HISTOLOGY",
+      "resolvedFontSize": 11.51,
+      "resolvedTextStyle": {
+        "fontSize": 11.51,
+        "typeface": "+mn-lt",
+        "color": "#FFFFFF",
+        "bold": true,
+        "alignment": "center",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "OIL RED O HISTOLOGY"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "OIL RED O HISTOLOGY",
+          "resolvedTextStyle": {
+            "fontSize": 11.51,
+            "color": "#FFFFFF",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "OIL RED O HISTOLOGY",
+              "fontSize": 11.51,
+              "color": "#FFFFFF",
+              "bold": true,
+              "alignment": "center"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 8,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/nyxw3idk",
+      "id": "8",
+      "name": "figure-frame-2",
+      "bbox": [
+        57,
+        178,
+        650,
+        619
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#FFFFFF",
+      "lineColor": "#D6E0EF",
+      "lineWidth": 1
+    },
+    {
+      "order": 9,
+      "kind": "image",
+      "scope": "slide",
+      "aid": "im/bap0jed4",
+      "id": "9",
+      "bbox": [
+        61,
+        182,
+        642,
+        611
+      ],
+      "alt": "Aortic-root Oil Red O histology and plaque area quantification for chow, ApoE-KO western-diet vehicle and atorvastatin groups.",
+      "contentType": "image/png",
+      "imageCrop": {
+        "left": 0.01,
+        "top": 0.07,
+        "right": 0.01,
+        "bottom": 0.02
+      },
+      "imageFit": "contain",
+      "asset": {
+        "assetId": "4d0dd1f8-ae1c-482f-9467-d6a6bff48767",
+        "contentType": "image/png",
+        "byteLength": 2775343
+      }
+    },
+    {
+      "order": 10,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/43ytwb6t",
+      "id": "10",
+      "name": "caption-2",
+      "bbox": [
+        53,
+        803,
+        658,
+        53
+      ],
+      "geometry": "rect",
+      "text": "Fig. 2. Aortic-root Oil Red O staining and lesion-area quantification distinguish chow controls from western-diet ApoE-KO mice and show a partial atorvastatin response. Source slide 29.",
+      "textPreview": "Fig. 2. Aortic-root Oil Red O staining and lesion-area quantification distinguish chow controls from western-diet ApoE-KO mice and show a...",
+      "resolvedFontSize": 10.51,
+      "resolvedTextStyle": {
+        "fontSize": 10.51,
+        "typeface": "+mn-lt",
+        "color": "#24324A",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Fig. 2. Aortic-root Oil Red O staining and lesion-area quantification distinguish chow controls from western-diet ApoE-KO mice and"
+          },
+          {
+            "index": 2,
+            "text": "show a partial atorvastatin response. Source slide 29."
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Fig. 2. Aortic-root Oil Red O staining and lesion-area quantification distinguish chow controls from western-diet ApoE-KO mice and show a partial atorvastatin response. Source slide 29.",
+          "resolvedTextStyle": {
+            "fontSize": 10.51,
+            "color": "#24324A",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Fig. 2. Aortic-root Oil Red O staining and lesion-area quantification distinguish chow controls from western-diet ApoE-KO mice and show a partial atorvastatin response. Source slide 29.",
+              "fontSize": 10.51,
+              "color": "#24324A",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 11,
+      "kind": "image",
+      "scope": "slide",
+      "aid": "im/qtsbmh83",
+      "id": "11",
+      "bbox": [
+        0,
+        861,
+        720,
+        99
+      ],
+      "alt": "Southern Model Organisms contact footer",
+      "contentType": "image/png",
+      "imageFit": "cover",
+      "asset": {
+        "assetId": "c798835a-45f0-4784-a1fc-ecc90412a73c",
+        "contentType": "image/png",
+        "byteLength": 177694
+      }
+    }
+  ],
+  "composeRuns": []
+}

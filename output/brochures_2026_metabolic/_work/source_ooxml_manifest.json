@@ -1,0 +1,1546 @@
+{
+  "source": "/Users/lx/Downloads/2026南模生物代谢模型数据总结 -liuxia-2026-07-09.pptx",
+  "slide_size_in": {
+    "width": 13.3333,
+    "height": 7.5
+  },
+  "selected_slides": [
+    {
+      "slide": 11,
+      "text": [
+        "A",
+        "B",
+        "C",
+        "D",
+        "Pharmacodynamic validation in the HFD-Induced C57BL/6 Obese Mouse Model",
+        "E",
+        "G",
+        "H",
+        "F"
+      ],
+      "picture_count": 2,
+      "pictures": [
+        {
+          "name": "对象 4",
+          "description": "",
+          "relationship_id": "rId2",
+          "target": "ppt/media/image58.emf",
+          "extension": ".emf",
+          "position": {
+            "x_in": 1.1618,
+            "y_in": 1.1409,
+            "w_in": 2.8722,
+            "h_in": 4.1229
+          }
+        },
+        {
+          "name": "对象 7",
+          "description": "",
+          "relationship_id": "rId4",
+          "target": "ppt/media/image59.emf",
+          "extension": ".emf",
+          "position": {
+            "x_in": 1.4981,
+            "y_in": 1.0387,
+            "w_in": 10.9948,
+            "h_in": 4.9306
+          }
+        }
+      ],
+      "shape_count": 9,
+      "shapes": [
+        {
+          "name": "文本框 9",
+          "text": "A",
+          "position": {
+            "x_in": 1.1446,
+            "y_in": 1.1409,
+            "w_in": 0.3465,
+            "h_in": 0.3354
+          }
+        },
+        {
+          "name": "文本框 10",
+          "text": "B",
+          "position": {
+            "x_in": 1.1446,
+            "y_in": 2.8945,
+            "w_in": 0.3326,
+            "h_in": 0.3354
+          }
+        },
+        {
+          "name": "文本框 1",
+          "text": "C",
+          "position": {
+            "x_in": 3.8684,
+            "y_in": 1.1409,
+            "w_in": 0.3312,
+            "h_in": 0.3354
+          }
+        },
+        {
+          "name": "文本框 3",
+          "text": "D",
+          "position": {
+            "x_in": 3.9398,
+            "y_in": 2.9533,
+            "w_in": 0.3542,
+            "h_in": 0.3354
+          }
+        },
+        {
+          "name": "标题 4",
+          "text": "Pharmacodynamic validation in the HFD-Induced C57BL/6 Obese Mouse Model",
+          "position": {
+            "x_in": 3.316,
+            "y_in": 0.2174,
+            "w_in": 9.4056,
+            "h_in": 0.3986
+          }
+        },
+        {
+          "name": "文本框 12",
+          "text": "E",
+          "position": {
+            "x_in": 6.6413,
+            "y_in": 1.1222,
+            "w_in": 0.3141,
+            "h_in": 0.3366
+          }
+        },
+        {
+          "name": "文本框 15",
+          "text": "G",
+          "position": {
+            "x_in": 9.4256,
+            "y_in": 1.0451,
+            "w_in": 0.3542,
+            "h_in": 0.3354
+          }
+        },
+        {
+          "name": "文本框 18",
+          "text": "H",
+          "position": {
+            "x_in": 9.6017,
+            "y_in": 2.9483,
+            "w_in": 0.3632,
+            "h_in": 0.3366
+          }
+        },
+        {
+          "name": "文本框 19",
+          "text": "F",
+          "position": {
+            "x_in": 6.8241,
+            "y_in": 2.9483,
+            "w_in": 0.3124,
+            "h_in": 0.3366
+          }
+        }
+      ],
+      "relationships": {
+        "rId7": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide",
+          "target": "ppt/notesSlides/notesSlide3.xml"
+        },
+        "rId6": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing",
+          "target": "ppt/drawings/vmlDrawing9.vml"
+        },
+        "rId5": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout",
+          "target": "ppt/slideLayouts/slideLayout2.xml"
+        },
+        "rId4": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image59.emf"
+        },
+        "rId3": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject",
+          "target": "ppt/embeddings/oleObject22.bin"
+        },
+        "rId2": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image58.emf"
+        },
+        "rId1": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject",
+          "target": "ppt/embeddings/oleObject21.bin"
+        }
+      }
+    },
+    {
+      "slide": 12,
+      "text": [
+        "Pharmacodynamic validation in the HFD-Induced C57BL/6 Obese Mouse Model",
+        "A",
+        "B",
+        "C",
+        "D",
+        "E",
+        "F",
+        "G",
+        "H",
+        "I",
+        "J"
+      ],
+      "picture_count": 10,
+      "pictures": [
+        {
+          "name": "对象 5",
+          "description": "",
+          "relationship_id": "rId2",
+          "target": "ppt/media/image60.emf",
+          "extension": ".emf",
+          "position": {
+            "x_in": 0.4583,
+            "y_in": 1.5806,
+            "w_in": 1.8701,
+            "h_in": 2.0569
+          }
+        },
+        {
+          "name": "对象 7",
+          "description": "",
+          "relationship_id": "rId4",
+          "target": "ppt/media/image61.emf",
+          "extension": ".emf",
+          "position": {
+            "x_in": 2.6187,
+            "y_in": 1.684,
+            "w_in": 1.8653,
+            "h_in": 1.9653
+          }
+        },
+        {
+          "name": "对象 9",
+          "description": "",
+          "relationship_id": "rId6",
+          "target": "ppt/media/image62.emf",
+          "extension": ".emf",
+          "position": {
+            "x_in": 4.7736,
+            "y_in": 1.4583,
+            "w_in": 1.8674,
+            "h_in": 2.175
+          }
+        },
+        {
+          "name": "对象 11",
+          "description": "",
+          "relationship_id": "rId8",
+          "target": "ppt/media/image63.emf",
+          "extension": ".emf",
+          "position": {
+            "x_in": 6.9306,
+            "y_in": 1.5826,
+            "w_in": 1.8701,
+            "h_in": 2.0549
+          }
+        },
+        {
+          "name": "对象 13",
+          "description": "",
+          "relationship_id": "rId10",
+          "target": "ppt/media/image64.emf",
+          "extension": ".emf",
+          "position": {
+            "x_in": 9.3351,
+            "y_in": 1.5826,
+            "w_in": 3.7979,
+            "h_in": 2.1778
+          }
+        },
+        {
+          "name": "对象 1",
+          "description": "",
+          "relationship_id": "rId12",
+          "target": "ppt/media/image65.emf",
+          "extension": ".emf",
+          "position": {
+            "x_in": 0.659,
+            "y_in": 4.2417,
+            "w_in": 1.7125,
+            "h_in": 1.9653
+          }
+        },
+        {
+          "name": "对象 3",
+          "description": "",
+          "relationship_id": "rId14",
+          "target": "ppt/media/image66.emf",
+          "extension": ".emf",
+          "position": {
+            "x_in": 2.784,
+            "y_in": 4.0951,
+            "w_in": 1.7167,
+            "h_in": 2.0951
+          }
+        },
+        {
+          "name": "对象 16",
+          "description": "",
+          "relationship_id": "rId16",
+          "target": "ppt/media/image67.emf",
+          "extension": ".emf",
+          "position": {
+            "x_in": 4.9028,
+            "y_in": 4.1972,
+            "w_in": 1.7181,
+            "h_in": 2.0049
+          }
+        },
+        {
+          "name": "对象 18",
+          "description": "",
+          "relationship_id": "rId18",
+          "target": "ppt/media/image68.emf",
+          "extension": ".emf",
+          "position": {
+            "x_in": 7.1229,
+            "y_in": 3.9799,
+            "w_in": 1.709,
+            "h_in": 2.1972
+          }
+        },
+        {
+          "name": "对象 20",
+          "description": "",
+          "relationship_id": "rId20",
+          "target": "ppt/media/image69.emf",
+          "extension": ".emf",
+          "position": {
+            "x_in": 9.3351,
+            "y_in": 3.8819,
+            "w_in": 3.7313,
+            "h_in": 2.2146
+          }
+        }
+      ],
+      "shape_count": 11,
+      "shapes": [
+        {
+          "name": "标题 4",
+          "text": "Pharmacodynamic validation in the HFD-Induced C57BL/6 Obese Mouse Model",
+          "position": {
+            "x_in": 2.2653,
+            "y_in": 0.2236,
+            "w_in": 10.5514,
+            "h_in": 0.3986
+          }
+        },
+        {
+          "name": "文本框 22",
+          "text": "A",
+          "position": {
+            "x_in": 0.4374,
+            "y_in": 1.296,
+            "w_in": 0.4884,
+            "h_in": 0.3352
+          }
+        },
+        {
+          "name": "文本框 23",
+          "text": "B",
+          "position": {
+            "x_in": 2.5609,
+            "y_in": 1.296,
+            "w_in": 0.4884,
+            "h_in": 0.3352
+          }
+        },
+        {
+          "name": "文本框 24",
+          "text": "C",
+          "position": {
+            "x_in": 4.6786,
+            "y_in": 1.296,
+            "w_in": 0.4884,
+            "h_in": 0.3352
+          }
+        },
+        {
+          "name": "文本框 25",
+          "text": "D",
+          "position": {
+            "x_in": 6.8408,
+            "y_in": 1.296,
+            "w_in": 0.4884,
+            "h_in": 0.3352
+          }
+        },
+        {
+          "name": "文本框 26",
+          "text": "E",
+          "position": {
+            "x_in": 9.0852,
+            "y_in": 1.296,
+            "w_in": 0.4884,
+            "h_in": 0.3354
+          }
+        },
+        {
+          "name": "文本框 27",
+          "text": "F",
+          "position": {
+            "x_in": 0.4207,
+            "y_in": 3.8127,
+            "w_in": 0.4884,
+            "h_in": 0.3354
+          }
+        },
+        {
+          "name": "文本框 28",
+          "text": "G",
+          "position": {
+            "x_in": 2.5442,
+            "y_in": 3.8127,
+            "w_in": 0.4884,
+            "h_in": 0.3354
+          }
+        },
+        {
+          "name": "文本框 29",
+          "text": "H",
+          "position": {
+            "x_in": 4.6619,
+            "y_in": 3.8127,
+            "w_in": 0.4884,
+            "h_in": 0.3354
+          }
+        },
+        {
+          "name": "文本框 30",
+          "text": "I",
+          "position": {
+            "x_in": 6.8241,
+            "y_in": 3.8127,
+            "w_in": 0.4884,
+            "h_in": 0.3354
+          }
+        },
+        {
+          "name": "文本框 31",
+          "text": "J",
+          "position": {
+            "x_in": 9.0685,
+            "y_in": 3.8127,
+            "w_in": 0.4884,
+            "h_in": 0.3354
+          }
+        }
+      ],
+      "relationships": {
+        "rId9": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject",
+          "target": "ppt/embeddings/oleObject27.bin"
+        },
+        "rId8": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image63.emf"
+        },
+        "rId7": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject",
+          "target": "ppt/embeddings/oleObject26.bin"
+        },
+        "rId6": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image62.emf"
+        },
+        "rId5": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject",
+          "target": "ppt/embeddings/oleObject25.bin"
+        },
+        "rId4": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image61.emf"
+        },
+        "rId3": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject",
+          "target": "ppt/embeddings/oleObject24.bin"
+        },
+        "rId22": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing",
+          "target": "ppt/drawings/vmlDrawing10.vml"
+        },
+        "rId21": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout",
+          "target": "ppt/slideLayouts/slideLayout2.xml"
+        },
+        "rId20": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image69.emf"
+        },
+        "rId2": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image60.emf"
+        },
+        "rId19": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject",
+          "target": "ppt/embeddings/oleObject32.bin"
+        },
+        "rId18": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image68.emf"
+        },
+        "rId17": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject",
+          "target": "ppt/embeddings/oleObject31.bin"
+        },
+        "rId16": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image67.emf"
+        },
+        "rId15": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject",
+          "target": "ppt/embeddings/oleObject30.bin"
+        },
+        "rId14": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image66.emf"
+        },
+        "rId13": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject",
+          "target": "ppt/embeddings/oleObject29.bin"
+        },
+        "rId12": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image65.emf"
+        },
+        "rId11": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject",
+          "target": "ppt/embeddings/oleObject28.bin"
+        },
+        "rId10": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image64.emf"
+        },
+        "rId1": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject",
+          "target": "ppt/embeddings/oleObject23.bin"
+        }
+      }
+    },
+    {
+      "slide": 28,
+      "text": [
+        "Pharmacological Effects of Atorvastatin in ",
+        "ApoE",
+        "-Knockout Mice with Atherosclerosis",
+        "G1",
+        "：",
+        "C56BL/6-Chow",
+        "G2",
+        "：",
+        "APOE-KO-WD",
+        "G3",
+        "：",
+        "APOE-KO-WD-",
+        "Atovastatin",
+        "E4"
+      ],
+      "picture_count": 9,
+      "pictures": [
+        {
+          "name": "图片 7",
+          "description": "",
+          "relationship_id": "rId1",
+          "target": "ppt/media/image103.png",
+          "extension": ".png",
+          "position": {
+            "x_in": 0.0,
+            "y_in": 0.0091,
+            "w_in": 0.0028,
+            "h_in": 0.0018
+          }
+        },
+        {
+          "name": "图片 11",
+          "description": "IMG_1990",
+          "relationship_id": "rId2",
+          "target": "ppt/media/image104.jpeg",
+          "extension": ".jpeg",
+          "position": {
+            "x_in": 0.006,
+            "y_in": 0.0091,
+            "w_in": 0.0028,
+            "h_in": 0.0018
+          }
+        },
+        {
+          "name": "图片 12",
+          "description": "IMG_2077",
+          "relationship_id": "rId3",
+          "target": "ppt/media/image105.jpeg",
+          "extension": ".jpeg",
+          "position": {
+            "x_in": 0.009,
+            "y_in": 0.0091,
+            "w_in": 0.0028,
+            "h_in": 0.0018
+          }
+        },
+        {
+          "name": "图片 13",
+          "description": "IMG_2005",
+          "relationship_id": "rId4",
+          "target": "ppt/media/image106.jpeg",
+          "extension": ".jpeg",
+          "position": {
+            "x_in": 0.003,
+            "y_in": 0.0091,
+            "w_in": 0.0028,
+            "h_in": 0.0018
+          }
+        },
+        {
+          "name": "图片 14",
+          "description": "IMG_2045",
+          "relationship_id": "rId5",
+          "target": "ppt/media/image107.jpeg",
+          "extension": ".jpeg",
+          "position": {
+            "x_in": 0.0151,
+            "y_in": 0.0091,
+            "w_in": 0.0028,
+            "h_in": 0.0018
+          }
+        },
+        {
+          "name": "图片 15",
+          "description": "IMG_1964",
+          "relationship_id": "rId6",
+          "target": "ppt/media/image108.jpeg",
+          "extension": ".jpeg",
+          "position": {
+            "x_in": 0.0121,
+            "y_in": 0.0091,
+            "w_in": 0.0028,
+            "h_in": 0.0018
+          }
+        },
+        {
+          "name": "图片 16",
+          "description": "IMG_2045",
+          "relationship_id": "rId5",
+          "target": "ppt/media/image107.jpeg",
+          "extension": ".jpeg",
+          "position": {
+            "x_in": 0.0181,
+            "y_in": 0.0091,
+            "w_in": 0.0028,
+            "h_in": 0.0018
+          }
+        },
+        {
+          "name": "对象 6",
+          "description": "",
+          "relationship_id": "rId8",
+          "target": "ppt/media/image109.emf",
+          "extension": ".emf",
+          "position": {
+            "x_in": 6.6467,
+            "y_in": 0.8019,
+            "w_in": 6.4806,
+            "h_in": 4.8792
+          }
+        },
+        {
+          "name": "图片 4",
+          "description": "",
+          "relationship_id": "rId9",
+          "target": "ppt/media/image110.png",
+          "extension": ".png",
+          "position": {
+            "x_in": 0.4708,
+            "y_in": 1.0931,
+            "w_in": 5.9715,
+            "h_in": 4.0944
+          }
+        }
+      ],
+      "shape_count": 5,
+      "shapes": [
+        {
+          "name": "标题 1",
+          "text": "Pharmacological Effects of Atorvastatin in  ApoE -Knockout Mice with Atherosclerosis",
+          "position": {
+            "x_in": 1.566,
+            "y_in": 0.2236,
+            "w_in": 11.2506,
+            "h_in": 0.3986
+          }
+        },
+        {
+          "name": "文本框 23",
+          "text": "G1 ： C56BL/6-Chow",
+          "position": {
+            "x_in": -0.0001,
+            "y_in": 0.0082,
+            "w_in": 0.0031,
+            "h_in": 0.0005
+          }
+        },
+        {
+          "name": "文本框 24",
+          "text": "G2 ： APOE-KO-WD",
+          "position": {
+            "x_in": 0.0059,
+            "y_in": 0.0082,
+            "w_in": 0.0033,
+            "h_in": 0.0005
+          }
+        },
+        {
+          "name": "文本框 28",
+          "text": "G3 ： APOE-KO-WD- Atovastatin",
+          "position": {
+            "x_in": 0.014,
+            "y_in": 0.0083,
+            "w_in": 0.005,
+            "h_in": 0.0005
+          }
+        },
+        {
+          "name": "矩形: 圆角 5",
+          "text": "E4",
+          "position": {
+            "x_in": 1.673,
+            "y_in": 2.1195,
+            "w_in": 0.5434,
+            "h_in": 0.3019
+          }
+        }
+      ],
+      "relationships": {
+        "rId9": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image110.png"
+        },
+        "rId8": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image109.emf"
+        },
+        "rId7": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject",
+          "target": "ppt/embeddings/oleObject56.bin"
+        },
+        "rId6": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image108.jpeg"
+        },
+        "rId5": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image107.jpeg"
+        },
+        "rId4": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image106.jpeg"
+        },
+        "rId3": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image105.jpeg"
+        },
+        "rId2": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image104.jpeg"
+        },
+        "rId12": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide",
+          "target": "ppt/notesSlides/notesSlide6.xml"
+        },
+        "rId11": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing",
+          "target": "ppt/drawings/vmlDrawing25.vml"
+        },
+        "rId10": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout",
+          "target": "ppt/slideLayouts/slideLayout4.xml"
+        },
+        "rId1": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image103.png"
+        }
+      }
+    },
+    {
+      "slide": 29,
+      "text": [
+        "Pharmacological Effects of Atorvastatin in ",
+        "ApoE",
+        "-Knockout Mice with Atherosclerosis",
+        "G1",
+        "G2",
+        "G3"
+      ],
+      "picture_count": 4,
+      "pictures": [
+        {
+          "name": "图片 5",
+          "description": "",
+          "relationship_id": "rId1",
+          "target": "ppt/media/image111.jpeg",
+          "extension": ".jpeg",
+          "position": {
+            "x_in": 0.4905,
+            "y_in": 1.019,
+            "w_in": 4.2216,
+            "h_in": 2.3337
+          }
+        },
+        {
+          "name": "图片 6",
+          "description": "",
+          "relationship_id": "rId2",
+          "target": "ppt/media/image112.jpeg",
+          "extension": ".jpeg",
+          "position": {
+            "x_in": 4.9483,
+            "y_in": 0.9941,
+            "w_in": 4.2234,
+            "h_in": 2.3341
+          }
+        },
+        {
+          "name": "图片 7",
+          "description": "",
+          "relationship_id": "rId3",
+          "target": "ppt/media/image113.jpeg",
+          "extension": ".jpeg",
+          "position": {
+            "x_in": 9.2846,
+            "y_in": 0.9945,
+            "w_in": 4.2216,
+            "h_in": 2.3337
+          }
+        },
+        {
+          "name": "对象 12",
+          "description": "",
+          "relationship_id": "rId6",
+          "target": "ppt/media/image114.emf",
+          "extension": ".emf",
+          "position": {
+            "x_in": 1.3715,
+            "y_in": 3.5712,
+            "w_in": 10.3264,
+            "h_in": 3.7726
+          }
+        }
+      ],
+      "shape_count": 4,
+      "shapes": [
+        {
+          "name": "标题 1",
+          "text": "Pharmacological Effects of Atorvastatin in  ApoE -Knockout Mice with Atherosclerosis",
+          "position": {
+            "x_in": 1.6319,
+            "y_in": 0.1937,
+            "w_in": 11.2506,
+            "h_in": 0.3986
+          }
+        },
+        {
+          "name": "文本框 8",
+          "text": "G1",
+          "position": {
+            "x_in": 0.4822,
+            "y_in": 0.9941,
+            "w_in": 0.5711,
+            "h_in": 0.3125
+          }
+        },
+        {
+          "name": "文本框 9",
+          "text": "G2",
+          "position": {
+            "x_in": 4.8826,
+            "y_in": 0.9798,
+            "w_in": 0.5711,
+            "h_in": 0.3125
+          }
+        },
+        {
+          "name": "文本框 10",
+          "text": "G3",
+          "position": {
+            "x_in": 9.2762,
+            "y_in": 0.98,
+            "w_in": 0.5711,
+            "h_in": 0.3125
+          }
+        }
+      ],
+      "relationships": {
+        "rId8": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing",
+          "target": "ppt/drawings/vmlDrawing26.vml"
+        },
+        "rId7": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout",
+          "target": "ppt/slideLayouts/slideLayout4.xml"
+        },
+        "rId6": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image114.emf"
+        },
+        "rId5": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject",
+          "target": "ppt/embeddings/oleObject57.bin"
+        },
+        "rId4": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/tags",
+          "target": "ppt/tags/tag10.xml"
+        },
+        "rId3": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image113.jpeg"
+        },
+        "rId2": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image112.jpeg"
+        },
+        "rId1": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image111.jpeg"
+        }
+      }
+    },
+    {
+      "slide": 31,
+      "text": [
+        "FGF21-Mediated Metabolic Regulation and Efficacy Data",
+        "A",
+        "B",
+        "C",
+        "D",
+        "E",
+        "F",
+        "G",
+        "H",
+        "I",
+        "Martínez-Garza, Ú et al. Int. J. Mol. Sci. ",
+        "2019",
+        ", 20, 4692. "
+      ],
+      "picture_count": 10,
+      "pictures": [
+        {
+          "name": "对象 6",
+          "description": "",
+          "relationship_id": "rId2",
+          "target": "ppt/media/image129.emf",
+          "extension": ".emf",
+          "position": {
+            "x_in": 10.162,
+            "y_in": 3.2457,
+            "w_in": 2.3257,
+            "h_in": 1.9604
+          }
+        },
+        {
+          "name": "对象 3",
+          "description": "",
+          "relationship_id": "rId4",
+          "target": "ppt/media/image130.emf",
+          "extension": ".emf",
+          "position": {
+            "x_in": 9.9285,
+            "y_in": 0.8361,
+            "w_in": 2.5479,
+            "h_in": 2.3563
+          }
+        },
+        {
+          "name": "对象 4",
+          "description": "",
+          "relationship_id": "rId6",
+          "target": "ppt/media/image131.emf",
+          "extension": ".emf",
+          "position": {
+            "x_in": 7.6805,
+            "y_in": 0.6998,
+            "w_in": 2.4618,
+            "h_in": 2.4444
+          }
+        },
+        {
+          "name": "对象 5",
+          "description": "",
+          "relationship_id": "rId8",
+          "target": "ppt/media/image132.emf",
+          "extension": ".emf",
+          "position": {
+            "x_in": 7.6613,
+            "y_in": 3.3522,
+            "w_in": 2.467,
+            "h_in": 1.9045
+          }
+        },
+        {
+          "name": "对象 7",
+          "description": "",
+          "relationship_id": "rId10",
+          "target": "ppt/media/image133.emf",
+          "extension": ".emf",
+          "position": {
+            "x_in": 5.5675,
+            "y_in": 5.3674,
+            "w_in": 2.1986,
+            "h_in": 1.8965
+          }
+        },
+        {
+          "name": "对象 9",
+          "description": "",
+          "relationship_id": "rId12",
+          "target": "ppt/media/image134.emf",
+          "extension": ".emf",
+          "position": {
+            "x_in": 1.0008,
+            "y_in": 5.3034,
+            "w_in": 2.2951,
+            "h_in": 1.9708
+          }
+        },
+        {
+          "name": "对象 10",
+          "description": "",
+          "relationship_id": "rId14",
+          "target": "ppt/media/image135.emf",
+          "extension": ".emf",
+          "position": {
+            "x_in": 3.285,
+            "y_in": 5.2336,
+            "w_in": 2.2118,
+            "h_in": 2.0229
+          }
+        },
+        {
+          "name": "对象 2",
+          "description": "",
+          "relationship_id": "rId16",
+          "target": "ppt/media/image136.emf",
+          "extension": ".emf",
+          "position": {
+            "x_in": 7.8142,
+            "y_in": 5.4168,
+            "w_in": 2.5576,
+            "h_in": 1.7486
+          }
+        },
+        {
+          "name": "对象 8",
+          "description": "",
+          "relationship_id": "rId18",
+          "target": "ppt/media/image137.emf",
+          "extension": ".emf",
+          "position": {
+            "x_in": 10.546,
+            "y_in": 5.3529,
+            "w_in": 2.5306,
+            "h_in": 1.8125
+          }
+        },
+        {
+          "name": "Picture 417",
+          "description": "Fibroblast Growth Factor 21 and the Adaptive Response to Nutritional  Challenges",
+          "relationship_id": "rId19",
+          "target": "ppt/media/image138.png",
+          "extension": ".png",
+          "position": {
+            "x_in": 1.1973,
+            "y_in": 1.0048,
+            "w_in": 6.1618,
+            "h_in": 3.1186
+          }
+        }
+      ],
+      "shape_count": 11,
+      "shapes": [
+        {
+          "name": "标题 1",
+          "text": "FGF21-Mediated Metabolic Regulation and Efficacy Data",
+          "position": null
+        },
+        {
+          "name": "文本框 12",
+          "text": "A",
+          "position": {
+            "x_in": 7.7487,
+            "y_in": 0.9363,
+            "w_in": 0.344,
+            "h_in": 0.3366
+          }
+        },
+        {
+          "name": "文本框 13",
+          "text": "B",
+          "position": {
+            "x_in": 10.0315,
+            "y_in": 0.8976,
+            "w_in": 0.344,
+            "h_in": 0.3366
+          }
+        },
+        {
+          "name": "文本框 14",
+          "text": "C",
+          "position": {
+            "x_in": 7.7583,
+            "y_in": 3.0117,
+            "w_in": 0.3038,
+            "h_in": 0.4039
+          }
+        },
+        {
+          "name": "文本框 15",
+          "text": "D",
+          "position": {
+            "x_in": 10.1531,
+            "y_in": 2.9798,
+            "w_in": 0.344,
+            "h_in": 0.3366
+          }
+        },
+        {
+          "name": "文本框 16",
+          "text": "E",
+          "position": {
+            "x_in": 1.0642,
+            "y_in": 4.9544,
+            "w_in": 0.2807,
+            "h_in": 0.4039
+          }
+        },
+        {
+          "name": "文本框 17",
+          "text": "F",
+          "position": {
+            "x_in": 3.3878,
+            "y_in": 4.9544,
+            "w_in": 0.3212,
+            "h_in": 0.3366
+          }
+        },
+        {
+          "name": "文本框 18",
+          "text": "G",
+          "position": {
+            "x_in": 6.2019,
+            "y_in": 4.936,
+            "w_in": 0.3545,
+            "h_in": 0.3366
+          }
+        },
+        {
+          "name": "文本框 19",
+          "text": "H",
+          "position": {
+            "x_in": 7.7415,
+            "y_in": 4.9751,
+            "w_in": 0.344,
+            "h_in": 0.3366
+          }
+        },
+        {
+          "name": "文本框 20",
+          "text": "I",
+          "position": {
+            "x_in": 10.3251,
+            "y_in": 4.9751,
+            "w_in": 0.2563,
+            "h_in": 0.3366
+          }
+        },
+        {
+          "name": "文本框 24",
+          "text": "Martínez-Garza, Ú et al. Int. J. Mol. Sci.  2019 , 20, 4692.",
+          "position": {
+            "x_in": 1.4779,
+            "y_in": 4.2793,
+            "w_in": 5.0826,
+            "h_in": 0.2681
+          }
+        }
+      ],
+      "relationships": {
+        "rId9": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject",
+          "target": "ppt/embeddings/oleObject62.bin"
+        },
+        "rId8": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image132.emf"
+        },
+        "rId7": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject",
+          "target": "ppt/embeddings/oleObject61.bin"
+        },
+        "rId6": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image131.emf"
+        },
+        "rId5": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject",
+          "target": "ppt/embeddings/oleObject60.bin"
+        },
+        "rId4": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image130.emf"
+        },
+        "rId3": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject",
+          "target": "ppt/embeddings/oleObject59.bin"
+        },
+        "rId22": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide",
+          "target": "ppt/notesSlides/notesSlide7.xml"
+        },
+        "rId21": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing",
+          "target": "ppt/drawings/vmlDrawing27.vml"
+        },
+        "rId20": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout",
+          "target": "ppt/slideLayouts/slideLayout4.xml"
+        },
+        "rId2": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image129.emf"
+        },
+        "rId19": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image138.png"
+        },
+        "rId18": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image137.emf"
+        },
+        "rId17": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject",
+          "target": "ppt/embeddings/oleObject66.bin"
+        },
+        "rId16": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image136.emf"
+        },
+        "rId15": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject",
+          "target": "ppt/embeddings/oleObject65.bin"
+        },
+        "rId14": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image135.emf"
+        },
+        "rId13": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject",
+          "target": "ppt/embeddings/oleObject64.bin"
+        },
+        "rId12": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image134.emf"
+        },
+        "rId11": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject",
+          "target": "ppt/embeddings/oleObject63.bin"
+        },
+        "rId10": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image133.emf"
+        },
+        "rId1": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject",
+          "target": "ppt/embeddings/oleObject58.bin"
+        }
+      }
+    },
+    {
+      "slide": 32,
+      "text": [
+        "Efruxifermin",
+        " Ameliorates GAN Diet-Induced Hepatic Steatosis",
+        "Sirus",
+        " Red",
+        "HE",
+        "Chow diet-Vehicle",
+        "GAN diet-Vehicle",
+        "GAN diet-FGF21 "
+      ],
+      "picture_count": 9,
+      "pictures": [
+        {
+          "name": "图片 28",
+          "description": "",
+          "relationship_id": "rId2",
+          "target": "ppt/media/image139.png",
+          "extension": ".png",
+          "position": {
+            "x_in": 5.4481,
+            "y_in": 1.121,
+            "w_in": 2.4784,
+            "h_in": 1.6523
+          }
+        },
+        {
+          "name": "图片 30",
+          "description": "",
+          "relationship_id": "rId4",
+          "target": "ppt/media/image140.png",
+          "extension": ".png",
+          "position": {
+            "x_in": 2.8957,
+            "y_in": 1.121,
+            "w_in": 2.4784,
+            "h_in": 1.6523
+          }
+        },
+        {
+          "name": "图片 32",
+          "description": "",
+          "relationship_id": "rId6",
+          "target": "ppt/media/image141.png",
+          "extension": ".png",
+          "position": {
+            "x_in": 2.8957,
+            "y_in": 2.8386,
+            "w_in": 2.4784,
+            "h_in": 1.6523
+          }
+        },
+        {
+          "name": "图片 36",
+          "description": "",
+          "relationship_id": "rId8",
+          "target": "ppt/media/image142.png",
+          "extension": ".png",
+          "position": {
+            "x_in": 5.4481,
+            "y_in": 2.8386,
+            "w_in": 2.4784,
+            "h_in": 1.6523
+          }
+        },
+        {
+          "name": "图片 6",
+          "description": "",
+          "relationship_id": "rId12",
+          "target": "ppt/media/image143.jpeg",
+          "extension": ".jpeg",
+          "position": {
+            "x_in": 8.0057,
+            "y_in": 1.121,
+            "w_in": 2.48,
+            "h_in": 1.6523
+          }
+        },
+        {
+          "name": "图片 10",
+          "description": "",
+          "relationship_id": "rId14",
+          "target": "ppt/media/image144.jpeg",
+          "extension": ".jpeg",
+          "position": {
+            "x_in": 8.0057,
+            "y_in": 2.8386,
+            "w_in": 2.4784,
+            "h_in": 1.6523
+          }
+        },
+        {
+          "name": "Object 2",
+          "description": "",
+          "relationship_id": "rId17",
+          "target": "ppt/media/image145.emf",
+          "extension": ".emf",
+          "position": {
+            "x_in": 1.8305,
+            "y_in": 4.6215,
+            "w_in": 3.0389,
+            "h_in": 2.8132
+          }
+        },
+        {
+          "name": "Object 6",
+          "description": "",
+          "relationship_id": "rId19",
+          "target": "ppt/media/image146.emf",
+          "extension": ".emf",
+          "position": {
+            "x_in": 8.4417,
+            "y_in": 4.5563,
+            "w_in": 3.1681,
+            "h_in": 2.3632
+          }
+        },
+        {
+          "name": "对象 11",
+          "description": "",
+          "relationship_id": "rId21",
+          "target": "ppt/media/image147.emf",
+          "extension": ".emf",
+          "position": {
+            "x_in": 5.3826,
+            "y_in": 4.6238,
+            "w_in": 2.8667,
+            "h_in": 2.809
+          }
+        }
+      ],
+      "shape_count": 6,
+      "shapes": [
+        {
+          "name": "标题 1",
+          "text": "Efruxifermin  Ameliorates GAN Diet-Induced Hepatic Steatosis",
+          "position": null
+        },
+        {
+          "name": "文本框 39",
+          "text": "Sirus  Red",
+          "position": {
+            "x_in": 1.3447,
+            "y_in": 1.7267,
+            "w_in": 1.3438,
+            "h_in": 0.3689
+          }
+        },
+        {
+          "name": "文本框 40",
+          "text": "HE",
+          "position": {
+            "x_in": 1.6989,
+            "y_in": 3.3811,
+            "w_in": 0.6354,
+            "h_in": 0.3689
+          }
+        },
+        {
+          "name": "文本框 41",
+          "text": "Chow diet-Vehicle",
+          "position": {
+            "x_in": 3.1995,
+            "y_in": 0.8216,
+            "w_in": 1.8707,
+            "h_in": 0.3029
+          }
+        },
+        {
+          "name": "文本框 42",
+          "text": "GAN diet-Vehicle",
+          "position": {
+            "x_in": 5.9486,
+            "y_in": 0.818,
+            "w_in": 1.7972,
+            "h_in": 0.3029
+          }
+        },
+        {
+          "name": "文本框 22",
+          "text": "GAN diet-FGF21",
+          "position": {
+            "x_in": 8.3774,
+            "y_in": 0.8285,
+            "w_in": 2.1971,
+            "h_in": 0.3014
+          }
+        }
+      ],
+      "relationships": {
+        "rId9": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/tags",
+          "target": "ppt/tags/tag15.xml"
+        },
+        "rId8": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image142.png"
+        },
+        "rId7": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/tags",
+          "target": "ppt/tags/tag14.xml"
+        },
+        "rId6": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image141.png"
+        },
+        "rId5": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/tags",
+          "target": "ppt/tags/tag13.xml"
+        },
+        "rId4": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image140.png"
+        },
+        "rId3": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/tags",
+          "target": "ppt/tags/tag12.xml"
+        },
+        "rId23": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing",
+          "target": "ppt/drawings/vmlDrawing28.vml"
+        },
+        "rId22": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout",
+          "target": "ppt/slideLayouts/slideLayout4.xml"
+        },
+        "rId21": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image147.emf"
+        },
+        "rId20": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject",
+          "target": "ppt/embeddings/oleObject69.bin"
+        },
+        "rId2": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image139.png"
+        },
+        "rId19": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image146.emf"
+        },
+        "rId18": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject",
+          "target": "ppt/embeddings/oleObject68.bin"
+        },
+        "rId17": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image145.emf"
+        },
+        "rId16": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject",
+          "target": "ppt/embeddings/oleObject67.bin"
+        },
+        "rId15": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/tags",
+          "target": "ppt/tags/tag19.xml"
+        },
+        "rId14": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image144.jpeg"
+        },
+        "rId13": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/tags",
+          "target": "ppt/tags/tag18.xml"
+        },
+        "rId12": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+          "target": "ppt/media/image143.jpeg"
+        },
+        "rId11": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/tags",
+          "target": "ppt/tags/tag17.xml"
+        },
+        "rId10": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/tags",
+          "target": "ppt/tags/tag16.xml"
+        },
+        "rId1": {
+          "type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/tags",
+          "target": "ppt/tags/tag11.xml"
+        }
+      }
+    }
+  ]
+}

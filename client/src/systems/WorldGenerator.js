@@ -37,6 +37,8 @@ export class WorldGenerator {
         this.obstructionHider = new ObstructionHider(this);
         this.visibleTileRadius = options.visibleTileRadius || 34;
         this.lastVisibilityCenter = null;
+        this.lodContentVersion = 0;
+        this.lastLODVisibility = null;
     }
 
     /**
@@ -164,6 +166,9 @@ export class WorldGenerator {
                         x: edgeX,
                         y: surface.z + this.getTopSurfaceOffset() - 0.105,
                         z: edgeZ,
+                        lodX: surface.x,
+                        lodY: surface.y,
+                        lodExtent: 0.55,
                         rotationY: direction.rotationY,
                         sx: 0.72 + ((edgeSeed >>> 8) % 18) / 100,
                         sy: 0.78,
@@ -178,6 +183,9 @@ export class WorldGenerator {
                         x: edgeX - direction.dx * 0.012,
                         y: surface.z + this.getTopSurfaceOffset() - 0.48 - layer * 0.18,
                         z: edgeZ - direction.dy * 0.012,
+                        lodX: surface.x,
+                        lodY: surface.y,
+                        lodExtent: 0.55,
                         rotationY: direction.rotationY,
                         sx: 0.5 + ((edgeSeed >>> 12) % 36) / 100,
                         sy: Math.min(2.5, 0.72 + drop * 0.34),
@@ -191,6 +199,9 @@ export class WorldGenerator {
                         x: edgeX - direction.dx * 0.12,
                         y: surface.z + this.getTopSurfaceOffset() + 0.035,
                         z: edgeZ - direction.dy * 0.12,
+                        lodX: surface.x,
+                        lodY: surface.y,
+                        lodExtent: 0.38,
                         rotationY: (edgeSeed % 8) * Math.PI / 4,
                         sx: 0.68 + ((edgeSeed >>> 10) % 24) / 100,
                         sy: 0.42,
@@ -249,8 +260,17 @@ export class WorldGenerator {
             child.receiveShadow = true;
             child.raycast = () => {};
         });
+        group.visible = false;
         this.threeManager.addToWorld(group);
         this.terrainDetailGroup = group;
+        this.lodContentVersion += 1;
+        if (this.lastVisibilityCenter) {
+            this.updateTerrainDetailVisibility(
+                this.lastVisibilityCenter.x,
+                this.lastVisibilityCenter.y,
+                this.lastVisibilityCenter.radius
+            );
+        }
     }
 
     addPaletteInstancedTerrainDetails(group, createGeometry, materialKey, transforms) {
@@ -276,26 +296,60 @@ export class WorldGenerator {
             return;
         }
         const mesh = new THREE.InstancedMesh(geometry, material, transforms.length);
+        mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        mesh.userData.lodTransforms = transforms;
+        mesh.count = 0;
+        mesh.visible = false;
+        group.add(mesh);
+    }
+
+    updateInstancedTerrainDetailVisibility(mesh, centerX, centerY, radius) {
+        const transforms = mesh?.userData?.lodTransforms || [];
         const matrix = new THREE.Matrix4();
         const quaternion = new THREE.Quaternion();
         const position = new THREE.Vector3();
         const scale = new THREE.Vector3();
-        for (let index = 0; index < transforms.length; index++) {
-            const transform = transforms[index];
+        let visibleCount = 0;
+        for (const transform of transforms) {
+            const lodX = Number.isFinite(transform.lodX) ? transform.lodX : transform.x;
+            const lodY = Number.isFinite(transform.lodY) ? transform.lodY : transform.z;
+            if (!this.isObjectInsidePlayerLOD(
+                lodX,
+                lodY,
+                transform.lodExtent || 0,
+                centerX,
+                centerY,
+                radius
+            )) {
+                continue;
+            }
             position.set(transform.x, transform.y, transform.z);
             quaternion.setFromEuler(new THREE.Euler(0, transform.rotationY || 0, 0));
             scale.set(transform.sx || 1, transform.sy || 1, transform.sz || 1);
             matrix.compose(position, quaternion, scale);
-            mesh.setMatrixAt(index, matrix);
+            mesh.setMatrixAt(visibleCount, matrix);
+            visibleCount += 1;
         }
+        mesh.count = visibleCount;
+        mesh.visible = visibleCount > 0;
         mesh.instanceMatrix.needsUpdate = true;
-        group.add(mesh);
+        if (visibleCount > 0) {
+            mesh.computeBoundingBox();
+            mesh.computeBoundingSphere();
+        }
+        return {
+            total: transforms.length,
+            visible: visibleCount
+        };
     }
 
     addTerrainWaterfall(group, candidate) {
         const { surface, neighbor, direction, drop } = candidate;
         const height = Math.max(0.9, drop - 0.08);
         const isHorizontalFace = direction.dx === 0;
+        const waterfallGroup = new THREE.Group();
+        waterfallGroup.userData.lodAnchor = { x: surface.x, y: surface.y };
+        waterfallGroup.visible = false;
         const cascade = new THREE.Mesh(
             new THREE.BoxGeometry(isHorizontalFace ? 0.56 : 0.055, height, isHorizontalFace ? 0.055 : 0.56),
             WorldGenerator.getTerrainDetailMaterial('waterfall')
@@ -305,7 +359,7 @@ export class WorldGenerator {
             neighbor.z + this.getTopSurfaceOffset() + height / 2,
             surface.y + direction.oz + direction.dy * 0.025
         );
-        group.add(cascade);
+        waterfallGroup.add(cascade);
 
         const foam = new THREE.Mesh(
             new THREE.SphereGeometry(0.28, 7, 4),
@@ -317,13 +371,57 @@ export class WorldGenerator {
             surface.y + direction.dy * 0.42
         );
         foam.scale.set(isHorizontalFace ? 1.35 : 0.6, 0.22, isHorizontalFace ? 0.6 : 1.35);
-        group.add(foam);
+        waterfallGroup.add(foam);
+        waterfallGroup.userData.lodExtent = WorldGenerator.measureHorizontalLODExtent(
+            waterfallGroup,
+            surface.x,
+            surface.y
+        );
+        group.add(waterfallGroup);
+    }
+
+    updateTerrainDetailVisibility(centerX, centerY, radius = this.visibleTileRadius) {
+        if (!this.terrainDetailGroup) return { total: 0, visible: 0 };
+        let total = 0;
+        let visible = 0;
+        for (const child of this.terrainDetailGroup.children) {
+            if (child.isInstancedMesh && Array.isArray(child.userData?.lodTransforms)) {
+                const counts = this.updateInstancedTerrainDetailVisibility(
+                    child,
+                    centerX,
+                    centerY,
+                    radius
+                );
+                total += counts.total;
+                visible += counts.visible;
+                continue;
+            }
+
+            const anchor = child.userData?.lodAnchor;
+            if (!anchor) continue;
+            const isVisible = this.isObjectInsidePlayerLOD(
+                anchor.x,
+                anchor.y,
+                child.userData.lodExtent || 0,
+                centerX,
+                centerY,
+                radius
+            );
+            child.visibleByRange = isVisible;
+            child.visible = isVisible;
+            total += 1;
+            if (isVisible) visible += 1;
+        }
+        this.terrainDetailGroup.visible = visible > 0;
+        this.terrainDetailGroup.userData.lodCounts = { total, visible };
+        return { total, visible };
     }
 
     clearTerrainDepthDetails() {
         if (!this.terrainDetailGroup) return;
         WorldGenerator.disposeSceneObject(this.terrainDetailGroup, this.threeManager);
         this.terrainDetailGroup = null;
+        this.lodContentVersion += 1;
     }
 
     generateFromChunkedArray(mapArray, legend, chunkSize = this.chunkSize, options = {}) {
@@ -352,7 +450,10 @@ export class WorldGenerator {
             paletteId: resolvedPaletteId,
             visualSeed: this.voxelMatrix?.seed || this.voxelMatrix?.world?.variantSeed || 0
         });
+        tile.visibleByRange = false;
+        this.syncTileVisibility(tile);
         this.tiles.push(tile);
+        this.lodContentVersion += 1;
         const tileKey = this.getTileKey(x, y, z);
         this.tileMap.set(tileKey, tile);
         this.registerTileInChunk(x, y, tileKey);
@@ -654,6 +755,14 @@ export class WorldGenerator {
             this.registerBuildingObstructionGroup(state);
         }
         this.registerCityWallObstructionGroup();
+        this.lodContentVersion += 1;
+        if (this.lastVisibilityCenter) {
+            this.updateVisibleTilesAround(
+                this.lastVisibilityCenter.x,
+                this.lastVisibilityCenter.y,
+                this.lastVisibilityCenter.radius
+            );
+        }
     }
 
     registerWorldDecorations(decorations = []) {
@@ -664,13 +773,18 @@ export class WorldGenerator {
             this.threeManager.addToWorld(group);
             this.decorationGroups.push(group);
         }
+        this.lodContentVersion += 1;
+        if (this.lastVisibilityCenter) {
+            this.updateVisibleTilesAround(
+                this.lastVisibilityCenter.x,
+                this.lastVisibilityCenter.y,
+                this.lastVisibilityCenter.radius
+            );
+        }
     }
 
-    updateLivingWorld(elapsedSeconds, centerX, centerY) {
-        const visibilityRadius = this.visibleTileRadius;
+    updateLivingWorld(elapsedSeconds) {
         for (const group of this.decorationGroups) {
-            const distance = Math.hypot(group.position.x - centerX, group.position.z - centerY);
-            group.visible = distance <= visibilityRadius;
             if (!group.visible) continue;
             if (group.userData.sways) {
                 group.rotation.z = Math.sin(elapsedSeconds * 0.85 + group.userData.lifePhase) * 0.018;
@@ -719,6 +833,7 @@ export class WorldGenerator {
         const group = new THREE.Group();
         group.position.set(x + offsetX, this.getSurfaceWorldY(x, y) + 0.02, y + offsetY);
         group.userData.decorationType = type;
+        group.userData.lodAnchor = { x, y };
         const lifeSeed = WorldGenerator.hashVisualSeed(
             `${this.voxelMatrix?.seed || 0}:${this.voxelMatrix?.variant || 0}:${type}:${x}:${y}`
         );
@@ -765,6 +880,9 @@ export class WorldGenerator {
             child.receiveShadow = true;
             child.raycast = () => {};
         });
+        group.userData.lodExtent = WorldGenerator.measureHorizontalLODExtent(group, x, y);
+        group.visibleByRange = false;
+        group.visible = false;
         return group;
     }
 
@@ -1491,7 +1609,8 @@ export class WorldGenerator {
             wallDecorations: null,
             furniture: null,
             upperFurnitureGroups: [],
-            roofVisibleByRange: true,
+            visibleByRange: false,
+            roofVisibleByRange: false,
             groundFloorZ: Math.max(0, Math.floor(building.baseElevation || 0)),
             floorZ: 0,
             roofObstructionZ: 0,
@@ -1554,6 +1673,14 @@ export class WorldGenerator {
                 targetRotation: 0
             });
         }
+        const lodAnchor = this.getBuildingLODAnchor(state);
+        state.lodExtent = this.measureBuildingLODExtent(state, lodAnchor);
+        if (state.doors.length > 0) {
+            // The stored meshes are measured in their closed pose. Reserve the complete
+            // panel sweep so an opening door cannot cross an otherwise culled LOD edge.
+            state.lodExtent += 0.9;
+        }
+        this.setBuildingRangeVisibility(state, false);
         return state;
     }
 
@@ -3291,7 +3418,7 @@ export class WorldGenerator {
     setBuildingOpen(state, isOpen) {
         if (state.isOpen === isOpen) return;
         state.isOpen = isOpen;
-        if (state.wallDecorations) state.wallDecorations.visible = true;
+        this.setBuildingRangeVisibility(state, state.visibleByRange !== false);
     }
 
     updateDoorTargetsForPlayer(state, playerX, playerY) {
@@ -3327,43 +3454,128 @@ export class WorldGenerator {
             !state.roofHiddenByObstruction;
     }
 
+    setSceneObjectRangeVisibility(object, isVisible) {
+        if (!object) return;
+        object.visibleByRange = isVisible;
+        object.visible = isVisible && object.hiddenByObstruction !== true;
+    }
+
+    setBuildingRangeVisibility(state, isVisible) {
+        if (!state) return;
+        state.visibleByRange = isVisible;
+        state.roofVisibleByRange = isVisible;
+        this.syncRoofVisibility(state);
+        this.setSceneObjectRangeVisibility(state.wallDecorations, isVisible);
+        this.setSceneObjectRangeVisibility(state.furniture, isVisible);
+        for (const door of state.doors || []) {
+            this.setSceneObjectRangeVisibility(door.sceneObject, isVisible);
+        }
+    }
+
+    getBuildingLODAnchor(state) {
+        return {
+            x: Number(state?.x || 0) + (Math.max(1, Number(state?.width) || 1) - 1) / 2,
+            y: Number(state?.y || 0) + (Math.max(1, Number(state?.height) || 1) - 1) / 2
+        };
+    }
+
+    getBuildingLODExtent(state) {
+        if (Number.isFinite(state?.lodExtent)) return state.lodExtent;
+        const halfWidth = Math.max(0.5, (Number(state?.width) || 1) / 2 + 0.4);
+        const halfHeight = Math.max(0.5, (Number(state?.height) || 1) / 2 + 0.4);
+        return Math.hypot(halfWidth, halfHeight);
+    }
+
+    measureBuildingLODExtent(state, anchor = this.getBuildingLODAnchor(state)) {
+        let extent = this.getBuildingLODExtent({ ...state, lodExtent: null });
+        for (const object of [
+            state?.roof,
+            state?.wallDecorations,
+            state?.furniture,
+            ...(state?.doors || []).map((door) => door.sceneObject)
+        ]) {
+            extent = Math.max(
+                extent,
+                WorldGenerator.measureHorizontalLODExtent(object, anchor.x, anchor.y)
+            );
+        }
+        return extent;
+    }
+
     updateVisibleTilesAround(centerX, centerY, radius = this.visibleTileRadius) {
         const center = this.toGridPosition(centerX, centerY);
         if (this.lastVisibilityCenter &&
             this.lastVisibilityCenter.x === center.gridX &&
             this.lastVisibilityCenter.y === center.gridY &&
-            this.lastVisibilityCenter.radius === radius) {
-            return;
+            this.lastVisibilityCenter.radius === radius &&
+            this.lastVisibilityCenter.contentVersion === this.lodContentVersion) {
+            return this.lastLODVisibility;
         }
 
-        this.lastVisibilityCenter = { x: center.gridX, y: center.gridY, radius };
+        this.lastVisibilityCenter = {
+            x: center.gridX,
+            y: center.gridY,
+            radius,
+            contentVersion: this.lodContentVersion
+        };
         const radiusSq = radius * radius;
+        let visibleTiles = 0;
         for (const tile of this.tiles) {
             const dx = tile.gridX - center.gridX;
             const dy = tile.gridY - center.gridY;
             tile.visibleByRange = dx * dx + dy * dy <= radiusSq;
+            if (tile.visibleByRange) visibleTiles += 1;
             this.syncTileVisibility(tile);
         }
 
+        let visibleBuildings = 0;
         for (const state of this.buildingStates.values()) {
-            if (!state.roof) continue;
-            const dx = state.roof.position.x - center.gridX;
-            const dy = state.roof.position.z - center.gridY;
-            const near = dx * dx + dy * dy <= radiusSq;
-            state.roofVisibleByRange = near;
-            this.syncRoofVisibility(state);
-            if (state.wallDecorations) state.wallDecorations.visible = near;
-            if (state.furniture) state.furniture.visible = near;
-            for (const door of state.doors || []) {
-                if (door.sceneObject) door.sceneObject.visible = near;
-            }
+            const anchor = this.getBuildingLODAnchor(state);
+            const near = this.isObjectInsidePlayerLOD(
+                anchor.x,
+                anchor.y,
+                this.getBuildingLODExtent(state),
+                center.gridX,
+                center.gridY,
+                radius
+            );
+            this.setBuildingRangeVisibility(state, near);
+            if (near) visibleBuildings += 1;
         }
 
+        let visibleDecorations = 0;
         for (const group of this.decorationGroups) {
-            const dx = group.position.x - center.gridX;
-            const dy = group.position.z - center.gridY;
-            group.visible = dx * dx + dy * dy <= radiusSq;
+            const anchor = group.userData?.lodAnchor || {
+                x: group.position.x,
+                y: group.position.z
+            };
+            const near = this.isObjectInsidePlayerLOD(
+                anchor.x,
+                anchor.y,
+                group.userData?.lodExtent || 0,
+                center.gridX,
+                center.gridY,
+                radius
+            );
+            this.setSceneObjectRangeVisibility(group, near);
+            if (near) visibleDecorations += 1;
         }
+
+        const terrainDetails = this.updateTerrainDetailVisibility(
+            center.gridX,
+            center.gridY,
+            radius
+        );
+        this.lastLODVisibility = {
+            centerX: center.gridX,
+            centerY: center.gridY,
+            radius,
+            tiles: { total: this.tiles.length, visible: visibleTiles },
+            buildings: { total: this.buildingStates.size, visible: visibleBuildings },
+            decorations: { total: this.decorationGroups.length, visible: visibleDecorations },
+            terrainDetails
+        };
+        return this.lastLODVisibility;
     }
 
     updateObstructionHiding(playerX, playerY, playerZ = 0) {
@@ -3493,6 +3705,51 @@ export class WorldGenerator {
             !tile.hiddenByObstruction;
     }
 
+    isObjectInsidePlayerLOD(
+        x,
+        y,
+        extent = 0,
+        centerX = this.lastVisibilityCenter?.x,
+        centerY = this.lastVisibilityCenter?.y,
+        radius = this.lastVisibilityCenter?.radius ?? this.visibleTileRadius
+    ) {
+        if (!Number.isFinite(centerX) || !Number.isFinite(centerY)) return false;
+        if (!this.hasTileColumn(x, y)) return false;
+        return WorldGenerator.isObjectInsideLOD(x, y, extent, centerX, centerY, radius);
+    }
+
+    getLODVisibilitySummary() {
+        if (!this.lastLODVisibility) return null;
+        return structuredClone(this.lastLODVisibility);
+    }
+
+    invalidateLODVisibility() {
+        this.lodContentVersion += 1;
+    }
+
+    static isObjectInsideLOD(x, y, extent, centerX, centerY, radius) {
+        const values = [x, y, centerX, centerY, radius];
+        if (!values.every(Number.isFinite)) return false;
+        const safeRadius = Math.max(0, radius);
+        const safeExtent = Math.max(0, Number(extent) || 0);
+        if (safeExtent > safeRadius) return false;
+        return Math.hypot(x - centerX, y - centerY) + safeExtent <= safeRadius + 1e-9;
+    }
+
+    static measureHorizontalLODExtent(object, anchorX, anchorY) {
+        if (!object || !Number.isFinite(anchorX) || !Number.isFinite(anchorY)) return 0;
+        object.updateWorldMatrix?.(true, true);
+        const bounds = new THREE.Box3().setFromObject(object);
+        if (bounds.isEmpty()) return 0;
+        let extent = 0;
+        for (const x of [bounds.min.x, bounds.max.x]) {
+            for (const z of [bounds.min.z, bounds.max.z]) {
+                extent = Math.max(extent, Math.hypot(x - anchorX, z - anchorY));
+            }
+        }
+        return extent;
+    }
+
     supportsHabitat(x, y, habitat) {
         const surface = this.getSurfaceAt(x, y);
         if (!surface) return false;
@@ -3599,6 +3856,14 @@ export class WorldGenerator {
                 if (voxelIndex >= 0) column.splice(voxelIndex, 1);
             }
             this.rebuildSurfaceFromColumn(x, y);
+            this.invalidateLODVisibility();
+            if (this.lastVisibilityCenter) {
+                this.updateVisibleTilesAround(
+                    this.lastVisibilityCenter.x,
+                    this.lastVisibilityCenter.y,
+                    this.lastVisibilityCenter.radius
+                );
+            }
         }
     }
 
@@ -3659,6 +3924,8 @@ export class WorldGenerator {
         this.voxelMatrix = null;
         this.voxelColumnMap.clear();
         this.lastVisibilityCenter = null;
+        this.lastLODVisibility = null;
+        this.lodContentVersion += 1;
     }
 
     clearWorldDecorations() {

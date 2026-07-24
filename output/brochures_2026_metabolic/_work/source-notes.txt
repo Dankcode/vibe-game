@@ -1,0 +1,16 @@
+Communication job: Give preclinical drug-development audiences a concise, evidence-led view of three validated metabolic disease-model platforms, using only figures and claims supported by the supplied source deck.
+
+Primary source:
+/Users/lx/Downloads/2026南模生物代谢模型数据总结 -liuxia-2026-07-09.pptx
+
+Selected evidence:
+- DIO mouse: slides 11-12, HFD-induced C57BL/6 obese mouse model; saline, semaglutide, bimagrumab, and combination arms.
+- Cardiovascular: slides 28-29, western-diet ApoE-knockout atherosclerosis model; atorvastatin response.
+- MASH: slides 31-32, GAN-diet model; FGF21 pathway efficacy and liver histopathology.
+
+Visual/layout source:
+/Users/lx/.codex/skills/brochure-blueprint/assets/layout.json
+/Users/lx/.codex/skills/brochure-blueprint/assets/brand/logo_southern.png
+/Users/lx/.codex/skills/brochure-blueprint/assets/brand/footer_southern.png
+
+All claims in visible copy are qualitative summaries of the supplied figures. No external research was added.

@@ -51,6 +51,7 @@ export class Game {
             this.worldGenerator,
             createWildlifeSpawnsForMap(MAIN_MAP)
         );
+        this.applyPlayerLOD();
         this.hoveredTile = null;
         this.activePath = [];
         this.collisionDebugEnabled = false;
@@ -75,6 +76,12 @@ export class Game {
                 if (freshPath && freshPath.length > 0) {
                     this.activePath = freshPath;
                     this.threeManager.renderPathLine(freshPath, this.worldGenerator);
+                    this.threeManager.updatePathLineLOD(
+                        this.player.gridX,
+                        this.player.gridY,
+                        this.worldGenerator.visibleTileRadius,
+                        this.worldGenerator
+                    );
                     this.player.setPath(freshPath);
                 }
             }
@@ -216,6 +223,7 @@ export class Game {
         );
         remoteAvatar.setRemoteTarget(playerState.centerX, playerState.centerY, playerState.centerZ);
         remoteAvatar.setCollisionDebugVisible(this.collisionDebugEnabled);
+        this.updateRemotePlayerLOD(remoteAvatar);
         this.remotePlayers.set(sessionId, remoteAvatar);
     }
 
@@ -267,6 +275,7 @@ export class Game {
             this.worldGenerator,
             createWildlifeSpawnsForMap(rows)
         );
+        this.applyPlayerLOD();
 
         this.scheduleCurrentMapToServer(source);
 
@@ -309,7 +318,46 @@ export class Game {
         this.authoritativeGraceUntil = performance.now() + 8000;
         this.player.setCollisionDebugVisible(this.collisionDebugEnabled);
         this.player.syncModel();
-        this.worldGenerator.updateVisibleTilesAround(this.player.gridX, this.player.gridY);
+        this.applyPlayerLOD();
+    }
+
+    applyPlayerLOD() {
+        if (!this.player) return null;
+        const radius = this.worldGenerator.visibleTileRadius;
+        const summary = this.worldGenerator.updateVisibleTilesAround(
+            this.player.gridX,
+            this.player.gridY,
+            radius
+        );
+        this.threeManager.updatePlayerLOD(
+            this.player.gridX,
+            this.player.gridY,
+            radius,
+            this.worldGenerator
+        );
+        this.wildlifeSystem?.updateVisibility(
+            this.player.gridX,
+            this.player.gridY,
+            radius
+        );
+        for (const remoteAvatar of this.remotePlayers?.values?.() || []) {
+            this.updateRemotePlayerLOD(remoteAvatar);
+        }
+        return summary;
+    }
+
+    updateRemotePlayerLOD(remoteAvatar) {
+        if (!remoteAvatar || !this.player) return;
+        remoteAvatar.setLODVisible(
+            this.worldGenerator.isObjectInsidePlayerLOD(
+                remoteAvatar.gridX,
+                remoteAvatar.gridY,
+                0.5,
+                this.player.gridX,
+                this.player.gridY,
+                this.worldGenerator.visibleTileRadius
+            )
+        );
     }
 
     syncCurrentMapToServer(source) {
@@ -434,8 +482,19 @@ export class Game {
             this.syncRemotePlayersFromState();
             for (const remoteAvatar of this.remotePlayers.values()) {
                 remoteAvatar.update(deltaSeconds);
+                this.updateRemotePlayerLOD(remoteAvatar);
             }
-            this.wildlifeSystem.update(deltaSeconds);
+            this.wildlifeSystem.update(
+                deltaSeconds,
+                this.player.gridX,
+                this.player.gridY,
+                this.worldGenerator.visibleTileRadius
+            );
+
+            if (this.activePath.length > 0 && this.player.currentPath.length === 0) {
+                this.activePath = [];
+                this.threeManager.renderPathLine([], this.worldGenerator);
+            }
 
             // Make camera follow player before updating visibility.
             const targetPos = this.player.group.position;
@@ -446,9 +505,9 @@ export class Game {
             if (playerChangedTile || now - this.lastWorldUpdateAt >= 160) {
                 this.lastPlayerTileKey = playerTileKey;
                 this.lastWorldUpdateAt = now;
-                this.worldGenerator.updateLivingWorld(now / 1000, this.player.gridX, this.player.gridY);
+                this.worldGenerator.updateLivingWorld(now / 1000);
                 this.worldGenerator.updateBuildingVisibility(this.player.gridX, this.player.gridY);
-                this.worldGenerator.updateVisibleTilesAround(this.player.gridX, this.player.gridY);
+                this.applyPlayerLOD();
                 this.worldGenerator.updateObstructionHiding(this.player.gridX, this.player.gridY, this.player.gridZ);
             }
 

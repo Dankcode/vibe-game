@@ -21,6 +21,8 @@ export class MeadowHare {
         this.bobTime = this.random() * Math.PI * 2;
 
         this.group = this.createModel();
+        this.group.visibleByRange = false;
+        this.group.visible = false;
         this.threeManager.addToEntities(this.group);
         this.syncModel();
     }
@@ -126,6 +128,11 @@ export class MeadowHare {
             this.visualZ + this.worldGenerator.getTopSurfaceOffset() + 0.02 + hop,
             this.gridY
         );
+    }
+
+    setLODVisible(isVisible) {
+        this.group.visibleByRange = isVisible;
+        this.group.visible = isVisible;
     }
 
     destroy() {

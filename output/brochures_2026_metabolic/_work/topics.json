@@ -1,0 +1,517 @@
+{
+ "n_slides": 45,
+ "dividers": [
+  {
+   "slide": 1,
+   "text": "GLP-1R\u9776\u5411\u51cf\u80a5\u836f\u7269\u7684\u201c\u51cf\u808c\u56f0\u5883\u201d\u4e0e\u7834\u5c40\uff1a\u589e\u808c\u65b0\u9776\u70b9\u673a\u5236\u63a2\u7d22\u53ca\u4e34\u5e8a\u524d\u9a8c\u8bc1\u7b56\u7565 \u4e0a\u6d77\u5357\u65b9\u6a21\u5f0f\u751f\u7269\u79d1\u6280\u80a1\u4efd\u6709\u9650\u516c\u53f8"
+  },
+  {
+   "slide": 10,
+   "text": "Pharmacodynamic validation in the HFD-Induced hMSTN Obese Mo"
+  },
+  {
+   "slide": 21,
+   "text": "Pharmacodynamic effects of semaglutide in type 2 diabetes me"
+  }
+ ],
+ "studies": [
+  {
+   "title": "Pharmacological Effects of Atorvastatin in ApoE-Knockout Mice with Atherosclerosis",
+   "slides": [
+    28,
+    29
+   ],
+   "figs": 13,
+   "drugs": [
+    "atorvastatin"
+   ],
+   "disease": [
+    "atherosclerosis",
+    "sclerosis"
+   ],
+   "has_drug": true,
+   "score": 18.0
+  },
+  {
+   "title": "Pharmacodynamic validation in the HFD-Induced C57BL/6 Obese Mouse Model",
+   "slides": [
+    11,
+    12,
+    13
+   ],
+   "figs": 13,
+   "drugs": [],
+   "disease": [],
+   "has_drug": false,
+   "score": 14.5
+  },
+  {
+   "title": "The efficacy evaluation of test articles in hMSTN mouse model",
+   "slides": [
+    14
+   ],
+   "figs": 7,
+   "drugs": [
+    "bimagrumab"
+   ],
+   "disease": [],
+   "has_drug": true,
+   "score": 13.5
+  },
+  {
+   "title": "Efruxifermin Ameliorates GAN Diet-Induced Hepatic Steatosis",
+   "slides": [
+    32
+   ],
+   "figs": 9,
+   "drugs": [
+    "efruxifermin"
+   ],
+   "disease": [],
+   "has_drug": true,
+   "score": 13.5
+  },
+  {
+   "title": "Pharmacodynamic validation in HFD-Induced hINHBE Obese Mouse Model",
+   "slides": [
+    8
+   ],
+   "figs": 12,
+   "drugs": [],
+   "disease": [],
+   "has_drug": false,
+   "score": 12.5
+  },
+  {
+   "title": "FGF21-Mediated Metabolic Regulation and Efficacy Data",
+   "slides": [
+    31
+   ],
+   "figs": 10,
+   "drugs": [],
+   "disease": [],
+   "has_drug": true,
+   "score": 12.5
+  },
+  {
+   "title": "\u5305\u542bhGLP1R,hINHBE,hALK7,hMSTN\u5c0f\u9f20\uff0c\u9002\u7528\u4e8e\u673a\u5236\u7814\u7a76\uff0c\u9776\u70b9\u9a8c\u8bc1\u548c\u836f\u6548\u8bc4\u4ef7\u3002",
+   "slides": [
+    2
+   ],
+   "figs": 10,
+   "drugs": [],
+   "disease": [],
+   "has_drug": false,
+   "score": 10.5
+  },
+  {
+   "title": "Hypoglycemic and Renal Protective Effects of semaglutide in db/db Mice with Diabetic Nephropathy",
+   "slides": [
+    22,
+    23,
+    24,
+    25
+   ],
+   "figs": 4,
+   "drugs": [
+    "semaglutide"
+   ],
+   "disease": [
+    "diabet",
+    "nephropathy"
+   ],
+   "has_drug": true,
+   "score": 10.0
+  },
+  {
+   "title": "Hypoglycemic and Renal Protective Effects of semaglutide in db/db Mice with Diabetic Nephropathy",
+   "slides": [
+    41,
+    42,
+    43,
+    44
+   ],
+   "figs": 4,
+   "drugs": [
+    "semaglutide"
+   ],
+   "disease": [
+    "diabet",
+    "nephropathy"
+   ],
+   "has_drug": true,
+   "score": 10.0
+  },
+  {
+   "title": "Pharmacological effects of Bimagrumab in dexamethasone-induced sarcopenia",
+   "slides": [
+    15,
+    16
+   ],
+   "figs": 4,
+   "drugs": [
+    "bimagrumab",
+    "dex",
+    "dexamethasone"
+   ],
+   "disease": [
+    "sarcopenia"
+   ],
+   "has_drug": true,
+   "score": 9.0
+  },
+  {
+   "title": "Evaluation of Orforglipron's Weight-Loss Efficacy in hGLP1R Transgenic Mice",
+   "slides": [
+    3
+   ],
+   "figs": 2,
+   "drugs": [
+    "orforglipron"
+   ],
+   "disease": [],
+   "has_drug": true,
+   "score": 8.5
+  },
+  {
+   "title": "Research on the Muscle Growth Promoting Activity of Bimagrumab in Animal Models of Sarcopenia",
+   "slides": [
+    17,
+    18,
+    19
+   ],
+   "figs": 3,
+   "drugs": [
+    "bimagrumab"
+   ],
+   "disease": [
+    "sarcopenia"
+   ],
+   "has_drug": true,
+   "score": 8.5
+  },
+  {
+   "title": "Research on the Muscle Growth Promoting Activity of Bimagrumab in Animal Models of Sarcopenia",
+   "slides": [
+    38,
+    39,
+    40
+   ],
+   "figs": 3,
+   "drugs": [
+    "bimagrumab"
+   ],
+   "disease": [
+    "sarcopenia"
+   ],
+   "has_drug": true,
+   "score": 8.5
+  },
+  {
+   "title": "Pharmacodynamic Validation Study of Targeting the INHBE/ALK7 Signaling Pathway",
+   "slides": [
+    7
+   ],
+   "figs": 3,
+   "drugs": [
+    "semaglutide"
+   ],
+   "disease": [],
+   "has_drug": true,
+   "score": 7.5
+  },
+  {
+   "title": "\u91c7\u7528GAN\u996e\u98df\u3001CDAA\u996e\u98df\u8bf1\u5bfc\uff0c\u80fd\u591f\u9ad8\u5ea6\u6a21\u62df\u4eba\u7c7b\u75be\u75c5\u8fdb\u7a0b\uff0c\u590d\u73b0\u4ece\u5355\u7eaf\u6027\u8102\u80aa\u809dMASH\u7684\u75c5\u7406\u53d8\u5316\u3002",
+   "slides": [
+    30
+   ],
+   "figs": 7,
+   "drugs": [],
+   "disease": [
+    "mash"
+   ],
+   "has_drug": false,
+   "score": 7.5
+  },
+  {
+   "title": "\u8840\u8102\u8c31\u5206\u6790\uff1aTC\u3001TG\u3001LDL-C\u3001HDL-C \u6c34\u5e73\u76d1\u6d4b\u4e3b\u52a8\u8109\u6591\u5757\u5206\u6790\uff1a\u6cb9\u7ea2O\u67d3\u8272\u5b9a\u91cf\u6591\u5757\u9762\u79ef\u4e0e\u8102\u8d28\u542b\u91cf\u75c5\u7406\u4e0e\u529f\u80fd\uff1a\u8840\u7ba1\u529f\u80fd\u68c0\u6d4b\u53ca\u708e\u75c7\u56e0\u5b50\u6c34\u5e73\u5206\u6790",
+   "slides": [
+    27
+   ],
+   "figs": 6,
+   "drugs": [],
+   "disease": [],
+   "has_drug": false,
+   "score": 6.5
+  },
+  {
+   "title": "\u8840\u7cd6\u63a7\u5236\uff1a\u7a7a\u8179\u8840\u7cd6\u3001\u7cd6\u5316\u8840\u7ea2\u86cb\u767d(HbA1c)\u4ee3\u8c22\u7a33\u6001\uff1a\u80f0\u5c9b\u7d20\u8010\u91cf(ITT)\u3001\u8461\u8404\u7cd6\u8010\u91cf(GTT)\u7ec4\u7ec7\u75c5\u7406\uff1a\u80f0\u5c9b\u529f\u80fd\u8bc4\u4f30\u4e0e\u7ec4\u7ec7\u5f62\u6001\u5b66\u5206\u6790",
+   "slides": [
+    20
+   ],
+   "figs": 4,
+   "drugs": [],
+   "disease": [],
+   "has_drug": false,
+   "score": 4.5
+  },
+  {
+   "title": "Hypoglycemic Effects in ob/ob Mice",
+   "slides": [
+    26
+   ],
+   "figs": 4,
+   "drugs": [],
+   "disease": [],
+   "has_drug": false,
+   "score": 4.5
+  },
+  {
+   "title": "Hypoglycemic Effects in ob/ob Mice",
+   "slides": [
+    45
+   ],
+   "figs": 4,
+   "drugs": [],
+   "disease": [],
+   "has_drug": false,
+   "score": 4.5
+  },
+  {
+   "title": "Hypertrophic cardiomyopathy animal model",
+   "slides": [
+    33
+   ],
+   "figs": 3,
+   "drugs": [],
+   "disease": [
+    "cardiomyopathy"
+   ],
+   "has_drug": false,
+   "score": 3.5
+  },
+  {
+   "title": "Model establishment (1-4 weeks). Drug efficacy study (6-8 weeks )Behavior AnalysisBlood AnalysisTissue Sample collection",
+   "slides": [
+    36
+   ],
+   "figs": 1,
+   "drugs": [],
+   "disease": [],
+   "has_drug": true,
+   "score": 3.5
+  },
+  {
+   "title": "List of Metabolism-Related Mouse Models for Preclinical Drug Efficacy Evaluation",
+   "slides": [
+    34,
+    35
+   ],
+   "figs": 0,
+   "drugs": [],
+   "disease": [],
+   "has_drug": true,
+   "score": 3.0
+  },
+  {
+   "title": "validation of oral GIPR antagonist in hGIPR-DIO mice",
+   "slides": [
+    4
+   ],
+   "figs": 2,
+   "drugs": [],
+   "disease": [],
+   "has_drug": false,
+   "score": 2.5
+  },
+  {
+   "title": "The GLP-1 era in medicine is just getting started",
+   "slides": [
+    5
+   ],
+   "figs": 2,
+   "drugs": [],
+   "disease": [],
+   "has_drug": false,
+   "score": 2.5
+  },
+  {
+   "title": "Pharmacodynamic validation in HFD-Induced SD-DIO Obese Rat Model",
+   "slides": [
+    6
+   ],
+   "figs": 2,
+   "drugs": [],
+   "disease": [
+    "diabet",
+    "obesity"
+   ],
+   "has_drug": false,
+   "score": 2.5
+  },
+  {
+   "title": "Pharmacodynamic validation in the HFD-Induced hMSTN Obese Mouse Model",
+   "slides": [
+    9
+   ],
+   "figs": 2,
+   "drugs": [],
+   "disease": [],
+   "has_drug": false,
+   "score": 2.5
+  },
+  {
+   "title": "400-728-0660 www.modelorg.com info@modelorg.com",
+   "slides": [
+    37
+   ],
+   "figs": 1,
+   "drugs": [],
+   "disease": [],
+   "has_drug": false,
+   "score": 1.5
+  }
+ ],
+ "recommended_per_disease": {
+  "other": [
+   {
+    "title": "Pharmacodynamic validation in the HFD-Induced C57BL/6 Obese Mouse Model",
+    "slides": [
+     11,
+     12,
+     13
+    ],
+    "score": 14.5,
+    "drugs": []
+   },
+   {
+    "title": "The efficacy evaluation of test articles in hMSTN mouse model",
+    "slides": [
+     14
+    ],
+    "score": 13.5,
+    "drugs": [
+     "bimagrumab"
+    ]
+   },
+   {
+    "title": "Efruxifermin Ameliorates GAN Diet-Induced Hepatic Steatosis",
+    "slides": [
+     32
+    ],
+    "score": 13.5,
+    "drugs": [
+     "efruxifermin"
+    ]
+   }
+  ],
+  "diabet": [
+   {
+    "title": "Hypoglycemic and Renal Protective Effects of semaglutide in db/db Mice with Diabetic Nephropathy",
+    "slides": [
+     22,
+     23,
+     24,
+     25
+    ],
+    "score": 10.0,
+    "drugs": [
+     "semaglutide"
+    ]
+   },
+   {
+    "title": "Hypoglycemic and Renal Protective Effects of semaglutide in db/db Mice with Diabetic Nephropathy",
+    "slides": [
+     41,
+     42,
+     43,
+     44
+    ],
+    "score": 10.0,
+    "drugs": [
+     "semaglutide"
+    ]
+   },
+   {
+    "title": "Pharmacodynamic validation in HFD-Induced SD-DIO Obese Rat Model",
+    "slides": [
+     6
+    ],
+    "score": 2.5,
+    "drugs": []
+   }
+  ],
+  "sarcopenia": [
+   {
+    "title": "Pharmacological effects of Bimagrumab in dexamethasone-induced sarcopenia",
+    "slides": [
+     15,
+     16
+    ],
+    "score": 9.0,
+    "drugs": [
+     "bimagrumab",
+     "dex",
+     "dexamethasone"
+    ]
+   },
+   {
+    "title": "Research on the Muscle Growth Promoting Activity of Bimagrumab in Animal Models of Sarcopenia",
+    "slides": [
+     17,
+     18,
+     19
+    ],
+    "score": 8.5,
+    "drugs": [
+     "bimagrumab"
+    ]
+   },
+   {
+    "title": "Research on the Muscle Growth Promoting Activity of Bimagrumab in Animal Models of Sarcopenia",
+    "slides": [
+     38,
+     39,
+     40
+    ],
+    "score": 8.5,
+    "drugs": [
+     "bimagrumab"
+    ]
+   }
+  ],
+  "atherosclerosis": [
+   {
+    "title": "Pharmacological Effects of Atorvastatin in ApoE-Knockout Mice with Atherosclerosis",
+    "slides": [
+     28,
+     29
+    ],
+    "score": 18.0,
+    "drugs": [
+     "atorvastatin"
+    ]
+   }
+  ],
+  "mash": [
+   {
+    "title": "\u91c7\u7528GAN\u996e\u98df\u3001CDAA\u996e\u98df\u8bf1\u5bfc\uff0c\u80fd\u591f\u9ad8\u5ea6\u6a21\u62df\u4eba\u7c7b\u75be\u75c5\u8fdb\u7a0b\uff0c\u590d\u73b0\u4ece\u5355\u7eaf\u6027\u8102\u80aa\u809dMASH\u7684\u75c5\u7406\u53d8\u5316\u3002",
+    "slides": [
+     30
+    ],
+    "score": 7.5,
+    "drugs": []
+   }
+  ],
+  "cardiomyopathy": [
+   {
+    "title": "Hypertrophic cardiomyopathy animal model",
+    "slides": [
+     33
+    ],
+    "score": 3.5,
+    "drugs": []
+   }
+  ]
+ }
+}

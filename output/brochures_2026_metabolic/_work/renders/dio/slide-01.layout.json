@@ -1,0 +1,591 @@
+{
+  "schema": "openai.presentation.layout/v4",
+  "unit": "px",
+  "slide": {
+    "aid": "sl/bj7poc",
+    "id": "bj7poc",
+    "slide": 1,
+    "layoutId": "ac3e513c-1b54-4d5e-a754-d99c0034abfc",
+    "layoutName": "Title Slide",
+    "layoutType": "title",
+    "masterLayoutId": "8695e5cf-c08a-43bb-9da8-b086588fb24e",
+    "masterLayoutName": "Master",
+    "backgroundColor": "#FFFFFF",
+    "frame": {
+      "left": 0,
+      "top": 0,
+      "width": 720,
+      "height": 960
+    }
+  },
+  "theme": {
+    "colorSchemeName": "ChatGPT",
+    "colors": {
+      "accent1": "#156082",
+      "accent2": "#E97132",
+      "accent3": "#196B24",
+      "accent4": "#0F9ED5",
+      "accent5": "#A02B93",
+      "accent6": "#4EA72E",
+      "bg1": "#FFFFFF",
+      "bg2": "#000000",
+      "tx1": "#1F1F1F",
+      "tx2": "#FFFFFF",
+      "dk1": "#000000",
+      "lt1": "#FFFFFF",
+      "dk2": "#0E2841",
+      "lt2": "#E8E8E8",
+      "hlink": "#467886",
+      "folHlink": "#96607D"
+    },
+    "typefaces": [
+      "+mn-lt"
+    ]
+  },
+  "inheritedLayers": [
+    {
+      "scope": "layout",
+      "id": "ac3e513c-1b54-4d5e-a754-d99c0034abfc",
+      "name": "Title Slide",
+      "type": "title",
+      "parentLayoutId": "8695e5cf-c08a-43bb-9da8-b086588fb24e",
+      "elements": []
+    },
+    {
+      "scope": "master",
+      "id": "8695e5cf-c08a-43bb-9da8-b086588fb24e",
+      "name": "Master",
+      "type": "master",
+      "elements": []
+    }
+  ],
+  "elements": [
+    {
+      "order": 1,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/tkfq18bu",
+      "id": "1",
+      "name": "title-1",
+      "bbox": [
+        16,
+        30,
+        462,
+        48
+      ],
+      "geometry": "rect",
+      "text": "HFD-Induced C57BL/6 Obese Mouse Model",
+      "textPreview": "HFD-Induced C57BL/6 Obese Mouse Model",
+      "resolvedFontSize": 20,
+      "resolvedTextStyle": {
+        "fontSize": 20,
+        "typeface": "+mn-lt",
+        "color": "#1F4E9C",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "HFD-Induced C57BL/6 Obese Mouse Model"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "HFD-Induced C57BL/6 Obese Mouse Model",
+          "resolvedTextStyle": {
+            "fontSize": 20,
+            "color": "#1F4E9C",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "HFD-Induced C57BL/6 Obese Mouse Model",
+              "fontSize": 20,
+              "color": "#1F4E9C",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 2,
+      "kind": "image",
+      "scope": "slide",
+      "aid": "im/3ulw7ytg",
+      "id": "2",
+      "bbox": [
+        485,
+        27,
+        228,
+        43
+      ],
+      "alt": "Southern Model Organisms logo",
+      "contentType": "image/png",
+      "imageFit": "contain",
+      "asset": {
+        "assetId": "37f39e79-b1b8-4566-b6b5-54c9123d58f7",
+        "contentType": "image/png",
+        "byteLength": 53728
+      }
+    },
+    {
+      "order": 3,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/7ix8zyto",
+      "id": "3",
+      "name": "header-band-1",
+      "bbox": [
+        0,
+        86,
+        720,
+        94
+      ],
+      "geometry": "rect",
+      "fillColor": "#4874CB",
+      "lineWidth": 0
+    },
+    {
+      "order": 4,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/gnqpcna5",
+      "id": "4",
+      "name": "description-1",
+      "bbox": [
+        14,
+        94,
+        692,
+        79
+      ],
+      "geometry": "rect",
+      "text": "Validated diet-induced obesity platform for body-weight and body-composition pharmacology. The study compares saline, semaglutide, bimagrumab and combination treatment across longitudinal weight, food intake, fat mass, lean mass and terminal tissue endpoints.",
+      "textPreview": "Validated diet-induced obesity platform for body-weight and body-composition pharmacology. The study compares saline, semaglutide, bimagr...",
+      "resolvedFontSize": 14,
+      "resolvedTextStyle": {
+        "fontSize": 14,
+        "typeface": "+mn-lt",
+        "color": "#FFFFFF",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 3,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Validated diet-induced obesity platform for body-weight and body-composition pharmacology. The study"
+          },
+          {
+            "index": 2,
+            "text": "compares saline, semaglutide, bimagrumab and combination treatment across longitudinal weight, food"
+          },
+          {
+            "index": 3,
+            "text": "intake, fat mass, lean mass and terminal tissue endpoints."
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Validated diet-induced obesity platform for body-weight and body-composition pharmacology. The study compares saline, semaglutide, bimagrumab and combination treatment across longitudinal weight, food intake, fat mass, lean mass and terminal tissue endpoints.",
+          "resolvedTextStyle": {
+            "fontSize": 14,
+            "color": "#FFFFFF",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Validated diet-induced obesity platform for body-weight and body-composition pharmacology. The study compares saline, semaglutide, bimagrumab and combination treatment across longitudinal weight, food intake, fat mass, lean mass and terminal tissue endpoints.",
+              "fontSize": 14,
+              "color": "#FFFFFF",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 5,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/hozq5sbq",
+      "id": "5",
+      "name": "study-banner-1",
+      "bbox": [
+        53,
+        187,
+        662,
+        40
+      ],
+      "geometry": "rightArrow",
+      "fillColor": "#30C0B4",
+      "lineWidth": 0
+    },
+    {
+      "order": 6,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/ulo7adcf",
+      "id": "6",
+      "name": "study-banner-text-1",
+      "bbox": [
+        68,
+        194,
+        625,
+        26
+      ],
+      "geometry": "rect",
+      "text": "Body-weight and composition response",
+      "textPreview": "Body-weight and composition response",
+      "resolvedFontSize": 15,
+      "resolvedTextStyle": {
+        "fontSize": 15,
+        "typeface": "+mn-lt",
+        "color": "#FFFFFF",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Body-weight and composition response"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Body-weight and composition response",
+          "resolvedTextStyle": {
+            "fontSize": 15,
+            "color": "#FFFFFF",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Body-weight and composition response",
+              "fontSize": 15,
+              "color": "#FFFFFF",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 7,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/vmh83it0",
+      "id": "7",
+      "name": "intro-1",
+      "bbox": [
+        67,
+        230,
+        634,
+        40
+      ],
+      "geometry": "rect",
+      "text": "A 28-day study quantifies body weight and cumulative intake alongside fat- and lean-mass trajectories.",
+      "textPreview": "A 28-day study quantifies body weight and cumulative intake alongside fat- and lean-mass trajectories.",
+      "resolvedFontSize": 12.51,
+      "resolvedTextStyle": {
+        "fontSize": 12.51,
+        "typeface": "+mn-lt",
+        "color": "#55657B",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "A 28-day study quantifies body weight and cumulative intake alongside fat- and lean-mass trajectories."
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "A 28-day study quantifies body weight and cumulative intake alongside fat- and lean-mass trajectories.",
+          "resolvedTextStyle": {
+            "fontSize": 12.51,
+            "color": "#55657B",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "A 28-day study quantifies body weight and cumulative intake alongside fat- and lean-mass trajectories.",
+              "fontSize": 12.51,
+              "color": "#55657B",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 8,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/wrmp0ju1",
+      "id": "8",
+      "name": "side-tab-1",
+      "bbox": [
+        3,
+        264,
+        39,
+        533
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#EE822F",
+      "lineWidth": 0
+    },
+    {
+      "order": 9,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/xsv6tobm",
+      "id": "9",
+      "name": "side-tab-text-1",
+      "bbox": [
+        -228,
+        515.5,
+        501,
+        30
+      ],
+      "rotation": 270,
+      "geometry": "rect",
+      "text": "28-DAY DIO STUDY",
+      "textPreview": "28-DAY DIO STUDY",
+      "resolvedFontSize": 11.51,
+      "resolvedTextStyle": {
+        "fontSize": 11.51,
+        "typeface": "+mn-lt",
+        "color": "#FFFFFF",
+        "bold": true,
+        "alignment": "center",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "28-DAY DIO STUDY"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "28-DAY DIO STUDY",
+          "resolvedTextStyle": {
+            "fontSize": 11.51,
+            "color": "#FFFFFF",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "28-DAY DIO STUDY",
+              "fontSize": 11.51,
+              "color": "#FFFFFF",
+              "bold": true,
+              "alignment": "center"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 10,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/hori9cj6",
+      "id": "10",
+      "name": "figure-frame-1",
+      "bbox": [
+        57,
+        271,
+        650,
+        527
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#FFFFFF",
+      "lineColor": "#D6E0EF",
+      "lineWidth": 1
+    },
+    {
+      "order": 11,
+      "kind": "image",
+      "scope": "slide",
+      "aid": "im/zm5cfaxs",
+      "id": "11",
+      "bbox": [
+        61,
+        275,
+        642,
+        519
+      ],
+      "alt": "Eight-panel longitudinal DIO study showing body weight, food intake, fat mass and lean mass for saline, semaglutide, bimagrumab and combination treatment.",
+      "contentType": "image/png",
+      "imageCrop": {
+        "left": 0.02,
+        "top": 0.07,
+        "right": 0.02,
+        "bottom": 0.11
+      },
+      "imageFit": "contain",
+      "asset": {
+        "assetId": "8d1a26d7-271a-4f4b-82de-e58cd8ab1e29",
+        "contentType": "image/png",
+        "byteLength": 307061
+      }
+    },
+    {
+      "order": 12,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/vmp07210",
+      "id": "12",
+      "name": "caption-1",
+      "bbox": [
+        53,
+        803,
+        658,
+        53
+      ],
+      "geometry": "rect",
+      "text": "Fig. 1. Semaglutide reduced body weight and fat mass; adding bimagrumab produced the largest fat-mass decline while supporting lean mass relative to semaglutide alone. Source slide 11.",
+      "textPreview": "Fig. 1. Semaglutide reduced body weight and fat mass; adding bimagrumab produced the largest fat-mass decline while supporting lean mass ...",
+      "resolvedFontSize": 10.51,
+      "resolvedTextStyle": {
+        "fontSize": 10.51,
+        "typeface": "+mn-lt",
+        "color": "#24324A",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Fig. 1. Semaglutide reduced body weight and fat mass; adding bimagrumab produced the largest fat-mass decline while supporting"
+          },
+          {
+            "index": 2,
+            "text": "lean mass relative to semaglutide alone. Source slide 11."
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Fig. 1. Semaglutide reduced body weight and fat mass; adding bimagrumab produced the largest fat-mass decline while supporting lean mass relative to semaglutide alone. Source slide 11.",
+          "resolvedTextStyle": {
+            "fontSize": 10.51,
+            "color": "#24324A",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Fig. 1. Semaglutide reduced body weight and fat mass; adding bimagrumab produced the largest fat-mass decline while supporting lean mass relative to semaglutide alone. Source slide 11.",
+              "fontSize": 10.51,
+              "color": "#24324A",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 13,
+      "kind": "image",
+      "scope": "slide",
+      "aid": "im/1onuhkfi",
+      "id": "13",
+      "bbox": [
+        0,
+        861,
+        720,
+        99
+      ],
+      "alt": "Southern Model Organisms contact footer",
+      "contentType": "image/png",
+      "imageFit": "cover",
+      "asset": {
+        "assetId": "3ad8332c-6bb9-4272-a611-6d22836f816a",
+        "contentType": "image/png",
+        "byteLength": 177694
+      }
+    }
+  ],
+  "composeRuns": []
+}

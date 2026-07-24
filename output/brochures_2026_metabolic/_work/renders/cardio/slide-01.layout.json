@@ -1,0 +1,595 @@
+{
+  "schema": "openai.presentation.layout/v4",
+  "unit": "px",
+  "slide": {
+    "aid": "sl/nvaof3",
+    "id": "nvaof3",
+    "slide": 1,
+    "layoutId": "0e189f07-1f2f-4bed-9e8c-5292f0a28e2e",
+    "layoutName": "Title Slide",
+    "layoutType": "title",
+    "masterLayoutId": "31337ba0-c157-4d77-bfbd-9ea344303fa3",
+    "masterLayoutName": "Master",
+    "backgroundColor": "#FFFFFF",
+    "frame": {
+      "left": 0,
+      "top": 0,
+      "width": 720,
+      "height": 960
+    }
+  },
+  "theme": {
+    "colorSchemeName": "ChatGPT",
+    "colors": {
+      "accent1": "#156082",
+      "accent2": "#E97132",
+      "accent3": "#196B24",
+      "accent4": "#0F9ED5",
+      "accent5": "#A02B93",
+      "accent6": "#4EA72E",
+      "bg1": "#FFFFFF",
+      "bg2": "#000000",
+      "tx1": "#1F1F1F",
+      "tx2": "#FFFFFF",
+      "dk1": "#000000",
+      "lt1": "#FFFFFF",
+      "dk2": "#0E2841",
+      "lt2": "#E8E8E8",
+      "hlink": "#467886",
+      "folHlink": "#96607D"
+    },
+    "typefaces": [
+      "+mn-lt"
+    ]
+  },
+  "inheritedLayers": [
+    {
+      "scope": "layout",
+      "id": "0e189f07-1f2f-4bed-9e8c-5292f0a28e2e",
+      "name": "Title Slide",
+      "type": "title",
+      "parentLayoutId": "31337ba0-c157-4d77-bfbd-9ea344303fa3",
+      "elements": []
+    },
+    {
+      "scope": "master",
+      "id": "31337ba0-c157-4d77-bfbd-9ea344303fa3",
+      "name": "Master",
+      "type": "master",
+      "elements": []
+    }
+  ],
+  "elements": [
+    {
+      "order": 1,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/7uhgbid8",
+      "id": "1",
+      "name": "title-1",
+      "bbox": [
+        16,
+        30,
+        462,
+        48
+      ],
+      "geometry": "rect",
+      "text": "ApoE-KO Atherosclerosis Mouse Model",
+      "textPreview": "ApoE-KO Atherosclerosis Mouse Model",
+      "resolvedFontSize": 20,
+      "resolvedTextStyle": {
+        "fontSize": 20,
+        "typeface": "+mn-lt",
+        "color": "#1F4E9C",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "ApoE-KO Atherosclerosis Mouse Model"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "ApoE-KO Atherosclerosis Mouse Model",
+          "resolvedTextStyle": {
+            "fontSize": 20,
+            "color": "#1F4E9C",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "ApoE-KO Atherosclerosis Mouse Model",
+              "fontSize": 20,
+              "color": "#1F4E9C",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 2,
+      "kind": "image",
+      "scope": "slide",
+      "aid": "im/xkj2d0zq",
+      "id": "2",
+      "bbox": [
+        485,
+        27,
+        228,
+        43
+      ],
+      "alt": "Southern Model Organisms logo",
+      "contentType": "image/png",
+      "imageFit": "contain",
+      "asset": {
+        "assetId": "90adb5f7-6029-415a-81ff-a1f84ca3a7db",
+        "contentType": "image/png",
+        "byteLength": 53728
+      }
+    },
+    {
+      "order": 3,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/tgjidsve",
+      "id": "3",
+      "name": "header-band-1",
+      "bbox": [
+        0,
+        86,
+        720,
+        94
+      ],
+      "geometry": "rect",
+      "fillColor": "#4874CB",
+      "lineWidth": 0
+    },
+    {
+      "order": 4,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/yp8zedwr",
+      "id": "4",
+      "name": "description-1",
+      "bbox": [
+        14,
+        94,
+        692,
+        79
+      ],
+      "geometry": "rect",
+      "text": "Western-diet ApoE-knockout mice provide an integrated cardiovascular efficacy model spanning serum lipids, longitudinal body weight, en face aortic plaque burden and aortic-root histology. Atorvastatin serves as the pharmacological validation control.",
+      "textPreview": "Western-diet ApoE-knockout mice provide an integrated cardiovascular efficacy model spanning serum lipids, longitudinal body weight, en f...",
+      "resolvedFontSize": 14,
+      "resolvedTextStyle": {
+        "fontSize": 14,
+        "typeface": "+mn-lt",
+        "color": "#FFFFFF",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 3,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Western-diet ApoE-knockout mice provide an integrated cardiovascular efficacy model spanning serum"
+          },
+          {
+            "index": 2,
+            "text": "lipids, longitudinal body weight, en face aortic plaque burden and aortic-root histology. Atorvastatin serves"
+          },
+          {
+            "index": 3,
+            "text": "as the pharmacological validation control."
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Western-diet ApoE-knockout mice provide an integrated cardiovascular efficacy model spanning serum lipids, longitudinal body weight, en face aortic plaque burden and aortic-root histology. Atorvastatin serves as the pharmacological validation control.",
+          "resolvedTextStyle": {
+            "fontSize": 14,
+            "color": "#FFFFFF",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Western-diet ApoE-knockout mice provide an integrated cardiovascular efficacy model spanning serum lipids, longitudinal body weight, en face aortic plaque burden and aortic-root histology. Atorvastatin serves as the pharmacological validation control.",
+              "fontSize": 14,
+              "color": "#FFFFFF",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 5,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/zqhg7idc",
+      "id": "5",
+      "name": "study-banner-1",
+      "bbox": [
+        53,
+        187,
+        662,
+        40
+      ],
+      "geometry": "rightArrow",
+      "fillColor": "#30C0B4",
+      "lineWidth": 0
+    },
+    {
+      "order": 6,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/krqhgnex",
+      "id": "6",
+      "name": "study-banner-text-1",
+      "bbox": [
+        68,
+        194,
+        625,
+        26
+      ],
+      "geometry": "rect",
+      "text": "Systemic lipid response and plaque burden",
+      "textPreview": "Systemic lipid response and plaque burden",
+      "resolvedFontSize": 15,
+      "resolvedTextStyle": {
+        "fontSize": 15,
+        "typeface": "+mn-lt",
+        "color": "#FFFFFF",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Systemic lipid response and plaque burden"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Systemic lipid response and plaque burden",
+          "resolvedTextStyle": {
+            "fontSize": 15,
+            "color": "#FFFFFF",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Systemic lipid response and plaque burden",
+              "fontSize": 15,
+              "color": "#FFFFFF",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 7,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/lszy98vi",
+      "id": "7",
+      "name": "intro-1",
+      "bbox": [
+        67,
+        230,
+        634,
+        40
+      ],
+      "geometry": "rect",
+      "text": "Atorvastatin (10 mg/kg, p.o., bid) is benchmarked against western-diet vehicle and chow controls through day 55.",
+      "textPreview": "Atorvastatin (10 mg/kg, p.o., bid) is benchmarked against western-diet vehicle and chow controls through day 55.",
+      "resolvedFontSize": 12.51,
+      "resolvedTextStyle": {
+        "fontSize": 12.51,
+        "typeface": "+mn-lt",
+        "color": "#55657B",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Atorvastatin (10 mg/kg, p.o., bid) is benchmarked against western-diet vehicle and chow controls through"
+          },
+          {
+            "index": 2,
+            "text": "day 55."
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Atorvastatin (10 mg/kg, p.o., bid) is benchmarked against western-diet vehicle and chow controls through day 55.",
+          "resolvedTextStyle": {
+            "fontSize": 12.51,
+            "color": "#55657B",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Atorvastatin (10 mg/kg, p.o., bid) is benchmarked against western-diet vehicle and chow controls through day 55.",
+              "fontSize": 12.51,
+              "color": "#55657B",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 8,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/alozatwv",
+      "id": "8",
+      "name": "side-tab-1",
+      "bbox": [
+        3,
+        264,
+        39,
+        533
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#EE822F",
+      "lineWidth": 0
+    },
+    {
+      "order": 9,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/bmxg3ydg",
+      "id": "9",
+      "name": "side-tab-text-1",
+      "bbox": [
+        -228,
+        515.5,
+        501,
+        30
+      ],
+      "rotation": 270,
+      "geometry": "rect",
+      "text": "55-DAY ATORVASTATIN",
+      "textPreview": "55-DAY ATORVASTATIN",
+      "resolvedFontSize": 11.51,
+      "resolvedTextStyle": {
+        "fontSize": 11.51,
+        "typeface": "+mn-lt",
+        "color": "#FFFFFF",
+        "bold": true,
+        "alignment": "center",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "55-DAY ATORVASTATIN"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "55-DAY ATORVASTATIN",
+          "resolvedTextStyle": {
+            "fontSize": 11.51,
+            "color": "#FFFFFF",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "55-DAY ATORVASTATIN",
+              "fontSize": 11.51,
+              "color": "#FFFFFF",
+              "bold": true,
+              "alignment": "center"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 10,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/nqdojm9o",
+      "id": "10",
+      "name": "figure-frame-1",
+      "bbox": [
+        57,
+        271,
+        650,
+        527
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#FFFFFF",
+      "lineColor": "#D6E0EF",
+      "lineWidth": 1
+    },
+    {
+      "order": 11,
+      "kind": "image",
+      "scope": "slide",
+      "aid": "im/5ofil43i",
+      "id": "11",
+      "bbox": [
+        61,
+        275,
+        642,
+        519
+      ],
+      "alt": "ApoE-knockout atherosclerosis study with lipid panels, longitudinal body weight and en face aorta plaque images.",
+      "contentType": "image/png",
+      "imageCrop": {
+        "left": 0.01,
+        "top": 0.07,
+        "right": 0.01,
+        "bottom": 0.01
+      },
+      "imageFit": "contain",
+      "asset": {
+        "assetId": "0c4e9ad0-1903-4d4d-8467-c6734a3d20ae",
+        "contentType": "image/png",
+        "byteLength": 1697623
+      }
+    },
+    {
+      "order": 12,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/pcv6lwru",
+      "id": "12",
+      "name": "caption-1",
+      "bbox": [
+        53,
+        803,
+        658,
+        53
+      ],
+      "geometry": "rect",
+      "text": "Fig. 1. Western-diet ApoE-KO mice developed adverse lipid profiles and extensive aortic lipid staining; atorvastatin partially normalized circulating lipids and reduced visible plaque burden. Source slide 28.",
+      "textPreview": "Fig. 1. Western-diet ApoE-KO mice developed adverse lipid profiles and extensive aortic lipid staining; atorvastatin partially normalized...",
+      "resolvedFontSize": 10.51,
+      "resolvedTextStyle": {
+        "fontSize": 10.51,
+        "typeface": "+mn-lt",
+        "color": "#24324A",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Fig. 1. Western-diet ApoE-KO mice developed adverse lipid profiles and extensive aortic lipid staining; atorvastatin partially normalized"
+          },
+          {
+            "index": 2,
+            "text": "circulating lipids and reduced visible plaque burden. Source slide 28."
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Fig. 1. Western-diet ApoE-KO mice developed adverse lipid profiles and extensive aortic lipid staining; atorvastatin partially normalized circulating lipids and reduced visible plaque burden. Source slide 28.",
+          "resolvedTextStyle": {
+            "fontSize": 10.51,
+            "color": "#24324A",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Fig. 1. Western-diet ApoE-KO mice developed adverse lipid profiles and extensive aortic lipid staining; atorvastatin partially normalized circulating lipids and reduced visible plaque burden. Source slide 28.",
+              "fontSize": 10.51,
+              "color": "#24324A",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 13,
+      "kind": "image",
+      "scope": "slide",
+      "aid": "im/j2x0julc",
+      "id": "13",
+      "bbox": [
+        0,
+        861,
+        720,
+        99
+      ],
+      "alt": "Southern Model Organisms contact footer",
+      "contentType": "image/png",
+      "imageFit": "cover",
+      "asset": {
+        "assetId": "bdad2e65-8692-4208-be85-7a2d46f47d02",
+        "contentType": "image/png",
+        "byteLength": 177694
+      }
+    }
+  ],
+  "composeRuns": []
+}

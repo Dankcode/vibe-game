@@ -138,6 +138,8 @@ export class PlayerAvatar {
         this.occlusionMesh.renderOrder = 26;
         this.group.add(this.occlusionMesh);
 
+        this.group.visibleByRange = this.isLocal;
+        this.group.visible = this.isLocal;
         this.threeManager.addToEntities(this.group);
         this.setTileOcclusionEnabled(true);
         this.loadTexture();
@@ -520,6 +522,12 @@ export class PlayerAvatar {
             centerY: this.gridY,
             centerZ: this.gridZ
         };
+    }
+
+    setLODVisible(isVisible) {
+        const visible = this.isLocal || isVisible;
+        this.group.visibleByRange = visible;
+        this.group.visible = visible;
     }
 
     applyAuthoritativeCenter(centerX, centerY, centerZ, tileX, tileY, tileZ) {
