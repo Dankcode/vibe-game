@@ -11,14 +11,22 @@ const POSITION_PRECISION = 1000;
 const MAX_CENTER_STEP = 0.7;
 const NETWORK_PALETTE_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 const NETWORK_HEIGHT_ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyz';
+const WORLD_DESCRIPTOR_SCHEMA = 'vibe-game-world-descriptor';
+const WORLD_DESCRIPTOR_SCHEMA_VERSION = 1;
 
 class WorldRoom extends Colyseus.Room {
-    onCreate(options) {
+    onCreate(options = {}) {
         // Set the room state
         this.setState(new TileMapState());
         this.playerChunks = new Map();
         this.lastMoveAt = new Map();
         this.worldSurface = new WorldSurface();
+        const initialDescriptor = this.sanitizeWorldDescriptor(options.worldDescriptor);
+        this.worldDescriptor = this.isReconstructableWorldDescriptor(initialDescriptor)
+            ? initialDescriptor
+            : null;
+        this.worldDescriptorKey = this.getWorldDescriptorKey(this.worldDescriptor);
+        this.mapReady = false;
         this.setPatchRate(PATCH_RATE_MS);
 
         // Set the maximum number of players per room
@@ -30,8 +38,16 @@ class WorldRoom extends Colyseus.Room {
         console.log(`[WorldRoom] Created room: ${this.roomId}`);
     }
 
-    onJoin(client, options) {
+    onJoin(client, options = {}) {
         console.log(`[WorldRoom] Client ${client.sessionId} joined`);
+
+        if (!this.worldDescriptor) {
+            const joiningDescriptor = this.sanitizeWorldDescriptor(options.worldDescriptor);
+            this.worldDescriptor = this.isReconstructableWorldDescriptor(joiningDescriptor)
+                ? joiningDescriptor
+                : null;
+            this.worldDescriptorKey = this.getWorldDescriptorKey(this.worldDescriptor);
+        }
 
         // Create a new player state
         const player = new PlayerState();
@@ -63,7 +79,10 @@ class WorldRoom extends Colyseus.Room {
             centerZ: player.centerZ,
             tileX: player.tileX,
             tileY: player.tileY,
-            tileZ: player.tileZ
+            tileZ: player.tileZ,
+            descriptor: this.worldDescriptor,
+            descriptorKey: this.worldDescriptorKey,
+            mapReady: this.mapReady
         });
 
         console.log(`[WorldRoom] Player ${player.userId} spawned on block [${player.tileX}, ${player.tileY}, ${player.tileZ}]`);
@@ -132,13 +151,43 @@ class WorldRoom extends Colyseus.Room {
             });
         });
 
+        this.onMessage('world:descriptor:request', (client) => {
+            client.send('world:descriptor', {
+                descriptor: this.worldDescriptor,
+                descriptorKey: this.worldDescriptorKey,
+                mapReady: this.mapReady,
+                chunkSize: CHUNK_SIZE
+            });
+        });
+
         this.onMessage('world:admin:map_updated', (client, data) => {
-            const width = Number.isInteger(data?.width) ? data.width : 0;
-            const height = Number.isInteger(data?.height) ? data.height : 0;
             const decodedRows = this.decodeNetworkMap(data) || data?.rows;
-            const accepted = this.isValidMapRows(decodedRows);
+            const rowsValid = this.isValidMapRows(decodedRows);
+            const width = rowsValid
+                ? this.getMapRowWidth(decodedRows[0])
+                : (Number.isInteger(data?.width) ? data.width : 0);
+            const height = rowsValid
+                ? decodedRows.length
+                : (Number.isInteger(data?.height) ? data.height : 0);
+            const descriptorOverrides = { width, height, chunkSize: CHUNK_SIZE };
+            const suppliedDescriptor = this.sanitizeWorldDescriptor(data?.descriptor, descriptorOverrides);
+            const collisionHash = rowsValid ? this.getNetworkMapCollisionHash(decodedRows) : '';
+            const descriptorIsReconstructable = this.isReconstructableWorldDescriptor(suppliedDescriptor);
+            const accepted = rowsValid && (
+                !suppliedDescriptor?.collisionHash ||
+                suppliedDescriptor.collisionHash === collisionHash
+            );
             if (accepted) {
                 this.worldSurface.loadRows(decodedRows);
+                const descriptor = descriptorIsReconstructable
+                    ? this.sanitizeWorldDescriptor(
+                        suppliedDescriptor,
+                        { ...descriptorOverrides, collisionHash }
+                    )
+                    : null;
+                this.worldDescriptor = descriptor;
+                this.worldDescriptorKey = this.getWorldDescriptorKey(descriptor);
+                this.mapReady = true;
                 const shouldUseHighestSpawn = ['random', 'client-default'].includes(data?.source);
                 const requestedSpawn = this.getRequestedMapSpawn(data?.spawn);
                 const fallbackSpawn = shouldUseHighestSpawn ? this.worldSurface.findHighestWalkable() : null;
@@ -163,7 +212,14 @@ class WorldRoom extends Colyseus.Room {
                 width,
                 height,
                 chunkSize: CHUNK_SIZE,
-                accepted
+                accepted,
+                descriptor: this.worldDescriptor,
+                descriptorKey: this.worldDescriptorKey,
+                generationHash: this.worldDescriptor?.generationHash || '',
+                collisionHash: this.worldDescriptor?.collisionHash || '',
+                vectorContentHash: this.worldDescriptor?.vectorContentHash || '',
+                vectorHash: this.worldDescriptor?.vectorHash || '',
+                mapReady: this.mapReady
             });
         });
 
@@ -208,6 +264,135 @@ class WorldRoom extends Colyseus.Room {
                 console.log(`[WorldRoom] Player ${player.userId} inventory updated:`, data);
             }
         });
+    }
+
+    isReconstructableWorldDescriptor(descriptor) {
+        if (!descriptor) return false;
+        return Boolean(
+            descriptor.worldId &&
+            descriptor.townId &&
+            descriptor.generationVersion &&
+            descriptor.generationHash &&
+            descriptor.collisionHash &&
+            descriptor.vectorSchema &&
+            descriptor.vectorSchemaVersion > 0 &&
+            descriptor.vectorGenerationVersion &&
+            descriptor.vectorContentHash &&
+            (descriptor.burgId === 0 || descriptor.vectorHash)
+        );
+    }
+
+    sanitizeWorldDescriptor(descriptor, overrides = {}) {
+        if (!descriptor || typeof descriptor !== 'object' || Array.isArray(descriptor)) return null;
+        if (descriptor.schema !== WORLD_DESCRIPTOR_SCHEMA ||
+            Number(descriptor.schemaVersion) !== WORLD_DESCRIPTOR_SCHEMA_VERSION) {
+            return null;
+        }
+
+        const source = { ...descriptor, ...overrides };
+        const centerX = this.clampDescriptorNumber(source.centerX);
+        const centerY = this.clampDescriptorNumber(source.centerY);
+        return Object.freeze({
+            schema: WORLD_DESCRIPTOR_SCHEMA,
+            schemaVersion: WORLD_DESCRIPTOR_SCHEMA_VERSION,
+            worldId: this.sanitizeDescriptorToken(source.worldId || 'world', 80),
+            townId: this.sanitizeDescriptorToken(source.townId || 'region', 120),
+            burgId: this.clampDescriptorInteger(source.burgId, 0, 0, 1000000),
+            centerX,
+            centerY,
+            sampleCenterX: this.clampDescriptorNumber(source.sampleCenterX, centerX),
+            sampleCenterY: this.clampDescriptorNumber(source.sampleCenterY, centerY),
+            width: this.clampDescriptorInteger(source.width, 72, 1, 128),
+            height: this.clampDescriptorInteger(source.height, 54, 1, 128),
+            chunkSize: this.clampDescriptorInteger(source.chunkSize, CHUNK_SIZE, 1, 64),
+            variant: this.clampDescriptorInteger(source.variant, 0, 0, 1000000),
+            seed: this.clampDescriptorInteger(source.seed, 0, 0, 0xffffffff),
+            generationVersion: this.sanitizeDescriptorToken(source.generationVersion, 120),
+            generationHash: this.sanitizeDescriptorToken(source.generationHash, 192),
+            skeletonHash: this.sanitizeDescriptorToken(source.skeletonHash, 80),
+            collisionHash: this.sanitizeDescriptorToken(source.collisionHash, 80),
+            vectorSchema: this.sanitizeDescriptorToken(source.vectorSchema, 120),
+            vectorSchemaVersion: this.clampDescriptorInteger(source.vectorSchemaVersion, 0, 0, 1000),
+            vectorGenerationVersion: this.sanitizeDescriptorToken(source.vectorGenerationVersion, 120),
+            vectorContentHash: this.sanitizeDescriptorToken(source.vectorContentHash, 128),
+            vectorHash: this.sanitizeDescriptorToken(source.vectorHash, 128)
+        });
+    }
+
+    getWorldDescriptorKey(descriptor) {
+        if (!descriptor) return null;
+        return JSON.stringify([
+            descriptor.worldId,
+            descriptor.townId,
+            descriptor.burgId,
+            `${descriptor.width}x${descriptor.height}`,
+            descriptor.chunkSize,
+            `${descriptor.centerX},${descriptor.centerY}`,
+            `${descriptor.sampleCenterX},${descriptor.sampleCenterY}`,
+            descriptor.variant,
+            descriptor.seed,
+            descriptor.generationVersion,
+            descriptor.generationHash,
+            descriptor.skeletonHash,
+            descriptor.collisionHash,
+            descriptor.vectorSchema,
+            descriptor.vectorSchemaVersion,
+            descriptor.vectorGenerationVersion,
+            descriptor.vectorContentHash,
+            descriptor.vectorHash
+        ]);
+    }
+
+    sanitizeDescriptorToken(value, maximumLength = 160) {
+        return String(value ?? '')
+            .trim()
+            .replace(/[^a-z0-9._:/-]/gi, '')
+            .slice(0, maximumLength);
+    }
+
+    clampDescriptorNumber(value, fallback = 0) {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) return fallback;
+        return Math.max(-1000000, Math.min(1000000, Math.round(numeric * 1000) / 1000));
+    }
+
+    clampDescriptorInteger(value, fallback, minimum, maximum) {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) return fallback;
+        return Math.max(minimum, Math.min(maximum, Math.floor(numeric)));
+    }
+
+    getNetworkMapCollisionHash(rows) {
+        if (!Array.isArray(rows) || rows.length === 0 || !Array.isArray(rows[0])) return '';
+        const width = rows[0].length;
+        if (!width || rows.some((row) => !Array.isArray(row) || row.length !== width)) return '';
+        const toInteger = (value) => {
+            const numeric = Number(value);
+            return Number.isFinite(numeric) ? Math.max(0, Math.trunc(numeric)) : 0;
+        };
+        let hash = 2166136261;
+        for (const row of rows) {
+            for (const cell of row) {
+                const values = [
+                    toInteger(cell?.element ?? cell?.e),
+                    toInteger(cell?.texture ?? cell?.textureValue ?? cell?.t),
+                    toInteger(cell?.effect ?? cell?.fx),
+                    toInteger(cell?.building ?? cell?.b),
+                    typeof cell?.walkable === 'boolean' ? cell.walkable : null,
+                    toInteger(cell?.height ?? cell?.maxZ ?? cell?.h)
+                ];
+                const value = values
+                    .map((entry) => entry === null ? 'n' : String(entry))
+                    .join(',');
+                for (let index = 0; index < value.length; index++) {
+                    hash ^= value.charCodeAt(index);
+                    hash = Math.imul(hash, 16777619);
+                }
+                hash ^= 59;
+                hash = Math.imul(hash, 16777619);
+            }
+        }
+        return (hash >>> 0).toString(16).padStart(8, '0');
     }
 
     isValidMapRows(rows) {

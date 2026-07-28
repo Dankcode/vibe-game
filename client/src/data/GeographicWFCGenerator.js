@@ -24,12 +24,20 @@ import {
     CONTEXTUAL_WFC_MODULES,
     solveContextualBuildingWFC
 } from './ContextualBuildingWFC.js';
-import { createBakedBuildingPlan, createFixedBakedBuilding } from './BakedBuildingLibrary.js';
+import {
+    createBakedBuildingPlan,
+    createFixedBakedBuilding,
+    validateBakedBuilding
+} from './BakedBuildingLibrary.js';
 import { BAKED_PARTIAL_CHUNKS } from './BakedChunkData.js';
 import {
     getPartialChunkCell,
     validatePartialChunkRegistry
 } from './PartialChunkRegistry.js';
+import {
+    getActiveTownVectorHash,
+    getActiveTownVectorSummary
+} from './TownVectorData.js';
 
 // Compact view window (was 80x60): ~19% fewer generated columns per view, directly cutting the
 // tile/mesh count that made LOD heavy. The smaller window pairs with steeper elevation macro
@@ -219,7 +227,8 @@ export function createGeographicWorldPlan({
     const regionName = getRegionName(nearestBurg, dominantBiome, sampleCenterX, sampleCenterY);
     const stateColor = index.stateById.get(dominantBiome.state)?.color || '#65d58d';
     const cultureColor = index.cultureById.get(dominantBiome.culture)?.color || '#7d76e8';
-    const contentHash = `${ACTIVE_WORLD.contentHash}:${viewSeed.toString(16).padStart(8, '0')}`;
+    const activeTownVectorHash = getActiveTownVectorHash();
+    const contentHash = `${ACTIVE_WORLD.contentHash}:${activeTownVectorHash}:${viewSeed.toString(16).padStart(8, '0')}`;
     const sourceAnchor = nearestBurg && nearestBurg.distance <= Math.max(safeWidth, safeHeight) * WORLD_SAMPLE_SCALE * 0.58
         ? nearestBurg.burg
         : null;
@@ -246,6 +255,8 @@ export function createGeographicWorldPlan({
         variant: safeVariant,
         generationVersion: ACTIVE_WORLD.generationVersion,
         contentHash,
+        townVectorSchemaVersion: getActiveTownVectorSummary().schemaVersion,
+        townVectorHash: activeTownVectorHash,
         sourceTown: {
             id: sourceAnchor ? `burg-${sourceAnchor.id}` : `region-${Math.round(centerX)}-${Math.round(centerY)}`,
             name: regionName,
@@ -278,6 +289,8 @@ export function createGeographicWorldPlan({
             variantSeed: seed,
             generationVersion: ACTIVE_WORLD.generationVersion,
             contentHash,
+            townVectorSchemaVersion: getActiveTownVectorSummary().schemaVersion,
+            townVectorHash: activeTownVectorHash,
             centerX,
             centerY,
             sampleCenterX,
@@ -291,8 +304,9 @@ export function createGeographicWorldPlan({
         },
         generation: {
             mode: 'blueprint-first-geographic-wfc',
-            macroReference: 'offline FMG settlement blueprints + global cell graph',
+            macroReference: 'offline FMG settlement blueprints + compact burg vectors + global cell graph',
             townPayloadsRead: false,
+            townVectors: getActiveTownVectorSummary(),
             terrainWfc: collapse.diagnostics,
             partialBake: collapse.diagnostics.partialBake,
             buildingWfc: settlement.diagnostics,
@@ -1141,12 +1155,16 @@ function synthesizeSettlements({
         sites: 0,
         assignedBuildings: 0,
         bakedBuildings: 0,
+        vectorBuildings: 0,
+        rejectedVectorBuildings: 0,
+        vectorRejectionReasons: {},
         fixedBakedAssignments: 0,
         compactAdjacencyFallbacks: 0,
         forcedBuildingAnchors: 0,
         walledAreas: 0,
         wallCells: 0,
         wallRings: 0,
+        vectorWallSystems: 0,
         keeps: 0,
         wardWaves: 0,
         urbanAreaCells: 0,
@@ -1237,7 +1255,7 @@ function synthesizeSettlements({
             }
         };
         if (sites.length) {
-            const generatedMinimum = parcelSites.length
+            const generatedMinimum = parcelSites.length && bakedPlan.diagnostics.vectorBuildings === 0
                 ? Math.min(parcelSites.length, Math.max(1, Math.ceil(parcelSites.length * (settlement.walled ? 0.72 : 0.48))))
                 : 0;
             const minimumBuildings = bakedWave.sites.length + generatedMinimum;
@@ -1301,6 +1319,8 @@ function synthesizeSettlements({
             sites: sites.length,
             generatedBuildings: generatedBuildings.length,
             bakedBuildings: bakedBuildings.length,
+            vectorBuildings: bakedPlan.diagnostics.vectorBuildings,
+            rejectedVectorBuildings: bakedPlan.diagnostics.rejectedVectorBuildings,
             fixedBakedAssignments: bakedWave.fixed.size,
             compactAdjacencyFallbacks: bakedPlan.diagnostics.compactAdjacencyFallbacks,
             forcedBuildingAnchors: contextual.diagnostics.forcedBuildingAnchors || 0,
@@ -1315,13 +1335,20 @@ function synthesizeSettlements({
         aggregate.sites += sites.length;
         aggregate.assignedBuildings += generatedBuildings.length + bakedBuildings.length;
         aggregate.bakedBuildings += bakedBuildings.length;
+        aggregate.vectorBuildings += bakedPlan.diagnostics.vectorBuildings;
+        aggregate.rejectedVectorBuildings += bakedPlan.diagnostics.rejectedVectorBuildings;
+        for (const [reason, count] of Object.entries(bakedPlan.diagnostics.vectorRejectionReasons || {})) {
+            aggregate.vectorRejectionReasons[reason] = (aggregate.vectorRejectionReasons[reason] || 0) + count;
+        }
         aggregate.fixedBakedAssignments += bakedWave.fixed.size;
         aggregate.compactAdjacencyFallbacks += bakedPlan.diagnostics.compactAdjacencyFallbacks;
         aggregate.forcedBuildingAnchors += contextual.diagnostics.forcedBuildingAnchors || 0;
         aggregate.walledAreas += settlement.walled ? 1 : 0;
         aggregate.wallCells += envelope.wallCells;
-        aggregate.wallRings += settlement.wallRings.length;
-        aggregate.keeps += bakedBuildings.filter((building) => building.blueprintId === 'castle-keep').length;
+        aggregate.wallRings += settlement.townVector?.wallCells?.length ? 0 : settlement.wallRings.length;
+        aggregate.vectorWallSystems += settlement.townVector?.wallCells?.length ? 1 : 0;
+        aggregate.keeps += bakedBuildings.filter((building) =>
+            building.blueprintId === 'castle-keep' || building.vectorCastle).length;
         aggregate.wardWaves += new Set(sites.map((site) => site.areaId)).size;
         aggregate.urbanAreaCells += envelope.urbanCells;
         aggregate.buildingFootprintCells += footprintCells;
@@ -1334,6 +1361,7 @@ function synthesizeSettlements({
         settlements,
         diagnostics: Object.freeze({
             ...aggregate,
+            vectorRejectionReasons: Object.freeze({ ...aggregate.vectorRejectionReasons }),
             insideSiteBuildingRatio: aggregate.sites
                 ? aggregate.assignedBuildings / aggregate.sites
                 : 0,
@@ -1366,6 +1394,7 @@ function stampSettlementEnvelope({ mutable, paletteRows, elevationRows, settleme
     let urbanCells = 0;
     for (let row = bounds.minRow + 1; row < bounds.maxRow; row++) {
         for (let col = bounds.minCol + 1; col < bounds.maxCol; col++) {
+            if (bounds.insideCellKeys instanceof Set && !isInsideWallBounds(col, row, bounds)) continue;
             const constraint = constraintField?.cells?.[row * width + col];
             if ((!constraint?.hardWater || constraint?.blueprintFixed) && !isWaterSymbol(mutable[row]?.[col])) {
                 elevations.push(Number(elevationRows[row]?.[col]) || 0);
@@ -1376,6 +1405,7 @@ function stampSettlementEnvelope({ mutable, paletteRows, elevationRows, settleme
     const plateau = elevations[Math.floor(elevations.length / 2)] || 0;
     for (let row = bounds.minRow + 1; row < bounds.maxRow; row++) {
         for (let col = bounds.minCol + 1; col < bounds.maxCol; col++) {
+            if (bounds.insideCellKeys instanceof Set && !isInsideWallBounds(col, row, bounds)) continue;
             const constraint = constraintField?.cells?.[row * width + col];
             // The numeric FMG envelope remains authoritative even inside a settlement. Only
             // non-hard marsh/shore noise may be stabilized into urban ground.
@@ -1448,6 +1478,7 @@ function stampSettlementEnvelope({ mutable, paletteRows, elevationRows, settleme
     let developableUrbanCells = 0;
     for (let row = bounds.minRow + 1; row < bounds.maxRow; row++) {
         for (let col = bounds.minCol + 1; col < bounds.maxCol; col++) {
+            if (bounds.insideCellKeys instanceof Set && !isInsideWallBounds(col, row, bounds)) continue;
             if (!isBuildableSymbol(mutable[row]?.[col])) continue;
             if (nearestSymbolDistance(mutable, col, row, new Set(['R', ';']), 2) <= 2) developableUrbanCells++;
         }
@@ -1466,6 +1497,7 @@ function createSettlementDistrictRows({ mutable, settlement, width, height }) {
     const bounds = settlement.wallBounds;
     for (let row = bounds.minRow + 1; row < bounds.maxRow; row++) {
         for (let col = bounds.minCol + 1; col < bounds.maxCol; col++) {
+            if (bounds.insideCellKeys instanceof Set && !isInsideWallBounds(col, row, bounds)) continue;
             if (isWaterSymbol(mutable[row]?.[col]) || mutable[row]?.[col] === 'T') continue;
             const ward = getSettlementWardAt(settlement, col, row);
             const compiledDistrict = ward?.district || 'residential';
@@ -1512,39 +1544,62 @@ function createWardBakedBuildingPlan({
     const inheritedOccupiedCells = new Set(occupied instanceof Set ? occupied : []);
     let occupiedCells = new Set(inheritedOccupiedCells);
     let compactAdjacencyFallbacks = 0;
+    const vectorPlan = createTownVectorBuildingPlan({
+        mutable,
+        elevationRows,
+        settlement,
+        occupied: occupiedCells,
+        width,
+        height,
+        fixedSeed
+    });
+    buildings.push(...vectorPlan.buildings);
+    occupiedCells = vectorPlan.occupied;
+    const vectorCastle = buildings.some((building) => building.vectorGenerated && building.district === 'castle');
 
-    if (settlement.castle) {
+    if (settlement.castle && !vectorCastle) {
         const keepCandidates = [];
-        for (const rotation of getFixedKeepRotations(settlement)) {
-            try {
-                keepCandidates.push(createFixedBakedBuilding({
-                    blueprintId: 'castle-keep',
-                    centerCol: settlement.col,
-                    centerRow: settlement.row,
-                    rotation,
-                    width,
-                    height,
-                    elevationRows,
-                    seed: `${fixedSeed}:castle`,
-                    townId: settlement.burg.name,
-                    district: 'castle'
-                }));
-            } catch {
-                // A rotated door approach can be clipped while another orientation still fits.
-                // Keep valid candidates instead of discarding the entire reserved castle plot.
+        for (const center of getFixedKeepCenters(settlement, width, height)) {
+            for (const rotation of getFixedKeepRotations(settlement)) {
+                try {
+                    keepCandidates.push(createFixedBakedBuilding({
+                        blueprintId: 'castle-keep',
+                        centerCol: center.col,
+                        centerRow: center.row,
+                        rotation,
+                        width,
+                        height,
+                        elevationRows,
+                        seed: `${fixedSeed}:castle:${center.col}:${center.row}`,
+                        townId: settlement.burg.name,
+                        district: 'castle'
+                    }));
+                } catch {
+                    // A clipped or steep candidate may fail while another burg-constrained
+                    // center/orientation still fits.
+                }
             }
         }
         if (keepCandidates.length) {
-            const keep = keepCandidates.find((candidate) => fixedBuildingHasOpenApproach(candidate, mutable)) || keepCandidates[0];
-            buildings.push(keep);
-            reserveBuilding(occupiedCells, keep, Math.floor(width / 2), Math.floor(height / 2), 1);
+            const keep = keepCandidates.find((candidate) =>
+                fixedBuildingHasOpenApproach(candidate, mutable) &&
+                fixedBuildingAvoidsOccupiedCells(candidate, occupiedCells, width, height));
+            if (keep) {
+                buildings.push(keep);
+                reserveBuilding(occupiedCells, keep, Math.floor(width / 2), Math.floor(height / 2), 1);
+            }
         } else {
             // A clipped edge view may contain only part of a parser-reserved castle plot. The
             // fixed skeleton remains present; the full keep appears when the seat is centered.
         }
     }
 
-    const desiredWardLandmarks = settlement.walled ? 2 : 1;
+    // FMG-authored building polygons are the primary town silhouette. A single formula landmark
+    // can still accent the district mix, while towns with no vector coverage retain the original
+    // two-landmark fallback.
+    const desiredWardLandmarks = vectorPlan.buildings.length
+        ? 1
+        : settlement.walled ? 2 : 1;
     const wardOrder = [...(settlement.wards || [])]
         .filter((ward) => ward.district !== 'castle')
         .sort((left, right) => wardLandmarkPriority(right.district) - wardLandmarkPriority(left.district) ||
@@ -1674,10 +1729,16 @@ function createWardBakedBuildingPlan({
         buildings,
         occupied: occupiedCells,
         diagnostics: Object.freeze({
-            requested: { min: (settlement.castle ? 1 : 0) + desiredWardLandmarks, max: (settlement.castle ? 1 : 0) + desiredWardLandmarks },
+            requested: {
+                min: vectorPlan.buildings.length + (settlement.castle && !vectorCastle ? 1 : 0) + desiredWardLandmarks,
+                max: vectorPlan.buildings.length + (settlement.castle && !vectorCastle ? 1 : 0) + desiredWardLandmarks
+            },
             placed: buildings.length,
             complete: buildings.length >= minimumBakedBuildings,
-            fixedKeep: buildings.some((building) => building.blueprintId === 'castle-keep'),
+            fixedKeep: buildings.some((building) => building.blueprintId === 'castle-keep' || building.vectorCastle),
+            vectorBuildings: vectorPlan.buildings.length,
+            rejectedVectorBuildings: vectorPlan.rejected,
+            vectorRejectionReasons: Object.freeze({ ...(vectorPlan.rejectionReasons || {}) }),
             wardLandmarks: placedWardLandmarks,
             compactAdjacencyFallbacks,
             blueprintIds: buildings.map((building) => building.blueprintId),
@@ -1688,6 +1749,268 @@ function createWardBakedBuildingPlan({
     };
 }
 
+function createTownVectorBuildingPlan({
+    mutable,
+    elevationRows,
+    settlement,
+    occupied,
+    width,
+    height,
+    fixedSeed
+}) {
+    const projected = settlement.townVector;
+    if (!projected?.buildings?.length) {
+        return { buildings: [], occupied: new Set(occupied || []), rejected: 0 };
+    }
+    const offsetX = Math.floor(width / 2);
+    const offsetY = Math.floor(height / 2);
+    const occupiedCells = new Set(occupied || []);
+    const buildings = [];
+    let rejected = 0;
+    const rejectionReasons = {};
+    const reject = (reason) => {
+        rejected++;
+        rejectionReasons[reason] = (rejectionReasons[reason] || 0) + 1;
+    };
+    const sources = [...projected.buildings].sort((left, right) => {
+        const leftCastle = left.type === 'MANOR' && settlement.castle ? 1 : 0;
+        const rightCastle = right.type === 'MANOR' && settlement.castle ? 1 : 0;
+        return rightCastle - leftCastle ||
+            right.width * right.height - left.width * left.height ||
+            left.id.localeCompare(right.id);
+    });
+
+    for (const source of sources) {
+        const rect = {
+            col: source.minCol,
+            row: source.minRow,
+            width: source.width,
+            height: source.height
+        };
+        const footprintCells = source.footprintCells.map((cell) => ({ x: cell.x, y: cell.y }));
+        const worldCells = footprintCells.map((cell) => ({
+            col: rect.col + cell.x,
+            row: rect.row + cell.y
+        }));
+        if (worldCells.some((cell) => (
+            cell.col < 0 || cell.row < 0 || cell.col >= width || cell.row >= height ||
+            occupiedCells.has(`${cell.col},${cell.row}`) ||
+            mutable[cell.row]?.[cell.col] === 'T' ||
+            isWaterSymbol(mutable[cell.row]?.[cell.col]) ||
+            !isLandSymbol(mutable[cell.row]?.[cell.col])
+        ))) {
+            reject('footprint-blocked');
+            continue;
+        }
+        const elevations = worldCells.map((cell) => Number(elevationRows[cell.row]?.[cell.col]) || 0);
+        const elevationSpan = Math.max(...elevations) - Math.min(...elevations);
+        if (elevationSpan > 2) {
+            reject('elevation-span');
+            continue;
+        }
+        const entrance = chooseTownVectorEntrance(source, rect, mutable, occupiedCells);
+        if (!entrance) {
+            reject('entrance-blocked');
+            continue;
+        }
+        const type = getTownVectorBuildingType(
+            source.type,
+            settlement,
+            Boolean(settlement.castle && !buildings.some((building) => building.vectorCastle))
+        );
+        const hash = hashWaveSeed(`${fixedSeed}:burg-vector:${source.id}`);
+        const interiorWidth = rect.width - 2;
+        const interiorHeight = rect.height - 2;
+        let stories = clampInteger(source.floors, 1, 2);
+        let stairs = stories > 1
+            ? createTownVectorStairs(source, entrance.door, interiorWidth, interiorHeight)
+            : [];
+        const style = getTownVectorWallStyle(source.wallTexture);
+        const districtStyle = getBlueprintDistrictStyle(type.district);
+        const makeBuilding = () => {
+            const stairKeys = new Set(stairs.map((cell) => `${cell.x},${cell.y}`));
+            const openCells = [];
+            for (let y = 1; y < rect.height - 1; y++) {
+                for (let x = 1; x < rect.width - 1; x++) {
+                    if (!stairKeys.has(`${x},${y}`)) openCells.push({ x, y });
+                }
+            }
+            return {
+                id: `vector-${settlement.burg.id}-${source.id}`,
+                obstructionTag: `building:burg-vector:${settlement.burg.id}:${source.id}`,
+                name: `${settlement.burg.name} ${type.name}`,
+                x: rect.col - offsetX,
+                y: rect.row - offsetY,
+                width: rect.width,
+                height: rect.height,
+                footprintCells,
+                stories,
+                style,
+                doorStyle: ['painted', 'oak', 'iron'][hash % 3],
+                door: { ...entrance.door },
+                stairs: stairs.map((stair) => ({ ...stair })),
+                stairCells: [],
+                baseElevation: maxCountKey(
+                    elevations.reduce((counts, value) => counts.set(value, (counts.get(value) || 0) + 1), new Map()),
+                    0
+                ),
+                proceduralGenerated: true,
+                vectorGenerated: true,
+                enterable: true,
+                preserveEntrance: true,
+                sourceType: 'burg-vector',
+                sourceBuildingId: source.id,
+                townVectorHash: projected.vectorHash,
+                vectorCastle: type.district === 'castle',
+                blueprintId: type.district === 'castle' ? 'burg-vector-castle' : `burg-vector-${String(source.type).toLowerCase()}`,
+                facadeVariant: hash % 17,
+                district: type.district,
+                districtPalette: {
+                    accent: mixColorNumbers(parseHexColor(source.roofColor), settlement.accent, 0.2),
+                    roofs: [...districtStyle.roofs]
+                },
+                activity: districtStyle.activity,
+                archetype: type.archetype,
+                architectureStyle: type.architectureStyle,
+                roofStyle: getTownVectorRoofStyle(source.roofStyle, type),
+                vectorStyle: {
+                    wallTexture: source.wallTexture,
+                    wallColor: source.color,
+                    roofColor: source.roofColor,
+                    sourcePolygon: source.sourcePolygon
+                },
+                entrance: {
+                    grid: [entrance.door.x, entrance.door.y],
+                    edge: entrance.door.edge,
+                    approach: [entrance.approach.col - offsetX, entrance.approach.row - offsetY],
+                    approachGrid: [entrance.approach.col, entrance.approach.row],
+                    approachReserved: true
+                },
+                interior: {
+                    minimumOpenSpan: [Math.min(interiorWidth, interiorHeight), Math.max(interiorWidth, interiorHeight)],
+                    openCells,
+                    floorHeightVoxels: 2
+                },
+                floors: Array.from({ length: stories }, (_, level) => ({
+                    level,
+                    rooms: [{
+                        type: type.roomType,
+                        gridRect: { x: 1, y: 1, width: interiorWidth, height: interiorHeight },
+                        doors: level === 0 ? [{ grid: [entrance.door.x, entrance.door.y] }] : []
+                    }]
+                })),
+                placementConstraints: {
+                    source: 'fmg-burg-vector',
+                    elevationSpan,
+                    wallConfinement: projected.insideCellKeys.has(
+                        `${rect.col + Math.floor(rect.width / 2)},${rect.row + Math.floor(rect.height / 2)}`
+                    )
+                }
+            };
+        };
+        let building = makeBuilding();
+        // A compact 2x3 cabin cannot surrender an interior cell to stairs. Preserve the authored
+        // footprint and entrance, but render it as a single-storey cabin instead.
+        if (!validateBakedBuilding(building).valid && stories > 1) {
+            stories = 1;
+            stairs = [];
+            building = makeBuilding();
+        }
+        if (!validateBakedBuilding(building).valid) {
+            reject('interior-invalid');
+            continue;
+        }
+        buildings.push(building);
+        for (const cell of worldCells) occupiedCells.add(`${cell.col},${cell.row}`);
+        occupiedCells.add(`${entrance.approach.col},${entrance.approach.row}`);
+    }
+
+    return { buildings, occupied: occupiedCells, rejected, rejectionReasons };
+}
+
+function chooseTownVectorEntrance(source, rect, mutable, occupied) {
+    const sourceDoor = {
+        x: clampInteger(source.door?.x, 0, rect.width - 1),
+        y: clampInteger(source.door?.y, 0, rect.height - 1),
+        edge: source.door?.edge || 'south'
+    };
+    const candidates = [
+        sourceDoor,
+        { x: Math.floor(rect.width / 2), y: 0, edge: 'north' },
+        { x: rect.width - 1, y: Math.floor(rect.height / 2), edge: 'east' },
+        { x: Math.floor(rect.width / 2), y: rect.height - 1, edge: 'south' },
+        { x: 0, y: Math.floor(rect.height / 2), edge: 'west' }
+    ];
+    const unique = new Set();
+    for (const door of candidates) {
+        const key = `${door.x},${door.y},${door.edge}`;
+        if (unique.has(key)) continue;
+        unique.add(key);
+        const approach = getVectorDoorApproach(rect, door);
+        const symbol = mutable[approach.row]?.[approach.col];
+        if (!symbol || symbol === 'T' || isWaterSymbol(symbol)) continue;
+        if (!isLandSymbol(symbol) || occupied.has(`${approach.col},${approach.row}`)) continue;
+        return { door, approach };
+    }
+    return null;
+}
+
+function getVectorDoorApproach(rect, door) {
+    if (door.edge === 'north') return { col: rect.col + door.x, row: rect.row - 1 };
+    if (door.edge === 'east') return { col: rect.col + rect.width, row: rect.row + door.y };
+    if (door.edge === 'west') return { col: rect.col - 1, row: rect.row + door.y };
+    return { col: rect.col + door.x, row: rect.row + rect.height };
+}
+
+function createTownVectorStairs(source, door, interiorWidth, interiorHeight) {
+    if (interiorWidth < 2 || interiorHeight < 2) return [];
+    const candidates = [
+        { x: 1, y: 1 },
+        { x: interiorWidth, y: 1 },
+        { x: interiorWidth, y: interiorHeight },
+        { x: 1, y: interiorHeight }
+    ].sort((left, right) => (
+        Math.hypot(right.x - door.x, right.y - door.y) -
+        Math.hypot(left.x - door.x, left.y - door.y)
+    ));
+    const authored = source.stairs?.[0];
+    const preferred = authored && authored.x >= 1 && authored.y >= 1 &&
+        authored.x <= interiorWidth && authored.y <= interiorHeight
+        ? { x: authored.x, y: authored.y }
+        : candidates[0];
+    return [{
+        ...preferred,
+        direction: ({ north: 'south', east: 'west', south: 'north', west: 'east' })[door.edge] || 'north',
+        level: 0
+    }];
+}
+
+function getTownVectorBuildingType(type, settlement, useAsCastle = false) {
+    if (useAsCastle) {
+        return { name: 'Burg Keep', district: 'castle', archetype: 'manor', architectureStyle: 'keep', roomType: 'hall' };
+    }
+    if (type === 'MANOR') {
+        return { name: 'Manor', district: 'civic', archetype: 'manor', architectureStyle: 'courtyard', roomType: 'hall' };
+    }
+    return ({
+        CHURCH: { name: 'Sanctuary', district: 'civic', archetype: 'hall', architectureStyle: 'gabled', roomType: 'hall' },
+        TAVERN: { name: 'Tavern', district: 'market', archetype: 'bayfront', architectureStyle: 'market', roomType: 'hall' },
+        BLACKSMITH: { name: 'Forge', district: 'artisan', archetype: 'workshop', architectureStyle: 'workshop', roomType: 'workshop' },
+        FARM_HOUSE: { name: 'Farmstead', district: 'garden', archetype: 'cottage', architectureStyle: 'cottage', roomType: 'residence' },
+        HOUSE_LARGE: { name: 'Townhouse', district: 'residential', archetype: 'townhouse', architectureStyle: 'townhouse', roomType: 'residence' }
+    })[type] || { name: 'House', district: 'residential', archetype: 'cottage', architectureStyle: 'cottage', roomType: 'residence' };
+}
+
+function getTownVectorWallStyle(texture) {
+    if (texture === 'STONE' || texture === 'STUCCO') return 'stone';
+    return 'timber';
+}
+
+function getTownVectorRoofStyle(roofStyle, type) {
+    if (type.district === 'castle') return roofStyle === 'THATCHED' ? 'gabled' : 'slate';
+    return ({ SLATE: 'slate', THATCHED: 'thatch', TILED: 'clay' })[roofStyle] || 'gabled';
+}
+
 function getFixedKeepRotations(settlement) {
     const edgeRotation = { north: 0, east: 1, south: 2, west: 3 };
     const innermostRing = [...(settlement.wallRings || [])]
@@ -1696,6 +2019,12 @@ function getFixedKeepRotations(settlement) {
         .map((gate) => edgeRotation[gate.edge])
         .filter(Number.isFinite);
     return [...new Set([...aligned, 0, 1, 2, 3])];
+}
+
+function getFixedKeepCenters(settlement, width, height) {
+    if (settlement.col < 5 || settlement.row < 5 ||
+        settlement.col >= width - 5 || settlement.row >= height - 5) return [];
+    return [{ col: settlement.col, row: settlement.row }];
 }
 
 function fixedBuildingHasOpenApproach(building, mutable) {
@@ -1710,15 +2039,29 @@ function fixedBuildingHasOpenApproach(building, mutable) {
     });
 }
 
-function createWardWaveAreas({ settlement, sites, totalMinimum }) {
+function fixedBuildingAvoidsOccupiedCells(building, occupied, width, height) {
+    const offsetX = Math.floor(width / 2);
+    const offsetY = Math.floor(height / 2);
+    const footprintBlocked = (building.footprintCells || []).some((cell) =>
+        occupied.has(`${building.x + cell.x + offsetX},${building.y + cell.y + offsetY}`));
+    if (footprintBlocked) return false;
+    const [approachCol, approachRow] = building.entrance?.approachGrid || [];
+    return Number.isFinite(approachCol) && Number.isFinite(approachRow) &&
+        !occupied.has(`${approachCol},${approachRow}`);
+}
+
+function createWardWaveAreas({ settlement, sites, bakedSiteIds = new Set(), totalMinimum }) {
     const groups = new Map();
     for (const site of sites) {
         const areaId = site.areaId || `settlement-${settlement.burg.id}-ward-open`;
         if (!groups.has(areaId)) groups.set(areaId, []);
         groups.get(areaId).push(site);
     }
-    const totalSites = sites.length || 1;
-    let remainingMinimum = Math.min(totalMinimum, sites.length);
+    const fixedSiteIds = bakedSiteIds instanceof Set ? bakedSiteIds : new Set(bakedSiteIds || []);
+    const fixedTotal = sites.filter((site) => fixedSiteIds.has(site.id)).length;
+    const generatedMinimum = Math.max(0, Math.min(totalMinimum, sites.length) - fixedTotal);
+    const totalOpenSites = Math.max(1, sites.length - fixedTotal);
+    let remainingGeneratedMinimum = generatedMinimum;
     const areas = [...groups]
         .sort(([left], [right]) => String(left).localeCompare(String(right)))
         .map(([id, areaSites], index, all) => {
@@ -1726,11 +2069,17 @@ function createWardWaveAreas({ settlement, sites, totalMinimum }) {
                 getSettlementWardAt(settlement,
                     Math.round(areaSites[0].x + Math.floor(settlement.wallBounds.width / 2)),
                     Math.round(areaSites[0].y + Math.floor(settlement.wallBounds.height / 2)));
-            const proportional = index === all.length - 1
-                ? remainingMinimum
-                : Math.min(areaSites.length, Math.floor(totalMinimum * areaSites.length / totalSites));
-            const minimumBuildings = Math.min(areaSites.length, proportional);
-            remainingMinimum -= minimumBuildings;
+            const fixedInArea = areaSites.filter((site) => fixedSiteIds.has(site.id)).length;
+            const openSitesInArea = areaSites.length - fixedInArea;
+            const proportionalGenerated = index === all.length - 1
+                ? remainingGeneratedMinimum
+                : Math.min(
+                    openSitesInArea,
+                    Math.floor(generatedMinimum * openSitesInArea / totalOpenSites)
+                );
+            const generatedInArea = Math.min(openSitesInArea, proportionalGenerated);
+            const minimumBuildings = fixedInArea + generatedInArea;
+            remainingGeneratedMinimum -= generatedInArea;
             return {
                 id,
                 siteIds: areaSites.map((site) => site.id),
@@ -1975,6 +2324,7 @@ function createContextualParcelSites({
             }
             for (const rect of rectOptions) {
                 if (rect.col + rect.width >= bounds.maxCol || rect.row + rect.height >= bounds.maxRow) continue;
+                if (bounds.insideCellKeys instanceof Set && !isRectInsideWallMask(rect, bounds)) continue;
                 if (!canPlaceContextualParcel(rect, mutable, elevationRows, occupied)) continue;
                 const allowedDoorEdges = getLegalParcelDoorEdges({
                     rect,
@@ -2009,9 +2359,17 @@ function createContextualParcelSites({
 
     const sites = [];
     const reserved = new Set(occupied instanceof Set ? occupied : []);
-    const target = settlement.walled
+    const baseTarget = settlement.walled
         ? clampInteger(14 + Math.sqrt(Math.max(1, settlement.burg.population)) * 0.86, 16, 30)
         : clampInteger(5 + Math.sqrt(Math.max(1, settlement.burg.population)) * 0.48, 6, 14);
+    // Source footprints are usually larger than formula cabins, so each displaces about one and
+    // a half infill parcels. This keeps a compact burg with many authored buildings from becoming
+    // visually overloaded while still leaving enough WFC sites to vary streets between sessions.
+    const sourceBuildingCount = settlement.townVector?.buildings?.length || 0;
+    const target = Math.max(
+        settlement.walled ? 8 : 4,
+        baseTarget - Math.ceil(sourceBuildingCount * 1.5)
+    );
     for (const candidate of candidates) {
         if (sites.length >= target) break;
         if (!canPlaceContextualParcel(candidate.rect, mutable, elevationRows, reserved)) continue;
@@ -2064,6 +2422,15 @@ function createContextualParcelSites({
         reserved.add(`${exteriorApproach.col},${exteriorApproach.row}`);
     }
     return sites;
+}
+
+function isRectInsideWallMask(rect, bounds) {
+    for (let row = rect.row; row < rect.row + rect.height; row++) {
+        for (let col = rect.col; col < rect.col + rect.width; col++) {
+            if (!isInsideWallBounds(col, row, bounds)) return false;
+        }
+    }
+    return true;
 }
 
 function canPlaceContextualParcel(rect, mutable, elevationRows, occupied) {

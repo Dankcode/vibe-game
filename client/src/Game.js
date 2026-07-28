@@ -13,7 +13,16 @@ import {
     MAP_CHUNK_SIZE,
     MAP_LEGEND
 } from './data/MapData.js';
-import { encodeNetworkMap } from './data/NetworkMapCodec.js';
+import {
+    createNetworkWorldDescriptor,
+    encodeNetworkMap,
+    getNetworkWorldDescriptorKey,
+    normalizeNetworkWorldDescriptor
+} from './data/NetworkMapCodec.js';
+import {
+    getActiveTownVector,
+    getActiveTownVectorSummary
+} from './data/TownVectorData.js';
 import * as Colyseus from 'colyseus.js';
 
 export class Game {
@@ -61,6 +70,8 @@ export class Game {
         this.lastHudUpdateAt = 0;
         this.lastPlayerTileKey = '';
         this.serverMapAccepted = false;
+        this.serverWorldDescriptor = null;
+        this.pendingSyncedMapKey = null;
         
         this.connectToServer();
 
@@ -127,19 +138,22 @@ export class Game {
             console.log('[Game] Connecting to server...');
             const host = window.location.hostname;
             this.client = new Colyseus.Client(`ws://${host}:2567`);
+            const worldDescriptor = this.getCurrentWorldDescriptor();
             
             this.room = await this.client.joinOrCreate('world', {
                 userId: this.userId,
                 x: this.player.gridX,
                 y: this.player.gridY,
-                z: this.player.gridZ
+                z: this.player.gridZ,
+                worldDescriptor
             });
             this.lastSyncedMapKey = null;
+            this.pendingSyncedMapKey = null;
             console.log('[Game] Connected to room:', this.room.id);
             this.updateHud('Online');
 
             this.setupNetworking();
-            this.syncCurrentMapToServer('client-default');
+            this.requestServerWorldDescriptor();
             this.repositionPlayerForCurrentWorld();
             this.combatScene = new CombatScene({
                 client: this.client,
@@ -171,6 +185,7 @@ export class Game {
 
         this.room.onMessage('world:chunk:init', (data) => {
             this.serverChunkInfo = data;
+            this.handleServerWorldDescriptor(data, 'late-join');
             this.updateHud('Online');
         });
 
@@ -179,15 +194,27 @@ export class Game {
             this.updateHud('Online');
         });
 
+        this.room.onMessage('world:descriptor', (data) => {
+            this.handleServerWorldDescriptor(data, 'descriptor');
+        });
+
         this.room.onMessage('world:map:updated', (data) => {
             if (data?.accepted === false) {
                 this.serverMapAccepted = false;
-                this.adminPanel.setMessage('The server rejected the world collision matrix.', 'error');
+                if (data?.updatedBy === this.room.sessionId) this.pendingSyncedMapKey = null;
+                this.adminPanel?.setMessage('The server rejected the world collision matrix.', 'error');
                 return;
             }
-            this.serverMapAccepted = true;
-            this.repositionPlayerForCurrentWorld();
-            this.adminPanel.setMessage(`World ${data.source} map active: ${data.width} x ${data.height}.`, 'success');
+            this.pendingSyncedMapKey = null;
+            const applied = this.handleServerWorldDescriptor(data, 'map-update');
+            this.serverMapAccepted = applied;
+            if (applied) {
+                this.repositionPlayerForCurrentWorld();
+                this.adminPanel?.setMessage(
+                    `World ${data.source} map active: ${data.width} x ${data.height}.`,
+                    'success'
+                );
+            }
         });
 
         // Update loop for network sync
@@ -253,7 +280,7 @@ export class Game {
         });
     }
 
-    applyWorldMap(rows, source) {
+    applyWorldMap(rows, source, options = {}) {
         if (this.hoveredTile) {
             this.hoveredTile.clearHighlight();
             this.hoveredTile = null;
@@ -277,7 +304,7 @@ export class Game {
         );
         this.applyPlayerLOD();
 
-        this.scheduleCurrentMapToServer(source);
+        if (options.syncToServer !== false) this.scheduleCurrentMapToServer(source);
 
         this.updateHud();
         this.updateBurgMapPanel();
@@ -360,24 +387,176 @@ export class Game {
         );
     }
 
+    requestServerWorldDescriptor() {
+        if (!this.room?.connection?.isOpen) return;
+        try {
+            this.room.send('world:descriptor:request');
+            clearTimeout(this.worldDescriptorFallbackTimer);
+            this.worldDescriptorFallbackTimer = setTimeout(() => {
+                this.worldDescriptorFallbackTimer = null;
+                if (!this.serverWorldDescriptor && !this.serverMapAccepted) {
+                    this.syncCurrentMapToServer('client-default');
+                }
+            }, 800);
+        } catch (error) {
+            console.warn('[Game] Could not request the active world descriptor.', error);
+            this.syncCurrentMapToServer('client-default');
+        }
+    }
+
+    handleServerWorldDescriptor(data, reason = 'server') {
+        clearTimeout(this.worldDescriptorFallbackTimer);
+        this.worldDescriptorFallbackTimer = null;
+        const descriptor = normalizeNetworkWorldDescriptor(data?.descriptor);
+        const mapReady = data?.mapReady === true || (reason === 'map-update' && data?.accepted !== false);
+
+        if (!descriptor) {
+            // Compatibility path for a server that has not received a descriptor
+            // yet. The existing compact collision upload remains the bootstrap.
+            if (!mapReady) this.syncCurrentMapToServer('client-default');
+            return mapReady;
+        }
+
+        const applied = this.applyRemoteWorldDescriptor(descriptor);
+        if (!applied) {
+            this.serverMapAccepted = false;
+            return false;
+        }
+        this.serverWorldDescriptor = descriptor;
+
+        if (mapReady) {
+            this.serverMapAccepted = true;
+            this.lastSyncedMapKey = getNetworkWorldDescriptorKey(descriptor);
+        } else {
+            // The first compatible client supplies the collision matrix. Other
+            // clients reconstruct the same descriptor before doing so, making
+            // simultaneous room bootstrap deterministic.
+            this.syncCurrentMapToServer('client-default');
+        }
+        return true;
+    }
+
+    applyRemoteWorldDescriptor(descriptor) {
+        const normalized = normalizeNetworkWorldDescriptor(descriptor);
+        if (!normalized || !this.isWorldDescriptorCompatible(normalized)) return false;
+
+        const currentDescriptor = this.getCurrentWorldDescriptor();
+        if (getNetworkWorldDescriptorKey(currentDescriptor) === getNetworkWorldDescriptorKey(normalized)) {
+            return true;
+        }
+
+        const rows = createFantasyWorldRowsAt(normalized.centerX, normalized.centerY, {
+            width: normalized.width,
+            height: normalized.height,
+            variant: normalized.variant
+        });
+        const generatedDescriptor = this.getWorldDescriptorForRows(rows);
+        const descriptorMatches =
+            getNetworkWorldDescriptorKey(generatedDescriptor) === getNetworkWorldDescriptorKey(normalized);
+
+        if (!descriptorMatches) {
+            this.adminPanel?.setMessage(
+                'This client cannot reconstruct the server world: generation or vector hashes differ.',
+                'error'
+            );
+            console.error('[Game] World descriptor reconstruction mismatch.', {
+                expected: normalized,
+                generated: generatedDescriptor
+            });
+            return false;
+        }
+
+        this.applyWorldMap(rows, 'server-descriptor', { syncToServer: false });
+        return true;
+    }
+
+    isWorldDescriptorCompatible(descriptor) {
+        const vectorSummary = getActiveTownVectorSummary();
+        if (descriptor.vectorSchema && descriptor.vectorSchema !== vectorSummary.schema) {
+            this.adminPanel?.setMessage('The server uses an incompatible town-vector schema.', 'error');
+            return false;
+        }
+        if (descriptor.vectorSchemaVersion &&
+            descriptor.vectorSchemaVersion !== vectorSummary.schemaVersion) {
+            this.adminPanel?.setMessage('The server uses a different town-vector schema version.', 'error');
+            return false;
+        }
+        if (descriptor.vectorGenerationVersion &&
+            descriptor.vectorGenerationVersion !== vectorSummary.generationVersion) {
+            this.adminPanel?.setMessage('The server uses a different town-vector generation version.', 'error');
+            return false;
+        }
+        if (descriptor.vectorContentHash &&
+            descriptor.vectorContentHash !== vectorSummary.contentHash) {
+            this.adminPanel?.setMessage('The server town-vector package does not match this client.', 'error');
+            return false;
+        }
+        if (descriptor.vectorHash) {
+            const townVector = getActiveTownVector(descriptor.burgId);
+            if (!townVector || townVector.vectorHash !== descriptor.vectorHash) {
+                this.adminPanel?.setMessage('The active burg vector does not match this client.', 'error');
+                return false;
+            }
+        }
+        return true;
+    }
+
+    getWorldDescriptorForRows(rows) {
+        if (!Array.isArray(rows) || !rows.length) return null;
+        const vectorSummary = getActiveTownVectorSummary();
+        const baseDescriptor = createNetworkWorldDescriptor(rows, {
+            chunkSize: MAP_CHUNK_SIZE,
+            schema: vectorSummary.schema,
+            schemaVersion: vectorSummary.schemaVersion,
+            generationVersion: vectorSummary.generationVersion,
+            contentHash: vectorSummary.contentHash
+        });
+        const townVector = baseDescriptor?.burgId
+            ? getActiveTownVector(baseDescriptor.burgId)
+            : null;
+        return createNetworkWorldDescriptor(rows, {
+            chunkSize: MAP_CHUNK_SIZE,
+            schema: vectorSummary.schema,
+            schemaVersion: vectorSummary.schemaVersion,
+            generationVersion: vectorSummary.generationVersion,
+            contentHash: vectorSummary.contentHash,
+            vectorHash: townVector?.vectorHash || ''
+        });
+    }
+
+    getCurrentWorldDescriptor() {
+        return this.getWorldDescriptorForRows(this.currentMapRows);
+    }
+
     syncCurrentMapToServer(source) {
         if (!this.room || !this.currentMapRows?.length) return;
         const mapKey = this.getCurrentMapSyncKey();
-        if (mapKey && this.lastSyncedMapKey === mapKey) return;
+        if (mapKey && (this.lastSyncedMapKey === mapKey || this.pendingSyncedMapKey === mapKey)) return;
         const encodedMap = encodeNetworkMap(this.currentMapRows);
-        this.room.send('world:admin:map_updated', {
-            source,
-            width: this.currentMapRows[0].length,
-            height: this.currentMapRows.length,
-            chunkSize: MAP_CHUNK_SIZE,
-            spawn: this.currentMapRows.spawn,
-            world: this.currentMapRows.world,
-            generationVersion: this.currentMapRows.generationVersion,
-            contentHash: this.currentMapRows.contentHash,
-            variant: this.currentMapRows.variant || 0,
-            ...(encodedMap || { rows: this.currentMapRows })
-        });
-        if (mapKey) this.lastSyncedMapKey = mapKey;
+        const descriptor = this.getCurrentWorldDescriptor();
+        try {
+            this.room.send('world:admin:map_updated', {
+                source,
+                width: this.currentMapRows[0].length,
+                height: this.currentMapRows.length,
+                chunkSize: MAP_CHUNK_SIZE,
+                spawn: this.currentMapRows.spawn,
+                world: this.currentMapRows.world,
+                generationVersion: this.currentMapRows.generationVersion,
+                contentHash: this.currentMapRows.contentHash,
+                variant: this.currentMapRows.variant || 0,
+                descriptor,
+                generationHash: descriptor?.generationHash || '',
+                collisionHash: descriptor?.collisionHash || '',
+                vectorContentHash: descriptor?.vectorContentHash || '',
+                vectorHash: descriptor?.vectorHash || '',
+                ...(encodedMap || { rows: this.currentMapRows })
+            });
+            if (mapKey) this.pendingSyncedMapKey = mapKey;
+        } catch (error) {
+            this.pendingSyncedMapKey = null;
+            console.warn('[Game] Could not upload the compact world collision matrix.', error);
+        }
     }
 
     scheduleCurrentMapToServer(source) {
@@ -396,17 +575,7 @@ export class Game {
     }
 
     getCurrentMapSyncKey() {
-        if (!this.currentMapRows?.length) return null;
-        const townId = this.currentMapRows.sourceTown?.id || this.currentMapRows.townName || 'local';
-        const worldId = this.currentMapRows.world?.id || 'world';
-        return [
-            worldId,
-            townId,
-            `${this.currentMapRows[0]?.length || 0}x${this.currentMapRows.length}`,
-            this.currentMapRows.generationVersion || 'v1',
-            this.currentMapRows.contentHash || 'unhashed',
-            this.currentMapRows.variant || 0
-        ].join(':');
+        return getNetworkWorldDescriptorKey(this.getCurrentWorldDescriptor());
     }
 
     setCollisionDebugVisible(isEnabled) {

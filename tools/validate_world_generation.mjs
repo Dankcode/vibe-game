@@ -26,6 +26,10 @@ import {
     SETTLEMENT_BLUEPRINT_MAX_BYTES,
     validateSettlementBlueprintSet
 } from '../client/src/data/SettlementBlueprint.js';
+import {
+    getActiveTownVectorSummary,
+    validateActiveTownVectorSet
+} from '../client/src/data/TownVectorData.js';
 import { SETTLEMENT_BLUEPRINT_GENERATION_VERSION } from './compile_world_blueprints.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -33,6 +37,7 @@ const repoRoot = path.resolve(__dirname, '..');
 const activeModulePath = path.join(repoRoot, 'client', 'src', 'data', 'ActiveWorldData.js');
 const importerPath = path.join(repoRoot, 'tools', 'import_world_map_package.mjs');
 const compilerPath = path.join(repoRoot, 'tools', 'compile_world_blueprints.mjs');
+const townVectorModulePath = path.join(repoRoot, 'client', 'src', 'data', 'ActiveTownVectorData.js');
 const EXPECTED_SETTLEMENTS = 60;
 
 assert.equal(ACTIVE_WORLD.generationVersion, SETTLEMENT_BLUEPRINT_GENERATION_VERSION);
@@ -52,6 +57,12 @@ const blueprintValidation = validateSettlementBlueprintSet(ACTIVE_SETTLEMENT_BLU
 assert.equal(blueprintValidation.valid, true, blueprintValidation.errors?.join('\n'));
 assert.equal(ACTIVE_SETTLEMENT_BLUEPRINTS.blueprints.length, EXPECTED_SETTLEMENTS);
 assert.equal(ACTIVE_SETTLEMENT_BLUEPRINTS.coverage.unexplainedFields.length, 0);
+const townVectorValidation = validateActiveTownVectorSet();
+const townVectorSummary = getActiveTownVectorSummary();
+assert.equal(townVectorValidation.valid, true, townVectorValidation.errors.join('\n'));
+assert.equal(townVectorSummary.towns, EXPECTED_SETTLEMENTS);
+assert.equal(townVectorSummary.walls, 5015);
+assert.equal(townVectorSummary.buildings, 512);
 assert.ok(
     Buffer.byteLength(JSON.stringify(ACTIVE_SETTLEMENT_BLUEPRINTS.blueprints)) <=
     SETTLEMENT_BLUEPRINT_MAX_BYTES
@@ -97,6 +108,9 @@ assert.doesNotMatch(compilerSource, /readdir\([^\n]*(?:town|building)/i, 'compil
 
 const activeModuleStats = await stat(activeModulePath);
 assert.ok(activeModuleStats.size < 5_000_000, `active geography module should stay compact; got ${activeModuleStats.size} bytes`);
+const townVectorModuleStats = await stat(townVectorModulePath);
+assert.ok(townVectorModuleStats.size < 500_000,
+    `active town vector module should stay compact; got ${townVectorModuleStats.size} bytes`);
 
 const location = getDefaultWorldLocation();
 const base = createFantasyWorldPlanAt(location.x, location.y, { variant: 0 });
@@ -120,8 +134,10 @@ assert.equal(base.generation.minimumInterior, '2x3');
 assert.ok(base.generation.constraintField.inhibitedCells > 0, 'FMG geography must inhibit local entropy');
 assert.ok(base.generation.buildingWfc.walledAreas >= 1, 'FMG wall flags must produce confined towns');
 assert.ok(base.generation.buildingWfc.walledAreas <= 1, 'a view may contain at most one wall system');
-assert.equal(base.generation.buildingWfc.wallRings, 3, 'capital seats must render three wall rings');
-assert.ok(base.generation.buildingWfc.keeps >= 1, 'capital/citadel seats must render a fixed keep');
+assert.equal(base.generation.buildingWfc.vectorWallSystems, 1, 'the primary burg must render its FMG vector wall');
+assert.equal(base.generation.buildingWfc.wallRings, 0, 'source vectors must replace population-derived rings');
+assert.ok(base.generation.buildingWfc.vectorBuildings >= 1, 'source footprints must become fixed enterable buildings');
+assert.ok(base.generation.buildingWfc.keeps >= 1, 'capital/citadel source data must render an enterable keep');
 assert.ok(base.generation.buildingWfc.wardWaves >= 2, 'capital interiors must solve as separate ward waves');
 assert.ok(base.generation.buildingWfc.wallCells > 0, 'confined towns must stamp physical walls');
 assert.ok(base.generation.buildingWfc.assignedBuildings >= 1, 'WFC must choose building occupancy');
@@ -147,10 +163,10 @@ for (let row = 0; row < base.height; row++) {
     }
 }
 assert.ok(wallHeights.length > 0 && wallHeights.every((height) => height >= 3 && height <= 9));
-assert.ok(Math.max(...wallHeights) > Math.min(...wallHeights), 'capital walls must preserve tiered compiled heights');
+assert.equal(new Set(wallHeights).size, 1, 'one FMG wall system must retain its source-authored height');
 assert.ok(base.buildings.length >= 4, 'default generated settlement should have explorable structures');
-assert.ok(base.buildings.some((building) => building.blueprintId === 'castle-keep' && building.enterable),
-    'default capital must contain an enterable fixed keep');
+assert.ok(base.buildings.some((building) => building.vectorCastle && building.enterable),
+    'default capital must promote an FMG footprint into an enterable burg keep');
 assert.ok(base.decorations.length >= 20, 'default region should have biome detail');
 const waterfallDecorations = base.decorations.filter((decoration) => decoration.type === 'waterfall');
 const gatehouseDecorations = base.decorations.filter((decoration) => decoration.type === 'archway' && decoration.gatehouse);

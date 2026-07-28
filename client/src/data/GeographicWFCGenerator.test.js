@@ -27,7 +27,7 @@ test('geographic fields interpolate deterministically from FMG cells', () => {
     assert.ok(first.riverInfluence >= 0 && first.riverInfluence <= 1);
 });
 
-test('terrain WFC resolves valid chunks and formula buildings without town payloads', () => {
+test('terrain WFC resolves valid chunks with compact burg vectors and formula infill', () => {
     const location = getDefaultWorldLocation();
     const plan = createFantasyWorldPlanAt(location.x, location.y, { variant: 0 });
     const variation = createFantasyWorldPlanAt(location.x, location.y, { variant: 1 });
@@ -41,17 +41,20 @@ test('terrain WFC resolves valid chunks and formula buildings without town paylo
     assert.equal(plan.generation.coupledTerrainAndBuildings, true);
     assert.ok(plan.generation.buildingWfc.assignedBuildings >= 1, 'building occupancy must be selected by WFC');
     assert.ok(plan.generation.buildingWfc.bakedBuildings >= 2, 'each qualifying town needs a couple of baked landmarks');
-    assert.equal(plan.generation.buildingWfc.wallRings, 3, 'capital seat should project three aligned rings');
-    assert.ok(plan.generation.buildingWfc.keeps >= 1, 'capital seat should reserve an enterable keep');
+    assert.equal(plan.generation.buildingWfc.vectorWallSystems, 1, 'the primary burg should use one FMG vector wall system');
+    assert.equal(plan.generation.buildingWfc.wallRings, 0, 'source vector walls replace population-derived rings');
+    assert.ok(plan.generation.buildingWfc.vectorBuildings >= 1, 'FMG footprints should become fixed enterable buildings');
+    assert.ok(plan.generation.buildingWfc.keeps >= 1, 'capital manor data should become an enterable keep');
     assert.ok(plan.generation.buildingWfc.insideSiteBuildingRatio >= 0.7, 'walled parcels should resolve mainly to buildings');
     assert.equal(plan.generation.buildingWfc.fallbacks, 0);
     assert.ok(plan.rows.join('').includes('T'), 'FMG wall flags must create physical confinement');
     const compiledWallHeights = plan.wallHeightRows.flat().filter((height) => height > 0);
     assert.equal(compiledWallHeights.length, [...plan.rows.join('')].filter((symbol) => symbol === 'T').length);
     assert.ok(Math.min(...compiledWallHeights) >= 3, 'wall extrusion must retain compiled tier heights');
-    assert.ok(Math.max(...compiledWallHeights) > Math.min(...compiledWallHeights), 'capital rings should read as tiered fortifications');
+    assert.equal(new Set(compiledWallHeights).size, 1, 'a source-authored wall system should retain one FMG wall height');
     assert.ok(plan.buildings.some((building) => building.wfcGenerated));
     assert.ok(plan.buildings.some((building) => building.bakedGenerated));
+    assert.ok(plan.buildings.some((building) => building.vectorGenerated));
     assert.ok(plan.buildings.every((building) =>
         building.proceduralGenerated && building.enterable && building.door && validateBakedBuilding(building).valid));
     assert.ok(plan.paletteRows.flat().every((paletteId) => WORLD_PALETTE_IDS.includes(paletteId)));

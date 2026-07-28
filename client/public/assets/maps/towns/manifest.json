@@ -1,0 +1,368 @@
+{
+  "schema": "vibe-game-burg-vectors",
+  "schemaVersion": 1,
+  "generationVersion": "fmg-town-vectors-v1",
+  "contentHash": "9d699526b15ee3ddaa530958699d3d5d49a8421a1f6e2b4aac976ea490b20ce9",
+  "towns": [
+    {
+      "burgId": 1,
+      "vectorHash": "3f2cda5465a4c2561d5846b74e0c9ab6d26a6d361878234c33282c5873115430",
+      "json": "burg-1.vector.json",
+      "svg": "burg-1.svg"
+    },
+    {
+      "burgId": 2,
+      "vectorHash": "71841b5aa341dd3c0db0953e08ffaa6d099d0d0f696a065ffece65598ca1bb58",
+      "json": "burg-2.vector.json",
+      "svg": "burg-2.svg"
+    },
+    {
+      "burgId": 3,
+      "vectorHash": "5092f3eed51c3750afd9bd666b0e6b5829e262fc51f0a49934d2d9b9d92ba348",
+      "json": "burg-3.vector.json",
+      "svg": "burg-3.svg"
+    },
+    {
+      "burgId": 4,
+      "vectorHash": "f4bcb58e127e59ff3465bfcdacda30b1b48477c8b77fa745bf7774109209ab5a",
+      "json": "burg-4.vector.json",
+      "svg": "burg-4.svg"
+    },
+    {
+      "burgId": 5,
+      "vectorHash": "521742b2e4d9a1af7bc0b827ff5c57320d3f884895a8d4fdc011ec7bc12a28a1",
+      "json": "burg-5.vector.json",
+      "svg": "burg-5.svg"
+    },
+    {
+      "burgId": 6,
+      "vectorHash": "7a0b1c786f6f597db9cc09dbb505a6b4cf6965f75f76e26a5a573e47a641d57e",
+      "json": "burg-6.vector.json",
+      "svg": "burg-6.svg"
+    },
+    {
+      "burgId": 7,
+      "vectorHash": "d71eb09d6ae575f6f4b21a91a53b7ad1421e3a757c17e8bfff13f05c82711202",
+      "json": "burg-7.vector.json",
+      "svg": "burg-7.svg"
+    },
+    {
+      "burgId": 8,
+      "vectorHash": "059a9535b1335d060584d60ee76e6475e8331d05549878706d653f46308ba153",
+      "json": "burg-8.vector.json",
+      "svg": "burg-8.svg"
+    },
+    {
+      "burgId": 9,
+      "vectorHash": "f53bab9e5cdc47674850960c6a87cf9be66180615ff2cba1cae8db80d18846db",
+      "json": "burg-9.vector.json",
+      "svg": "burg-9.svg"
+    },
+    {
+      "burgId": 10,
+      "vectorHash": "337e7d9ac783df16fc7a1ec88b370db7bce4d9c84667005d4945e757393664cb",
+      "json": "burg-10.vector.json",
+      "svg": "burg-10.svg"
+    },
+    {
+      "burgId": 11,
+      "vectorHash": "39fbf64729f3fcf7ab938c1efa56cf8f651d1f3742c9e245f2049dbdb39b989d",
+      "json": "burg-11.vector.json",
+      "svg": "burg-11.svg"
+    },
+    {
+      "burgId": 12,
+      "vectorHash": "d78dfff71e6970659a161e61cb64d593f77be3af84b2c695745f32258065058d",
+      "json": "burg-12.vector.json",
+      "svg": "burg-12.svg"
+    },
+    {
+      "burgId": 13,
+      "vectorHash": "cc824923834661712dfe2da8138f2d880e29dec270b12d9dbff14ae399bc299d",
+      "json": "burg-13.vector.json",
+      "svg": "burg-13.svg"
+    },
+    {
+      "burgId": 14,
+      "vectorHash": "e4e40afa8628ba2fd418ac6c934f35701da1b833470db63d08e421095da25d0e",
+      "json": "burg-14.vector.json",
+      "svg": "burg-14.svg"
+    },
+    {
+      "burgId": 15,
+      "vectorHash": "f56cd6a2e00877d9a249ef3ce1871def5a91eee8f58f45b48048165626ee7504",
+      "json": "burg-15.vector.json",
+      "svg": "burg-15.svg"
+    },
+    {
+      "burgId": 16,
+      "vectorHash": "6d30f12d8344a7b0c2e3c29986e14bf9aa09b49a02ba6c803eddab8d5a3093a1",
+      "json": "burg-16.vector.json",
+      "svg": "burg-16.svg"
+    },
+    {
+      "burgId": 17,
+      "vectorHash": "60fbd92a8fb6b47ce6f984c637cf4ca47d640a8a0c44f0dcd268cb77b1f6e8ce",
+      "json": "burg-17.vector.json",
+      "svg": "burg-17.svg"
+    },
+    {
+      "burgId": 18,
+      "vectorHash": "e9e018f587e5bc1f05840390922d441970918598b1c839b3977151b4b0d11798",
+      "json": "burg-18.vector.json",
+      "svg": "burg-18.svg"
+    },
+    {
+      "burgId": 19,
+      "vectorHash": "ee2109159c705caf8c81f68924d6cfda9569e4b5c7a3bbdf5000a4bc33ffdc58",
+      "json": "burg-19.vector.json",
+      "svg": "burg-19.svg"
+    },
+    {
+      "burgId": 20,
+      "vectorHash": "e0a375512b697fd4172250fb35cc6845f26f71f2166767ef960ceeee07938e26",
+      "json": "burg-20.vector.json",
+      "svg": "burg-20.svg"
+    },
+    {
+      "burgId": 21,
+      "vectorHash": "c552316ef8c628ac452e132ed0172d952264be63355c246194f5f14e917c8818",
+      "json": "burg-21.vector.json",
+      "svg": "burg-21.svg"
+    },
+    {
+      "burgId": 22,
+      "vectorHash": "4cf59357b90ddb09e281e5b5f25dde501b840de513d826777da6a44eb21dad04",
+      "json": "burg-22.vector.json",
+      "svg": "burg-22.svg"
+    },
+    {
+      "burgId": 23,
+      "vectorHash": "dcb88288bbdde0d3d1b22dc99661d4059d8976daa1bd4a6dabac3a74805aedfc",
+      "json": "burg-23.vector.json",
+      "svg": "burg-23.svg"
+    },
+    {
+      "burgId": 24,
+      "vectorHash": "c8f53a0fa55bc4c5a23ff8d4dbc522ac43a2581e1c0312ad7695562420b85f63",
+      "json": "burg-24.vector.json",
+      "svg": "burg-24.svg"
+    },
+    {
+      "burgId": 25,
+      "vectorHash": "3dd3fa6b098fd6e16408602ada1cddbc703f30d4ede49c3ac3f033cca97e7c57",
+      "json": "burg-25.vector.json",
+      "svg": "burg-25.svg"
+    },
+    {
+      "burgId": 26,
+      "vectorHash": "95d1d6bf12f158e05c6b3d38df973d6a0777d26d8a517e05dcb0a694adc2fb99",
+      "json": "burg-26.vector.json",
+      "svg": "burg-26.svg"
+    },
+    {
+      "burgId": 27,
+      "vectorHash": "ae116d7cb6a6be76a5932e299584305f4123037fb1be248ee3a870525a611c7a",
+      "json": "burg-27.vector.json",
+      "svg": "burg-27.svg"
+    },
+    {
+      "burgId": 28,
+      "vectorHash": "4328659e4abe49502cc70e4d4c6fad91c98d3f62d1b9118f06db88ba8c41f7c0",
+      "json": "burg-28.vector.json",
+      "svg": "burg-28.svg"
+    },
+    {
+      "burgId": 29,
+      "vectorHash": "c0b718d95c8835c4cc2e27ecad9666143bbdad4fbf7a51b4e1c06cb9b9981601",
+      "json": "burg-29.vector.json",
+      "svg": "burg-29.svg"
+    },
+    {
+      "burgId": 30,
+      "vectorHash": "6475a3e3c4b52f20e276807db3da16047be7506ec197e1ef246437f38dcf9728",
+      "json": "burg-30.vector.json",
+      "svg": "burg-30.svg"
+    },
+    {
+      "burgId": 31,
+      "vectorHash": "9b37d6f27fd8c2e3a33911403eda0470c7e1fde301cac343ca89c69a163847c6",
+      "json": "burg-31.vector.json",
+      "svg": "burg-31.svg"
+    },
+    {
+      "burgId": 32,
+      "vectorHash": "33dd5eaf78478c82892979e58e3a98ee8c5261340eac087c24d59a1d33036b80",
+      "json": "burg-32.vector.json",
+      "svg": "burg-32.svg"
+    },
+    {
+      "burgId": 33,
+      "vectorHash": "224558c57876c526a30a89f8af0f4e4e46f4f7ef60fa6d2a1a2c5935adecafbc",
+      "json": "burg-33.vector.json",
+      "svg": "burg-33.svg"
+    },
+    {
+      "burgId": 34,
+      "vectorHash": "0e3c855b4d1279b4862fb692fd89794505934c8ba25d0aa29b7e008d199e64e0",
+      "json": "burg-34.vector.json",
+      "svg": "burg-34.svg"
+    },
+    {
+      "burgId": 35,
+      "vectorHash": "942a174a9d837ad15ef583e04333c6b559422d1671a2c8ebddf484195122eec1",
+      "json": "burg-35.vector.json",
+      "svg": "burg-35.svg"
+    },
+    {
+      "burgId": 36,
+      "vectorHash": "ea0e3afde4426cc3e945e46fe178b63c7bf79bab3e4abbbe4821f736f00a0ce5",
+      "json": "burg-36.vector.json",
+      "svg": "burg-36.svg"
+    },
+    {
+      "burgId": 37,
+      "vectorHash": "67d17b36704ff8ecbcff23034ec0fde9f82106ded671e7c646e4a1380897c36b",
+      "json": "burg-37.vector.json",
+      "svg": "burg-37.svg"
+    },
+    {
+      "burgId": 38,
+      "vectorHash": "952de200df7e98e1c2638c1828157346055193be3c97402cce8fbf360f62b950",
+      "json": "burg-38.vector.json",
+      "svg": "burg-38.svg"
+    },
+    {
+      "burgId": 39,
+      "vectorHash": "69d66a2a49577bd098a4970ef116b3b7fcbfc6d303a17ba44cab113151248e28",
+      "json": "burg-39.vector.json",
+      "svg": "burg-39.svg"
+    },
+    {
+      "burgId": 40,
+      "vectorHash": "b4afb66617c63f88c80864c631c70ec09877813cb18e1d4d08bfd65cef49f152",
+      "json": "burg-40.vector.json",
+      "svg": "burg-40.svg"
+    },
+    {
+      "burgId": 41,
+      "vectorHash": "7c07cbc35de9f5fd685790d116487a3292cd40a5a1b3245717179eb0ff70697e",
+      "json": "burg-41.vector.json",
+      "svg": "burg-41.svg"
+    },
+    {
+      "burgId": 42,
+      "vectorHash": "be6d21935038efe1d4dd732d7f1b2a5813859cebbd2abf0b03fe68092c05a217",
+      "json": "burg-42.vector.json",
+      "svg": "burg-42.svg"
+    },
+    {
+      "burgId": 43,
+      "vectorHash": "6a5843b414abf1659e3ff746d142400f217f6a018057296b5b351cd19b6a2fcc",
+      "json": "burg-43.vector.json",
+      "svg": "burg-43.svg"
+    },
+    {
+      "burgId": 44,
+      "vectorHash": "cf04539044fd48ccc631013fa616f77b426c09c154f8401bba90622317e915dc",
+      "json": "burg-44.vector.json",
+      "svg": "burg-44.svg"
+    },
+    {
+      "burgId": 45,
+      "vectorHash": "b4bb1c404f5db41b1b4823a63ce1f31ce72dabe41ac596075bf13d41985b6fae",
+      "json": "burg-45.vector.json",
+      "svg": "burg-45.svg"
+    },
+    {
+      "burgId": 46,
+      "vectorHash": "d69cd8e2bd760b8493afb2087c935afe8a8abde2143c03754e7f80a31c7e20f3",
+      "json": "burg-46.vector.json",
+      "svg": "burg-46.svg"
+    },
+    {
+      "burgId": 47,
+      "vectorHash": "15d29189edfddaa5feb63459397bca8adb98bf3b25f24bd2cabdf8fbc53e98f0",
+      "json": "burg-47.vector.json",
+      "svg": "burg-47.svg"
+    },
+    {
+      "burgId": 48,
+      "vectorHash": "181131988c554ccbe949591fdf1b80cc8d511cc20c4e0966b168e82267962e44",
+      "json": "burg-48.vector.json",
+      "svg": "burg-48.svg"
+    },
+    {
+      "burgId": 49,
+      "vectorHash": "6ba8ac2be6dafd2032756259665c804386755c5d83781f169524180721d9b3a1",
+      "json": "burg-49.vector.json",
+      "svg": "burg-49.svg"
+    },
+    {
+      "burgId": 50,
+      "vectorHash": "41025d350ee5aed983cf38afa8f8829c65479cfc670d4b8b2a04eae6696121bb",
+      "json": "burg-50.vector.json",
+      "svg": "burg-50.svg"
+    },
+    {
+      "burgId": 51,
+      "vectorHash": "d8560734a2d95eeef0caacacf0c7513dba81c268fe7c1561a52ed939a9c46d6b",
+      "json": "burg-51.vector.json",
+      "svg": "burg-51.svg"
+    },
+    {
+      "burgId": 52,
+      "vectorHash": "5ae5828f685136416f6009d1be57db3271712f4ac59a7b5ab7aef3227bb3c83b",
+      "json": "burg-52.vector.json",
+      "svg": "burg-52.svg"
+    },
+    {
+      "burgId": 53,
+      "vectorHash": "1c26216cf2d961face017b3bdd17d775c21b49f91b5a18e1c143ab0df100ce2d",
+      "json": "burg-53.vector.json",
+      "svg": "burg-53.svg"
+    },
+    {
+      "burgId": 54,
+      "vectorHash": "b381bbe2c582551d5a4a7a42c47dffe4a0b15ab95d52940d85b3ce1720d95eb6",
+      "json": "burg-54.vector.json",
+      "svg": "burg-54.svg"
+    },
+    {
+      "burgId": 55,
+      "vectorHash": "acfca701f90854647b6d4211db2c06594e3c97a1291cc5ae603b2ce56fa0eb4c",
+      "json": "burg-55.vector.json",
+      "svg": "burg-55.svg"
+    },
+    {
+      "burgId": 56,
+      "vectorHash": "2dd1533536ad06f87b2ded09c9b32bc26f4a64452b2a457c617207066d24a22e",
+      "json": "burg-56.vector.json",
+      "svg": "burg-56.svg"
+    },
+    {
+      "burgId": 57,
+      "vectorHash": "661fa24a5c08f7d47a3c994cb208c44e7ac98127f1307e145ad389408f6aadc8",
+      "json": "burg-57.vector.json",
+      "svg": "burg-57.svg"
+    },
+    {
+      "burgId": 58,
+      "vectorHash": "8b3ce183bd53259934340ef4803b1ddd2e94befaefedd6ad08dc158490eb66cc",
+      "json": "burg-58.vector.json",
+      "svg": "burg-58.svg"
+    },
+    {
+      "burgId": 59,
+      "vectorHash": "92e8ffab5be353e5f8e9ba7f2cf77ba811cfa1d1b2fe45b6bd2b2c1a61803dfb",
+      "json": "burg-59.vector.json",
+      "svg": "burg-59.svg"
+    },
+    {
+      "burgId": 60,
+      "vectorHash": "af0fcd9c3fbe5e1aa0059099e88d8889406157d1128b6ee9807a667f8da8b37b",
+      "json": "burg-60.vector.json",
+      "svg": "burg-60.svg"
+    }
+  ]
+}

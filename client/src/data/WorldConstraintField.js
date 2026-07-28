@@ -4,6 +4,8 @@
 // projects those directives into the current view; population, wall tiers, hierarchy and gate
 // intent are never invented here.
 
+import { getActiveTownVector, projectTownVector } from './TownVectorData.js';
+
 const FIXED_LAND_KINDS = new Set(['wall', 'gate', 'road', 'castle-plot', 'bridge', 'dock']);
 const FIXED_WATER_KINDS = new Set(['waterfall', 'plunge-pool', 'ford']);
 const SKELETON_PRIORITY = Object.freeze({
@@ -47,6 +49,7 @@ export function createSettlementConstraintAnchors({
     if (!nearest) return [];
 
     const activeClusterId = nearest.blueprint.clusterId ?? `burg-${nearest.blueprint.burgId}`;
+    const primaryBurgId = Number(nearest.blueprint.burgId);
     const offsetX = Math.floor(width / 2);
     const offsetY = Math.floor(height / 2);
     const scale = Math.max(0.01, Number(sampleScale) || 1);
@@ -68,10 +71,37 @@ export function createSettlementConstraintAnchors({
             )) return null;
             const projectedRings = projectWallRings(blueprint.wallRings, col, row, width, height);
             const outerRing = projectedRings[0] || null;
-            const radius = Math.max(5, Math.floor(Number(
+            // Only the nearest burg owns the active FMG town-vector projection. Same-cluster
+            // satellites retain their compiled procedural rings so one source plan cannot be
+            // duplicated across the whole view.
+            const sourceTownVector = Number(blueprint.burgId) === primaryBurgId
+                ? getActiveTownVector(blueprint.burgId)
+                : null;
+            const projectedTownVector = sourceTownVector
+                ? projectTownVector(sourceTownVector, {
+                    centerCol: col,
+                    centerRow: row,
+                    width,
+                    height,
+                    margin: 2,
+                    maximumScale: 1
+                })
+                : null;
+            const hasVectorWalls = Boolean(projectedTownVector?.wallCells?.length);
+            const hasVectorInterior = Boolean(projectedTownVector?.insideCellKeys?.size);
+            const vectorWallBounds = hasVectorInterior
+                ? createVectorWallBounds(projectedTownVector)
+                : null;
+            const vectorCoverageBounds = projectedTownVector
+                ? createVectorCoverageBounds(projectedTownVector)
+                : null;
+            const fallbackRadius = Math.floor(Number(
                 outerRing?.radius ?? runtimeBlueprint.urbanRadius ?? runtimeBlueprint.radius ?? 8
-            ) || 8));
-            const urbanBounds = outerRing?.bounds || createWallBounds(col, row, {
+            ) || 8);
+            const radius = vectorWallBounds
+                ? Math.max(5, Math.ceil(Math.max(vectorWallBounds.width, vectorWallBounds.height) / 2))
+                : Math.max(5, fallbackRadius);
+            const urbanBounds = vectorWallBounds || vectorCoverageBounds || outerRing?.bounds || createWallBounds(col, row, {
                 halfWidth: radius,
                 halfHeight: Math.max(4, Math.round(radius * 0.82))
             }, width, height);
@@ -86,7 +116,8 @@ export function createSettlementConstraintAnchors({
                 culture: blueprint.cultureId ?? blueprint.culture,
                 flags: { ...(blueprint.flags || {}) }
             };
-            const walled = runtimeBlueprint.hierarchy === 'seat' && projectedRings.length > 0;
+            const walled = hasVectorWalls ||
+                (runtimeBlueprint.hierarchy === 'seat' && projectedRings.length > 0);
             return {
                 burg,
                 blueprint: runtimeBlueprint,
@@ -97,6 +128,7 @@ export function createSettlementConstraintAnchors({
                 walled,
                 wallRings: projectedRings,
                 wallBounds: urbanBounds,
+                townVector: projectedTownVector,
                 wards: projectWards(blueprint.wards, projectedRings, urbanBounds),
                 castle: projectCastle(blueprint.castle, col, row, width, height)
             };
@@ -151,40 +183,77 @@ export function createBlueprintSkeleton({ settlements = [], width = 0, height = 
 
     for (const settlement of settlements) {
         const townId = Number(settlement.burg?.id);
-        for (const ring of settlement.wallRings || []) {
-            // Wall silhouettes are collapsed per town+ring instead of always rasterizing the
-            // bounding rectangle (the "every city has the same square wall" defect). A seeded
-            // superellipse family spans ellipse → squircle → chamfered near-rect with a mild
-            // axis stretch, so each settlement ring reads differently while blueprint bounds,
-            // thickness, height, and validation stay untouched. Gates snap to the new outline.
-            const shape = wallRingShape(townId, ring.ring);
-            const ringCells = [];
-            forEachShapedBoundaryCell(ring.bounds, ring.thickness, shape, (col, row) => {
-                ringCells.push([col, row]);
-                put(col, row, {
+        const vectorWalls = settlement.townVector?.wallCells || [];
+        const hasVectorWalls = vectorWalls.length > 0;
+        const vectorGates = hasVectorWalls
+            ? (settlement.townVector?.gateCells || []).map((gate, index) => ({
+                ...gate,
+                id: `vector-gate-${index}`,
+                edge: edgeForProjectedGate(settlement, gate),
+                widthTiles: 1
+            }))
+            : [];
+
+        if (hasVectorWalls) {
+            for (const cell of vectorWalls) {
+                put(cell.col, cell.row, {
                     kind: 'wall',
                     townId,
-                    ring: ring.ring,
-                    heightVoxels: ring.heightVoxels,
-                    thickness: ring.thickness
+                    ring: 'vector',
+                    vectorHash: settlement.townVector.vectorHash,
+                    heightVoxels: settlement.townVector.wallHeightVoxels,
+                    thickness: settlement.townVector.walkwayWidth
                 });
-            });
-            for (const gate of ring.gates || []) {
-                for (const cell of gate.cells || [gate]) {
-                    const snapped = snapToRingOutline(ringCells, cell.col, cell.row);
-                    if (!snapped) continue;
-                    const inward = inwardDirectionForEdge(gate.edge);
-                    for (let depth = -1; depth <= ring.thickness; depth++) {
-                        put(snapped[0] + inward.x * depth, snapped[1] + inward.y * depth, {
-                            kind: 'gate', townId, ring: ring.ring, edge: gate.edge,
-                            grand: gate.grand === true, widthTiles: gate.widthTiles
-                        });
+            }
+            for (const gate of vectorGates) {
+                put(gate.col, gate.row, {
+                    kind: 'gate',
+                    townId,
+                    ring: 'vector',
+                    edge: gate.edge,
+                    grand: false,
+                    widthTiles: gate.widthTiles,
+                    vectorHash: settlement.townVector.vectorHash
+                });
+            }
+        } else {
+            for (const ring of settlement.wallRings || []) {
+                // Wall silhouettes are collapsed per town+ring instead of always rasterizing the
+                // bounding rectangle (the "every city has the same square wall" defect). A seeded
+                // superellipse family spans ellipse → squircle → chamfered near-rect with a mild
+                // axis stretch, so each settlement ring reads differently while blueprint bounds,
+                // thickness, height, and validation stay untouched. Gates snap to the new outline.
+                const shape = wallRingShape(townId, ring.ring);
+                const ringCells = [];
+                forEachShapedBoundaryCell(ring.bounds, ring.thickness, shape, (col, row) => {
+                    ringCells.push([col, row]);
+                    put(col, row, {
+                        kind: 'wall',
+                        townId,
+                        ring: ring.ring,
+                        heightVoxels: ring.heightVoxels,
+                        thickness: ring.thickness
+                    });
+                });
+                for (const gate of ring.gates || []) {
+                    for (const cell of gate.cells || [gate]) {
+                        const snapped = snapToRingOutline(ringCells, cell.col, cell.row);
+                        if (!snapped) continue;
+                        const inward = inwardDirectionForEdge(gate.edge);
+                        for (let depth = -1; depth <= ring.thickness; depth++) {
+                            put(snapped[0] + inward.x * depth, snapped[1] + inward.y * depth, {
+                                kind: 'gate', townId, ring: ring.ring, edge: gate.edge,
+                                grand: gate.grand === true, widthTiles: gate.widthTiles
+                            });
+                        }
                     }
                 }
             }
         }
 
-        const gates = settlement.wallRings?.[0]?.gates || [];
+        const gates = hasVectorWalls
+            ? vectorGates
+            : settlement.wallRings?.[0]?.gates || [];
         for (const gate of gates) {
             stampGridLine(settlement.col, settlement.row, gate.col, gate.row, (col, row) =>
                 put(col, row, { kind: 'road', townId, roadKind: 'gate-road', widthTiles: gate.widthTiles || 1 }));
@@ -218,11 +287,13 @@ export function createBlueprintSkeleton({ settlements = [], width = 0, height = 
                     })));
         }
 
-        stampWardStreetGrid(settlement, width, height, (col, row, ward) =>
+        stampWardStreetGrid(settlement, width, height, (col, row, ward) => {
+            if (hasVectorWalls && !isInsideWallBounds(col, row, settlement.wallBounds)) return;
             put(col, row, {
                 kind: 'road', townId, roadKind: 'ward-street', widthTiles: 1,
                 district: ward.district
-            }));
+            });
+        });
 
         const docks = settlement.blueprint?.districtDirectives?.docks;
         if (docks?.enabled) {
@@ -259,7 +330,10 @@ export function createBlueprintSkeleton({ settlements = [], width = 0, height = 
         diagnostics: Object.freeze({
             cells: stableCells.length,
             walls: stableCells.filter((cell) => cell.kind === 'wall').length,
+            vectorWalls: stableCells.filter((cell) => cell.kind === 'wall' && cell.ring === 'vector').length,
             gates: stableCells.filter((cell) => cell.kind === 'gate').length,
+            vectorGates: stableCells.filter((cell) => cell.kind === 'gate' && cell.ring === 'vector').length,
+            vectorTowns: new Set(stableCells.map((cell) => cell.vectorHash).filter(Boolean)).size,
             roads: stableCells.filter((cell) => cell.kind === 'road').length,
             castles: stableCells.filter((cell) => cell.kind === 'castle-plot').length,
             waterfalls: stableCells.filter((cell) => cell.kind === 'waterfall').length,
@@ -426,6 +500,9 @@ export function createWallBounds(centerCol, centerRow, span, width = Infinity, h
 
 export function isInsideWallBounds(col, row, bounds) {
     if (!bounds) return false;
+    if (bounds.insideCellKeys instanceof Set) {
+        return bounds.insideCellKeys.has(gridKey(col, row));
+    }
     return col > bounds.minCol && col < bounds.maxCol && row > bounds.minRow && row < bounds.maxRow;
 }
 
@@ -483,6 +560,31 @@ function projectWallRings(rings, col, row, width, height) {
             });
         })
         .sort((left, right) => left.ring - right.ring || right.radius - left.radius);
+}
+
+function createVectorWallBounds(townVector) {
+    const bounds = townVector.bounds;
+    return Object.freeze({
+        ...bounds,
+        halfWidth: Math.max(1, Math.floor((bounds.width - 1) / 2)),
+        halfHeight: Math.max(1, Math.floor((bounds.height - 1) / 2)),
+        source: 'town-vector',
+        vectorHash: townVector.vectorHash,
+        insideCellKeys: townVector.insideCellKeys,
+        wallCellKeys: townVector.wallCellKeys,
+        gateCellKeys: townVector.gateCellKeys
+    });
+}
+
+function createVectorCoverageBounds(townVector) {
+    const bounds = townVector.bounds;
+    return Object.freeze({
+        ...bounds,
+        halfWidth: Math.max(1, Math.floor((bounds.width - 1) / 2)),
+        halfHeight: Math.max(1, Math.floor((bounds.height - 1) / 2)),
+        source: 'town-vector-coverage',
+        vectorHash: townVector.vectorHash
+    });
 }
 
 function projectWards(wards, rings, urbanBounds) {
@@ -800,6 +902,13 @@ function inwardDirectionForEdge(edge) {
     return { x: -outward.x, y: -outward.y };
 }
 
+function edgeForProjectedGate(settlement, gate) {
+    const dx = Number(gate.col) - Number(settlement.col);
+    const dy = Number(gate.row) - Number(settlement.row);
+    if (Math.abs(dx) > Math.abs(dy)) return dx >= 0 ? 'east' : 'west';
+    return dy >= 0 ? 'south' : 'north';
+}
+
 function resolveBlueprintDirectives(blueprint, globalWater = {}) {
     if (!blueprint || !globalWater) return blueprint;
     const crossings = new Map((globalWater.crossings || []).map((entry) => [entry.id, entry]));
@@ -856,4 +965,8 @@ function clampInteger(value, minimum, maximum) {
     const number = Number(value);
     if (!Number.isFinite(number)) return minimum;
     return Math.max(minimum, Math.min(maximum, Math.floor(number)));
+}
+
+function gridKey(col, row) {
+    return `${Math.floor(Number(col))},${Math.floor(Number(row))}`;
 }

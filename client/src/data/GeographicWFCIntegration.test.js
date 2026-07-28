@@ -49,7 +49,7 @@ test('all 60 FMG locations generate without terrain or building WFC contradictio
     assert.equal(failures.length, 0, formatFailures('location generation failures', failures));
 });
 
-test('every view projects at most one seat wall system with fixed rings and an enterable keep', () => {
+test('every view projects at most one source wall system with deterministic procedural fallbacks', () => {
     const failures = [];
 
     for (const result of successfulLocationResults()) {
@@ -58,11 +58,11 @@ test('every view projects at most one seat wall system with fixed rings and an e
             failures.push(`${locationLabel(result.location)} projected ${buildings.walledAreas} independent wall systems`);
         }
         if ((buildings.walledAreas || 0) === 1) {
-            if (buildings.wallRings !== 3) {
-                failures.push(`${locationLabel(result.location)} projected ${buildings.wallRings} rings instead of 3`);
+            if ((buildings.vectorWallSystems || 0) === 1 && buildings.wallRings !== 0) {
+                failures.push(`${locationLabel(result.location)} mixed FMG vector walls with ${buildings.wallRings} formula rings`);
             }
-            if ((buildings.keeps || 0) < 1) {
-                failures.push(`${locationLabel(result.location)} omitted the fixed enterable keep`);
+            if ((buildings.vectorWallSystems || 0) === 0 && buildings.wallRings !== 3) {
+                failures.push(`${locationLabel(result.location)} projected ${buildings.wallRings} fallback rings instead of 3`);
             }
             if ((buildings.bakedBuildings || 0) < 2) {
                 failures.push(`${locationLabel(result.location)} emitted fewer than two baked landmarks`);
