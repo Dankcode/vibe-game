@@ -4,6 +4,7 @@ import {
     applyBuildingStoriesToTileRows,
     stampBuildingsOnRows
 } from './BuildingData.js';
+import { normalizeBurgThemeId } from './BurgThemeCatalog.js';
 import { BUILDING_PARTS, MAP_LEGEND, TILE_EFFECTS, TEXTURE_IDS, symbolRowsToTileCells } from './TileLibrary.js';
 import {
     createFantasyWorldPlanAt,
@@ -13,7 +14,7 @@ import {
     WORLD_VIEW_HEIGHT,
     WORLD_VIEW_WIDTH
 } from './FantasyWorldData.js';
-import { ELEMENTS } from './TileRegistry.js';
+import { ELEMENTS, isArchitectureThemeSurface } from './TileRegistry.js';
 import { stabilizeBuildingElevation } from './StructuralMatrixRules.js';
 
 export const MAP_CHUNK_SIZE = 16;
@@ -81,6 +82,12 @@ export function createTownTileRows(townPlan) {
     applyBuildingStoriesToTileRows(tileRows, buildings);
     applyBuildingFloorTexturesToTileRows(tileRows, buildings);
     applyBuildingDoorTexturesToTileRows(tileRows, buildings);
+    applyArchitectureThemeRowsToTileRows(
+        tileRows,
+        townPlan.architectureThemeRows,
+        buildings,
+        { primaryArchitectureThemeId: townPlan.theme?.primaryArchitectureThemeId }
+    );
     tileRows.buildings = buildings;
     tileRows.decorations = townPlan.decorations || [];
     tileRows.seed = townPlan.seed;
@@ -89,6 +96,9 @@ export function createTownTileRows(townPlan) {
     tileRows.contentHash = townPlan.contentHash;
     tileRows.visualVariantRows = (townPlan.visualVariantRows || []).slice();
     tileRows.paletteRows = (townPlan.paletteRows || []).map((row) => row.slice());
+    tileRows.architectureThemeRows = tileRows.map((row) =>
+        row.map((cell) => cell.architectureThemeId)
+    );
     tileRows.wallHeightRows = (townPlan.wallHeightRows || []).map((row) => row.slice());
     tileRows.townName = townPlan.townName;
     tileRows.townCenter = townPlan.center;
@@ -130,6 +140,77 @@ export function applyPaletteRowsToTileRows(tileRows, paletteRows = []) {
         }
     }
     return tileRows;
+}
+
+/**
+ * Attach manifest-authoritative burg ownership after building stamping. Explicit
+ * ownership rows constrain streets and city walls, while a building's own theme
+ * wins for its footprint. Building expansion never infers ownership for a door
+ * approach; any themed approach must come from an explicit ownership row.
+ */
+export function applyArchitectureThemeRowsToTileRows(
+    tileRows,
+    architectureThemeRows = [],
+    buildings = [],
+    options = {}
+) {
+    if (!Array.isArray(tileRows) || tileRows.length === 0) return tileRows;
+    const hasOwnershipRows = Array.isArray(architectureThemeRows) && architectureThemeRows.length > 0;
+    const primaryArchitectureThemeId = normalizeBurgThemeId(
+        options.primaryArchitectureThemeId,
+        null
+    );
+
+    for (let y = 0; y < tileRows.length; y++) {
+        for (let x = 0; x < (tileRows[y]?.length || 0); x++) {
+            const cell = tileRows[y][x];
+            if (!cell) continue;
+            const ownedThemeId = hasOwnershipRows
+                ? normalizeBurgThemeId(architectureThemeRows[y]?.[x], null)
+                : null;
+            cell.architectureThemeId = ownedThemeId || (
+                !hasOwnershipRows && primaryArchitectureThemeId &&
+                isArchitectureThemeSurface(cell.element, cell.texture)
+                    ? primaryArchitectureThemeId
+                    : null
+            );
+        }
+    }
+
+    const offsetX = Math.floor((tileRows[0]?.length || 0) / 2);
+    const offsetY = Math.floor(tileRows.length / 2);
+    for (const building of Array.isArray(buildings) ? buildings : []) {
+        const buildingThemeId = normalizeBurgThemeId(
+            building?.architectureThemeId,
+            primaryArchitectureThemeId
+        );
+        if (!buildingThemeId) continue;
+        for (const { x: localX, y: localY } of getArchitectureBuildingFootprint(building)) {
+            const row = Math.floor(Number(building.y) || 0) + localY + offsetY;
+            const col = Math.floor(Number(building.x) || 0) + localX + offsetX;
+            const cell = tileRows[row]?.[col];
+            if (cell) cell.architectureThemeId = buildingThemeId;
+        }
+    }
+
+    return tileRows;
+}
+
+function getArchitectureBuildingFootprint(building = {}) {
+    const width = Math.max(1, Math.floor(Number(building.width) || 1));
+    const height = Math.max(1, Math.floor(Number(building.height) || 1));
+    if (Array.isArray(building.footprintCells) && building.footprintCells.length > 0) {
+        return building.footprintCells
+            .map((cell) => ({
+                x: Math.floor(Number(cell?.x)),
+                y: Math.floor(Number(cell?.y))
+            }))
+            .filter((cell) => Number.isFinite(cell.x) && Number.isFinite(cell.y) &&
+                cell.x >= 0 && cell.y >= 0 && cell.x < width && cell.y < height);
+    }
+    return Array.from({ length: height }, (_, y) =>
+        Array.from({ length: width }, (_, x) => ({ x, y }))
+    ).flat();
 }
 
 export function createWildlifeSpawnsForMap(tileRows, options = {}) {

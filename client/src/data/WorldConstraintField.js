@@ -5,6 +5,8 @@
 // intent are never invented here.
 
 import { getActiveTownVector, projectTownVector } from './TownVectorData.js';
+import { createBakedStreetPlan } from './BakedStreetLibrary.js';
+import { normalizeBurgThemeId } from './BurgThemeCatalog.js';
 
 const FIXED_LAND_KINDS = new Set(['wall', 'gate', 'road', 'castle-plot', 'bridge', 'dock']);
 const FIXED_WATER_KINDS = new Set(['waterfall', 'plunge-pool', 'ford']);
@@ -19,6 +21,134 @@ const SKELETON_PRIORITY = Object.freeze({
     bridge: 8,
     ford: 8
 });
+
+// Local FMG streets are authored constraints, not formula infill. They retain the regular
+// road/dock kind consumed by terrain and rendering code, while this fractional priority keeps
+// them below walls and gates and above every generated road or reserved castle plot.
+const TOWN_VECTOR_STREET_PRIORITY = 3.5;
+const BAKED_STREET_WFC_PRIORITY = 1.5;
+
+// Keep this identifier in diagnostics and saved generation metadata. Changing any coefficient
+// below intentionally changes deterministic town terraces and therefore requires a new version.
+export const FMG_BURG_RELIEF_FORMULA_VERSION = 'fmg-burg-relief-v1';
+
+/**
+ * Derive one deterministic settlement relief profile from the geography data already loaded for
+ * the current view. FMG height samples supply macro range/slope, compiled ward priors supply the
+ * requested local variance, climate supplies a small erosion/exposure modifier, and authored
+ * vector street tiers supply the strongest town-scale elevation anchors.
+ */
+export function deriveFmgBurgReliefProfile({
+    settlement = null,
+    fields = [],
+    width = 0,
+    height = 0
+} = {}) {
+    const samples = collectSettlementHeightSamples(settlement, fields, width, height);
+    const heights = samples.map((sample) => sample.height);
+    const sampledMinimum = heights.length ? Math.min(...heights) : 20;
+    const sampledMaximum = heights.length ? Math.max(...heights) : sampledMinimum;
+    const sampledMean = average(heights) || sampledMinimum;
+    const sampledDeviation = standardDeviation(heights, sampledMean);
+    const sampledRange = sampledMaximum - sampledMinimum;
+    const sampledSlope = meanCardinalHeightSlope(samples);
+
+    const vectorTiers = (settlement?.townVector?.streetCells || [])
+        .map((cell) => Number(cell?.elevationTier))
+        .filter(Number.isFinite)
+        .map((tier) => clampInteger(tier, 0, 6));
+    const vectorMinimum = vectorTiers.length ? Math.min(...vectorTiers) : null;
+    const vectorMaximum = vectorTiers.length ? Math.max(...vectorTiers) : null;
+    const vectorMean = vectorTiers.length ? average(vectorTiers) : null;
+    const vectorRange = vectorTiers.length ? vectorMaximum - vectorMinimum : 0;
+    const vectorDeviation = vectorTiers.length ? standardDeviation(vectorTiers, vectorMean) : 0;
+
+    const wardVariances = (settlement?.wards || [])
+        .map((ward) => Number(ward?.wfcPriors?.elevationVariance))
+        .filter(Number.isFinite)
+        .map(clamp01);
+    const wardVariance = wardVariances.length ? average(wardVariances) : 0.35;
+    const climate = settlement?.blueprint?.climate || {};
+    const latitude = Math.abs(Number(climate.latitude) || 0);
+    const temperature = Number.isFinite(Number(climate.temperature)) ? Number(climate.temperature) : 12;
+    const snowline = Number.isFinite(Number(climate.snowline)) ? Number(climate.snowline) : 100;
+    const biome = String(climate.biome || 'UNKNOWN').toUpperCase();
+    const coldExposure = clamp01((latitude - 30) / 40) * 0.55 +
+        clamp01((12 - temperature) / 32) * 0.3 + clamp01((70 - snowline) / 70) * 0.15;
+    const biomeExposure = /MOUNTAIN|ALPINE|HIGHLAND|GLACIER|TUNDRA/.test(biome)
+        ? 1
+        : /DESERT|SAVANNA/.test(biome)
+            ? 0.58
+            : /COAST/.test(biome)
+                ? 0.18
+                : 0.34;
+
+    const topographyScore = clamp01(
+        clamp01(sampledRange / 48) * 0.42 +
+        clamp01(sampledDeviation / 18) * 0.28 +
+        clamp01(sampledSlope / 9) * 0.2 +
+        wardVariance * 0.1
+    );
+    const vectorScore = clamp01(
+        clamp01(vectorRange / 5) * 0.68 +
+        clamp01(vectorDeviation / 2.4) * 0.32
+    );
+    const climateScore = clamp01(coldExposure * 0.62 + biomeExposure * 0.38);
+    const reliefScore = clamp01(topographyScore * 0.64 + vectorScore * 0.29 + climateScore * 0.07);
+    const authoredSpanFloor = vectorRange > 0 ? vectorRange : 1;
+    const targetTierSpan = clampInteger(
+        Math.max(authoredSpanFloor, Math.round(1 + reliefScore * 5)),
+        1,
+        6
+    );
+    const baseElevationTier = vectorTiers.length
+        ? clampInteger(Math.round(median(vectorTiers)), 0, 6)
+        : clampInteger(Math.floor((sampledMean - 19) / 11), 0, 6);
+    const gradient = deriveHeightGradient(samples, settlement);
+    const reliefClass = reliefScore >= 0.68 ? 'high'
+        : reliefScore >= 0.38 ? 'moderate'
+            : 'low';
+
+    return Object.freeze({
+        formulaVersion: FMG_BURG_RELIEF_FORMULA_VERSION,
+        burgId: Number(settlement?.burg?.id ?? 0),
+        reliefClass,
+        reliefScore: roundProfileNumber(reliefScore),
+        targetTierSpan,
+        baseElevationTier,
+        stepModuleWeight: roundProfileNumber(0.55 + reliefScore * 3.45),
+        gradientAxis: gradient.axis,
+        gradientSign: gradient.sign,
+        sampledHeight: Object.freeze({
+            count: heights.length,
+            minimum: roundProfileNumber(sampledMinimum),
+            maximum: roundProfileNumber(sampledMaximum),
+            mean: roundProfileNumber(sampledMean),
+            range: roundProfileNumber(sampledRange),
+            standardDeviation: roundProfileNumber(sampledDeviation),
+            meanCardinalSlope: roundProfileNumber(sampledSlope)
+        }),
+        vectorElevation: Object.freeze({
+            count: vectorTiers.length,
+            minimum: vectorMinimum,
+            maximum: vectorMaximum,
+            range: vectorRange,
+            standardDeviation: roundProfileNumber(vectorDeviation)
+        }),
+        blueprintInputs: Object.freeze({
+            biome,
+            latitude: roundProfileNumber(latitude),
+            temperature: roundProfileNumber(temperature),
+            snowline: roundProfileNumber(snowline),
+            wardElevationVariance: roundProfileNumber(wardVariance)
+        }),
+        components: Object.freeze({
+            topography: roundProfileNumber(topographyScore),
+            vectorStreets: roundProfileNumber(vectorScore),
+            climate: roundProfileNumber(climateScore)
+        })
+    });
+}
 
 export function createSettlementConstraintAnchors({
     blueprints = [],
@@ -106,7 +236,19 @@ export function createSettlementConstraintAnchors({
                 halfHeight: Math.max(4, Math.round(radius * 0.82))
             }, width, height);
             const sourceBurg = burgById.get(Number(blueprint.burgId));
-            const burg = sourceBurg || {
+            const architectureThemeId = normalizeBurgThemeId(
+                projectedTownVector?.architectureThemeId ??
+                projectedTownVector?.themeId ??
+                blueprint.architectureThemeId ??
+                blueprint.identity?.architectureThemeId ??
+                sourceBurg?.architectureThemeId ??
+                sourceBurg?.themeId,
+                null
+            );
+            const burg = sourceBurg ? {
+                ...sourceBurg,
+                ...(architectureThemeId ? { architectureThemeId } : {})
+            } : {
                 id: Number(blueprint.burgId),
                 name: blueprint.name,
                 x: blueprint.x,
@@ -114,6 +256,7 @@ export function createSettlementConstraintAnchors({
                 population: blueprint.population,
                 state: blueprint.stateId ?? blueprint.state,
                 culture: blueprint.cultureId ?? blueprint.culture,
+                ...(architectureThemeId ? { architectureThemeId } : {}),
                 flags: { ...(blueprint.flags || {}) }
             };
             const walled = hasVectorWalls ||
@@ -121,6 +264,7 @@ export function createSettlementConstraintAnchors({
             return {
                 burg,
                 blueprint: runtimeBlueprint,
+                architectureThemeId,
                 clusterId: activeClusterId,
                 col,
                 row,
@@ -170,19 +314,52 @@ function projectedSettlementIntersectsViewport(blueprint, col, row, width, heigh
         row - halfHeight < height + safeMargin;
 }
 
-export function createBlueprintSkeleton({ settlements = [], width = 0, height = 0, sampleScale = 1 } = {}) {
+export function createBlueprintSkeleton({
+    settlements = [],
+    fields = [],
+    width = 0,
+    height = 0,
+    sampleScale = 1
+} = {}) {
     const cells = new Map();
+    const streetMapModules = {};
     const settlementByBurgId = new Map(settlements.map((entry) => [Number(entry.burg?.id), entry]));
+    const reliefByBurgId = new Map(settlements.map((entry) => [
+        Number(entry.burg?.id),
+        deriveFmgBurgReliefProfile({ settlement: entry, fields, width, height })
+    ]));
     const put = (col, row, value) => {
         if (col < 0 || row < 0 || col >= width || row >= height) return;
+        const architectureThemeId = normalizeBurgThemeId(
+            value?.architectureThemeId ??
+            settlementByBurgId.get(Number(value?.townId))?.architectureThemeId,
+            null
+        );
+        const themedValue = architectureThemeId
+            ? { ...value, architectureThemeId }
+            : value;
         const id = row * width + col;
         const current = cells.get(id);
-        if (current && (SKELETON_PRIORITY[current.kind] || 0) > (SKELETON_PRIORITY[value.kind] || 0)) return;
-        cells.set(id, Object.freeze({ id, col, row, fixed: true, ...value }));
+        if (current && skeletonCellPriority(current) > skeletonCellPriority(themedValue)) {
+            // A source street passing through an authored gate still owns the ground tier even
+            // though the gate owns the structural symbol. Preserve that fixed elevation on the
+            // winning node so the elevation pass can keep the street continuous through it.
+            if (isTownVectorStreet(themedValue) && Number.isFinite(Number(themedValue.elevationTier))) {
+                cells.set(id, Object.freeze({
+                    ...current,
+                    elevationTier: clampInteger(themedValue.elevationTier, 0, 6),
+                    elevationSource: 'town-vector',
+                    sourceStreetKind: themedValue.streetKind || themedValue.roadKind || 'dirt'
+                }));
+            }
+            return;
+        }
+        cells.set(id, Object.freeze({ id, col, row, fixed: true, ...themedValue }));
     };
 
     for (const settlement of settlements) {
         const townId = Number(settlement.burg?.id);
+        const reliefProfile = reliefByBurgId.get(townId);
         const vectorWalls = settlement.townVector?.wallCells || [];
         const hasVectorWalls = vectorWalls.length > 0;
         const vectorGates = hasVectorWalls
@@ -251,6 +428,105 @@ export function createBlueprintSkeleton({ settlements = [], width = 0, height = 
             }
         }
 
+        // The compact vector package supplies the burg's authored street lattice. Stamp it
+        // before generated gate avenues, blueprint links, and ward grids; the explicit priority
+        // above guarantees those later formula roads can fill gaps but cannot replace source
+        // main streets, dirt streets, docks, or their elevation tiers.
+        const sourceStreetCells = settlement.townVector?.streetCells || [];
+        for (const street of sourceStreetCells) {
+            const streetKind = normalizeTownVectorStreetKind(street.kind);
+            const kind = streetKind === 'dock' ? 'dock' : 'road';
+            put(street.col, street.row, {
+                kind,
+                townId,
+                source: 'town-vector',
+                streetKind,
+                roadKind: `town-vector-${streetKind}`,
+                vectorHash: settlement.townVector.vectorHash,
+                ...(Number.isFinite(Number(street.elevationTier))
+                    ? { elevationTier: clampInteger(street.elevationTier, 0, 6) }
+                    : {}),
+                roadConnections: Number.isFinite(Number(street.roadConnections))
+                    ? Math.floor(Number(street.roadConnections))
+                    : null
+            });
+        }
+
+        let streetMapPlan = null;
+        const streetCoverageArea = Math.max(
+            1,
+            Number(settlement.wallBounds?.width || 0) * Number(settlement.wallBounds?.height || 0)
+        );
+        const sourceStreetCoverage = sourceStreetCells.length / streetCoverageArea;
+        const vectorBuildingCellKeys = new Set();
+        for (const building of settlement.townVector?.buildings || []) {
+            for (const cell of building.footprintCells || []) {
+                vectorBuildingCellKeys.add(gridKey(
+                    Number(building.minCol) + Number(cell.x),
+                    Number(building.minRow) + Number(cell.y)
+                ));
+            }
+        }
+        // The source archive often already contains a complete block lattice. Running another
+        // full map WFC over a dense source plan consumes the last legal cabin parcels in small,
+        // heavily fortified burgs. Only sparse plans receive baked street infill; dense plans are
+        // already the higher-quality authored answer and remain untouched.
+        const needsStreetMapInfill = sourceStreetCells.length > 0 && sourceStreetCoverage < 0.16;
+        if (needsStreetMapInfill) {
+            streetMapPlan = createBakedStreetPlan({
+                bounds: settlement.wallBounds,
+                insideCellKeys: settlement.wallBounds?.insideCellKeys instanceof Set &&
+                    settlement.wallBounds.insideCellKeys.size > 0
+                    ? settlement.wallBounds.insideCellKeys
+                    : null,
+                reservedCellKeys: vectorBuildingCellKeys,
+                sourceStreetCells,
+                seed: `${settlement.townVector.vectorHash}:burg-${townId}:street-map`,
+                district: settlement.wards?.[0]?.district || 'residential',
+                walled: settlement.walled,
+                architectureThemeId: settlement.architectureThemeId,
+                reliefProfile,
+                // Anchor the common 5x5 lattice to the burg, not to the current viewport. The
+                // projected center moves with the viewport, so every client sees the same
+                // settlement-local module coordinates.
+                gridOriginCol: settlement.col,
+                gridOriginRow: settlement.row
+            });
+            for (const [moduleId, count] of Object.entries(streetMapPlan.diagnostics.modules || {})) {
+                streetMapModules[moduleId] = (streetMapModules[moduleId] || 0) + count;
+            }
+            for (const street of streetMapPlan.cells) {
+                put(street.col, street.row, {
+                    kind: 'road',
+                    townId,
+                    source: 'baked-street-wfc',
+                    roadKind: street.roadKind || 'wfc-street',
+                    moduleId: street.moduleId,
+                    moduleSize: street.moduleSize,
+                    moduleLocalCol: street.moduleLocalCol,
+                    moduleLocalRow: street.moduleLocalRow,
+                    patternSymbol: street.patternSymbol,
+                    elevationMode: street.elevationMode,
+                    portal: street.portal === true,
+                    portalDirection: street.portalDirection ?? null,
+                    portalId: street.portalId ?? null,
+                    reciprocalModuleId: street.reciprocalModuleId ?? null,
+                    connectedModuleIds: street.connectedModuleIds ?? null,
+                    transition: street.transition === true,
+                    transitionId: street.transitionId ?? null,
+                    transitionSize: street.transitionSize ?? null,
+                    transitionLocalCol: street.transitionLocalCol ?? null,
+                    transitionLocalRow: street.transitionLocalRow ?? null,
+                    transitionPatternSymbol: street.transitionPatternSymbol ?? null,
+                    reliefScore: reliefProfile?.reliefScore ?? 0,
+                    reliefFormulaVersion: reliefProfile?.formulaVersion ?? FMG_BURG_RELIEF_FORMULA_VERSION,
+                    ...(Number.isFinite(Number(street.elevationTier))
+                        ? { elevationTier: clampInteger(street.elevationTier, 0, 6) }
+                        : {})
+                });
+            }
+        }
+
         const gates = hasVectorWalls
             ? vectorGates
             : settlement.wallRings?.[0]?.gates || [];
@@ -287,13 +563,18 @@ export function createBlueprintSkeleton({ settlements = [], width = 0, height = 
                     })));
         }
 
-        stampWardStreetGrid(settlement, width, height, (col, row, ward) => {
-            if (hasVectorWalls && !isInsideWallBounds(col, row, settlement.wallBounds)) return;
-            put(col, row, {
-                kind: 'road', townId, roadKind: 'ward-street', widthTiles: 1,
-                district: ward.district
+        // Source-vector towns use the source-seeded street-map WFC above for infill. The older
+        // formula lattice remains a deterministic fallback for settlements without vector road
+        // coverage, including same-cluster satellites.
+        if (!sourceStreetCells.length || !streetMapPlan?.cells?.length) {
+            stampWardStreetGrid(settlement, width, height, (col, row, ward) => {
+                if (hasVectorWalls && !isInsideWallBounds(col, row, settlement.wallBounds)) return;
+                put(col, row, {
+                    kind: 'road', townId, roadKind: 'ward-street', widthTiles: 1,
+                    district: ward.district
+                });
             });
-        });
+        }
 
         const docks = settlement.blueprint?.districtDirectives?.docks;
         if (docks?.enabled) {
@@ -324,8 +605,21 @@ export function createBlueprintSkeleton({ settlements = [], width = 0, height = 
 
     const stableCells = [...cells.values()]
         .sort((left, right) => left.id - right.id || left.kind.localeCompare(right.kind));
+    const vectorStreetCells = stableCells.filter(isTownVectorStreet);
+    const streetMapCells = stableCells.filter(isBakedStreetWfcCell);
+    const vectorStreetElevationCells = vectorStreetCells.filter((cell) =>
+        Number.isFinite(Number(cell.elevationTier)));
+    const vectorStreetElevationTiers = [...new Set(vectorStreetElevationCells.map((cell) =>
+        clampInteger(cell.elevationTier, 0, 6)))].sort((left, right) => left - right);
+    const reliefProfiles = [...reliefByBurgId.values()]
+        .sort((left, right) => left.burgId - right.burgId);
+    const streetMapElevationCells = streetMapCells.filter((cell) =>
+        Number.isFinite(Number(cell.elevationTier)));
+    const streetMapElevationTiers = streetMapElevationCells.map((cell) =>
+        clampInteger(cell.elevationTier, 0, 6));
     return Object.freeze({
         cells,
+        reliefByBurgId,
         hash: hashSkeleton(stableCells),
         diagnostics: Object.freeze({
             cells: stableCells.length,
@@ -335,6 +629,23 @@ export function createBlueprintSkeleton({ settlements = [], width = 0, height = 
             vectorGates: stableCells.filter((cell) => cell.kind === 'gate' && cell.ring === 'vector').length,
             vectorTowns: new Set(stableCells.map((cell) => cell.vectorHash).filter(Boolean)).size,
             roads: stableCells.filter((cell) => cell.kind === 'road').length,
+            vectorStreetCells: vectorStreetCells.length,
+            vectorStreetElevationCells: vectorStreetElevationCells.length,
+            vectorStreetElevationTiers: Object.freeze(vectorStreetElevationTiers),
+            streetMapCells: streetMapCells.length,
+            streetMapModules: Object.freeze({ ...streetMapModules }),
+            streetMapPortalCells: streetMapCells.filter((cell) => cell.portal).length,
+            streetMapTransitionCells: streetMapCells.filter((cell) => cell.transition).length,
+            streetMapSteppedCells: streetMapCells.filter((cell) => cell.elevationMode === 'steps').length,
+            streetMapElevationRange: streetMapElevationTiers.length
+                ? Math.max(...streetMapElevationTiers) - Math.min(...streetMapElevationTiers)
+                : 0,
+            reliefFormulaVersion: FMG_BURG_RELIEF_FORMULA_VERSION,
+            reliefProfiles: Object.freeze(reliefProfiles),
+            highReliefSettlements: reliefProfiles.filter((profile) => profile.reliefClass === 'high').length,
+            meanReliefScore: reliefProfiles.length
+                ? roundProfileNumber(average(reliefProfiles.map((profile) => profile.reliefScore)))
+                : 0,
             castles: stableCells.filter((cell) => cell.kind === 'castle-plot').length,
             waterfalls: stableCells.filter((cell) => cell.kind === 'waterfall').length,
             plungePools: stableCells.filter((cell) => cell.kind === 'plunge-pool').length,
@@ -351,10 +662,18 @@ export function createWorldConstraintField({
     skeleton = null
 } = {}) {
     const cells = new Array(width * height);
+    const reliefByBurgId = skeleton?.reliefByBurgId instanceof Map
+        ? skeleton.reliefByBurgId
+        : new Map(settlements.map((entry) => [
+            Number(entry.burg?.id),
+            deriveFmgBurgReliefProfile({ settlement: entry, fields, width, height })
+        ]));
     let inhibited = 0;
     let walled = 0;
     let hardWater = 0;
     let fixedNodes = 0;
+    let fixedElevationCells = 0;
+    let vectorStreetCells = 0;
 
     for (let row = 0; row < height; row++) {
         for (let col = 0; col < width; col++) {
@@ -424,6 +743,10 @@ export function createWorldConstraintField({
             ));
             const requestedVariance = clamp01(ward?.wfcPriors?.elevationVariance ?? 1);
             const terrainVariance = fixed ? 0 : clamp01((1 - urbanization * 0.82) * requestedVariance);
+            const reliefProfile = reliefByBurgId.get(Number(owner?.burg?.id ?? fixed?.townId));
+            const fixedElevation = Number.isFinite(Number(fixed?.elevationTier))
+                ? clampInteger(fixed.elevationTier, 0, 6)
+                : null;
             const cell = Object.freeze({
                 id,
                 col,
@@ -434,6 +757,11 @@ export function createWorldConstraintField({
                 district: ward?.district ?? null,
                 latitude: Number(owner?.blueprint?.climate?.latitude ?? 0),
                 snowline: Number(owner?.blueprint?.climate?.snowline ?? 100),
+                reliefScore: reliefProfile?.reliefScore ?? 0,
+                reliefClass: reliefProfile?.reliefClass ?? null,
+                reliefTargetTierSpan: reliefProfile?.targetTierSpan ?? 1,
+                reliefBaseElevationTier: reliefProfile?.baseElevationTier ?? 0,
+                reliefFormulaVersion: reliefProfile?.formulaVersion ?? FMG_BURG_RELIEF_FORMULA_VERSION,
                 urbanization,
                 inhibitor,
                 chaosLimit: 1 - inhibitor,
@@ -446,6 +774,11 @@ export function createWorldConstraintField({
                 land,
                 skeletonKind: fixed?.kind ?? null,
                 fixedTerrain: fixedLand ? fixedLandTerrain : fixedWater ? 'shallow-water' : null,
+                fixedElevation,
+                fixedElevationSource: fixedElevation === null
+                    ? null
+                    : fixed?.elevationSource || fixed?.source || null,
+                sourceStreetKind: fixed?.streetKind || fixed?.sourceStreetKind || null,
                 blueprintFixed: Boolean(fixed)
             });
             cells[id] = cell;
@@ -453,11 +786,14 @@ export function createWorldConstraintField({
             if (insideWall) walled++;
             if (hardWaterConstraint) hardWater++;
             if (fixed) fixedNodes++;
+            if (fixedElevation !== null) fixedElevationCells++;
+            if (isTownVectorStreet(fixed)) vectorStreetCells++;
         }
     }
 
     return {
         cells,
+        reliefByBurgId,
         inhibitorRows: toRows(cells, width, height, (cell) => cell.inhibitor),
         urbanizationRows: toRows(cells, width, height, (cell) => cell.urbanization),
         diagnostics: Object.freeze({
@@ -466,6 +802,13 @@ export function createWorldConstraintField({
             walledInteriorCells: walled,
             hardWaterCells: hardWater,
             fixedBlueprintNodes: fixedNodes,
+            fixedElevationCells,
+            vectorStreetCells,
+            reliefFormulaVersion: FMG_BURG_RELIEF_FORMULA_VERSION,
+            reliefProfiles: Object.freeze([...reliefByBurgId.values()]
+                .sort((left, right) => left.burgId - right.burgId)),
+            highReliefSettlements: [...reliefByBurgId.values()]
+                .filter((profile) => profile.reliefClass === 'high').length,
             fixedSkeletonHash: skeleton?.hash || hashSkeleton([]),
             meanInhibitor: cells.length
                 ? cells.reduce((sum, cell) => sum + cell.inhibitor, 0) / cells.length
@@ -868,6 +1211,28 @@ function hashShapeSeed(value) {
     return hash >>> 0;
 }
 
+function skeletonCellPriority(cell) {
+    if (isTownVectorStreet(cell)) return TOWN_VECTOR_STREET_PRIORITY;
+    if (isBakedStreetWfcCell(cell)) return BAKED_STREET_WFC_PRIORITY;
+    return SKELETON_PRIORITY[cell?.kind] || 0;
+}
+
+function isTownVectorStreet(cell) {
+    return Boolean(cell) && cell.source === 'town-vector' &&
+        (cell.kind === 'road' || cell.kind === 'dock');
+}
+
+function isBakedStreetWfcCell(cell) {
+    return Boolean(cell) && cell.source === 'baked-street-wfc' && cell.kind === 'road';
+}
+
+function normalizeTownVectorStreetKind(value) {
+    const kind = String(value || '').toLowerCase().replace(/^road[_-]?/, '');
+    if (kind === 'dock') return 'dock';
+    if (kind === 'main') return 'main';
+    return 'dirt';
+}
+
 function blueprintWorldX(blueprint) {
     return Number(blueprint?.anchorX ?? blueprint?.anchor?.x ?? blueprint?.x ?? 0);
 }
@@ -928,6 +1293,99 @@ function resolveBlueprintDirectives(blueprint, globalWater = {}) {
     };
 }
 
+function collectSettlementHeightSamples(settlement, fields, width, height) {
+    if (!settlement || !Array.isArray(fields) || !fields.length || width <= 0 || height <= 0) return [];
+    const bounds = settlement.wallBounds || createWallBounds(
+        settlement.col,
+        settlement.row,
+        Math.max(3, Number(settlement.radius) || 5),
+        width,
+        height
+    );
+    const all = [];
+    const land = [];
+    for (let row = Math.max(0, bounds.minRow); row <= Math.min(height - 1, bounds.maxRow); row++) {
+        for (let col = Math.max(0, bounds.minCol); col <= Math.min(width - 1, bounds.maxCol); col++) {
+            if (bounds.insideCellKeys instanceof Set && !bounds.insideCellKeys.has(gridKey(col, row))) continue;
+            const field = fields[row * width + col];
+            const sampleHeight = Number(field?.height);
+            if (!Number.isFinite(sampleHeight)) continue;
+            const sample = { col, row, height: sampleHeight };
+            all.push(sample);
+            if (!Number.isFinite(Number(field?.land)) || Number(field.land) > 0.18) land.push(sample);
+        }
+    }
+    return land.length >= Math.min(6, all.length) ? land : all;
+}
+
+function meanCardinalHeightSlope(samples) {
+    if (!samples.length) return 0;
+    const byCell = new Map(samples.map((sample) => [gridKey(sample.col, sample.row), sample.height]));
+    const differences = [];
+    for (const sample of samples) {
+        for (const [dx, dy] of [[1, 0], [0, 1]]) {
+            const neighbor = byCell.get(gridKey(sample.col + dx, sample.row + dy));
+            if (Number.isFinite(neighbor)) differences.push(Math.abs(neighbor - sample.height));
+        }
+    }
+    return average(differences);
+}
+
+function deriveHeightGradient(samples, settlement) {
+    if (samples.length >= 2) {
+        const centerCol = average(samples.map((sample) => sample.col));
+        const centerRow = average(samples.map((sample) => sample.row));
+        const meanHeight = average(samples.map((sample) => sample.height));
+        let colCovariance = 0;
+        let rowCovariance = 0;
+        let colVariance = 0;
+        let rowVariance = 0;
+        for (const sample of samples) {
+            const dx = sample.col - centerCol;
+            const dy = sample.row - centerRow;
+            const dz = sample.height - meanHeight;
+            colCovariance += dx * dz;
+            rowCovariance += dy * dz;
+            colVariance += dx * dx;
+            rowVariance += dy * dy;
+        }
+        const colGradient = colVariance ? colCovariance / colVariance : 0;
+        const rowGradient = rowVariance ? rowCovariance / rowVariance : 0;
+        if (Math.max(Math.abs(colGradient), Math.abs(rowGradient)) > 0.0001) {
+            return Math.abs(colGradient) >= Math.abs(rowGradient)
+                ? { axis: 'east-west', sign: colGradient >= 0 ? 1 : -1 }
+                : { axis: 'north-south', sign: rowGradient >= 0 ? 1 : -1 };
+        }
+    }
+    const fallback = hashShapeSeed(`relief-axis:${settlement?.burg?.id ?? 0}`);
+    return {
+        axis: fallback % 2 ? 'east-west' : 'north-south',
+        sign: fallback & 2 ? 1 : -1
+    };
+}
+
+function standardDeviation(values, meanValue = average(values)) {
+    if (!values.length) return 0;
+    return Math.sqrt(average(values.map((value) => Math.pow(value - meanValue, 2))));
+}
+
+function median(values) {
+    if (!values.length) return 0;
+    const sorted = [...values].sort((left, right) => left - right);
+    const middle = Math.floor(sorted.length / 2);
+    return sorted.length % 2
+        ? sorted[middle]
+        : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function average(values) {
+    return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+}
+
+function roundProfileNumber(value) {
+    return Math.round((Number(value) || 0) * 10000) / 10000;
+}
+
 function normalizeBearing(value) {
     const number = Number(value);
     if (!Number.isFinite(number)) return 180;
@@ -941,7 +1399,8 @@ function hierarchyRank(value) {
 function hashSkeleton(cells) {
     let hash = 2166136261;
     for (const cell of cells) {
-        const value = `${cell.id}:${cell.kind}:${cell.townId ?? ''}:${cell.ring ?? ''};`;
+        const value = `${cell.id}:${cell.kind}:${cell.townId ?? ''}:${cell.ring ?? ''}:` +
+            `${cell.source ?? ''}:${cell.moduleId ?? ''}:${cell.elevationTier ?? ''};`;
         for (let index = 0; index < value.length; index++) {
             hash ^= value.charCodeAt(index);
             hash = Math.imul(hash, 16777619);

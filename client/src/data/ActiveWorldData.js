@@ -5,8 +5,8 @@ export const ACTIVE_WORLD = {
   "id": "auzoryia",
   "name": "Auzoryia",
   "sourceName": "Masia",
-  "generationVersion": "fmg-blueprint-wfc-v6",
-  "contentHash": "63eae1267fcb3294f361d2cabdf00ee8228c8102ac28ec406206d1afb8330d32",
+  "generationVersion": "fmg-blueprint-wfc-v9",
+  "contentHash": "70a6b0466b2251c3096bee98c10d9f6e27f5f367ad7d117325d4a89b516e4b0e",
   "seed": 424242,
   "mapId": 1784772689585,
   "width": 640,
@@ -31,6 +31,7 @@ export const ACTIVE_WORLD = {
       "population": 300,
       "state": 1,
       "culture": 11,
+      "themeId": "southern-european",
       "cell": 6358,
       "flags": {
         "capital": true,
@@ -51,6 +52,7 @@ export const ACTIVE_WORLD = {
       "population": 300,
       "state": 2,
       "culture": 5,
+      "themeId": "northern-european",
       "cell": 5530,
       "flags": {
         "capital": true,
@@ -71,6 +73,7 @@ export const ACTIVE_WORLD = {
       "population": 300,
       "state": 3,
       "culture": 12,
+      "themeId": "middle-eastern",
       "cell": 6639,
       "flags": {
         "capital": true,
@@ -91,6 +94,7 @@ export const ACTIVE_WORLD = {
       "population": 70,
       "state": 4,
       "culture": 5,
+      "themeId": "northern-european",
       "cell": 4159,
       "flags": {
         "capital": true,
@@ -111,6 +115,7 @@ export const ACTIVE_WORLD = {
       "population": 300,
       "state": 5,
       "culture": 11,
+      "themeId": "southern-european",
       "cell": 6468,
       "flags": {
         "capital": true,
@@ -131,6 +136,7 @@ export const ACTIVE_WORLD = {
       "population": 58,
       "state": 6,
       "culture": 11,
+      "themeId": "southern-european",
       "cell": 5460,
       "flags": {
         "capital": true,
@@ -151,6 +157,7 @@ export const ACTIVE_WORLD = {
       "population": 115,
       "state": 7,
       "culture": 8,
+      "themeId": "asian",
       "cell": 2952,
       "flags": {
         "capital": true,
@@ -171,6 +178,7 @@ export const ACTIVE_WORLD = {
       "population": 47,
       "state": 8,
       "culture": 5,
+      "themeId": "northern-european",
       "cell": 5538,
       "flags": {
         "capital": true,
@@ -191,6 +199,7 @@ export const ACTIVE_WORLD = {
       "population": 300,
       "state": 9,
       "culture": 5,
+      "themeId": "northern-european",
       "cell": 5065,
       "flags": {
         "capital": true,
@@ -211,6 +220,7 @@ export const ACTIVE_WORLD = {
       "population": 300,
       "state": 10,
       "culture": 12,
+      "themeId": "middle-eastern",
       "cell": 6538,
       "flags": {
         "capital": true,
@@ -231,6 +241,7 @@ export const ACTIVE_WORLD = {
       "population": 198,
       "state": 11,
       "culture": 12,
+      "themeId": "middle-eastern",
       "cell": 1281,
       "flags": {
         "capital": true,
@@ -251,6 +262,7 @@ export const ACTIVE_WORLD = {
       "population": 157,
       "state": 12,
       "culture": 3,
+      "themeId": "southern-european",
       "cell": 6301,
       "flags": {
         "capital": true,
@@ -271,6 +283,7 @@ export const ACTIVE_WORLD = {
       "population": 300,
       "state": 13,
       "culture": 9,
+      "themeId": "northern-european",
       "cell": 753,
       "flags": {
         "capital": true,
@@ -291,6 +304,7 @@ export const ACTIVE_WORLD = {
       "population": 47,
       "state": 14,
       "culture": 12,
+      "themeId": "middle-eastern",
       "cell": 1288,
       "flags": {
         "capital": true,
@@ -311,6 +325,7 @@ export const ACTIVE_WORLD = {
       "population": 167,
       "state": 15,
       "culture": 12,
+      "themeId": "middle-eastern",
       "cell": 1949,
       "flags": {
         "capital": true,
@@ -331,6 +346,7 @@ export const ACTIVE_WORLD = {
       "population": 283,
       "state": 16,
       "culture": 5,
+      "themeId": "northern-european",
       "cell": 3398,
       "flags": {
         "capital": true,
@@ -351,6 +367,7 @@ export const ACTIVE_WORLD = {
       "population": 54,
       "state": 17,
       "culture": 5,
+      "themeId": "northern-european",
       "cell": 5206,
       "flags": {
         "capital": true,
@@ -371,6 +388,7 @@ export const ACTIVE_WORLD = {
       "population": 122,
       "state": 18,
       "culture": 4,
+      "themeId": "southern-european",
       "cell": 1223,
       "flags": {
         "capital": true,
@@ -391,6 +409,7 @@ export const ACTIVE_WORLD = {
       "population": 300,
       "state": 19,
       "culture": 4,
+      "themeId": "southern-european",
       "cell": 1321,
       "flags": {
         "capital": true,
@@ -411,6 +430,7 @@ export const ACTIVE_WORLD = {
       "population": 231,
       "state": 20,
       "culture": 6,
+      "themeId": "southern-european",
       "cell": 6843,
       "flags": {
         "capital": true,
@@ -431,6 +451,7 @@ export const ACTIVE_WORLD = {
       "population": 300,
       "state": 21,
       "culture": 6,
+      "themeId": "southern-european",
       "cell": 7156,
       "flags": {
         "capital": true,
@@ -451,6 +472,7 @@ export const ACTIVE_WORLD = {
       "population": 106,
       "state": 22,
       "culture": 4,
+      "themeId": "southern-european",
       "cell": 975,
       "flags": {
         "capital": true,
@@ -471,6 +493,7 @@ export const ACTIVE_WORLD = {
       "population": 300,
       "state": 23,
       "culture": 8,
+      "themeId": "asian",
       "cell": 2148,
       "flags": {
         "capital": true,
@@ -491,6 +514,7 @@ export const ACTIVE_WORLD = {
       "population": 125,
       "state": 24,
       "culture": 5,
+      "themeId": "northern-european",
       "cell": 4593,
       "flags": {
         "capital": true,
@@ -511,6 +535,7 @@ export const ACTIVE_WORLD = {
       "population": 300,
       "state": 25,
       "culture": 3,
+      "themeId": "southern-european",
       "cell": 6534,
       "flags": {
         "capital": true,
@@ -531,6 +556,7 @@ export const ACTIVE_WORLD = {
       "population": 300,
       "state": 26,
       "culture": 9,
+      "themeId": "northern-european",
       "cell": 743,
       "flags": {
         "capital": true,
@@ -551,6 +577,7 @@ export const ACTIVE_WORLD = {
       "population": 300,
       "state": 27,
       "culture": 4,
+      "themeId": "southern-european",
       "cell": 1012,
       "flags": {
         "capital": true,
@@ -571,6 +598,7 @@ export const ACTIVE_WORLD = {
       "population": 82,
       "state": 28,
       "culture": 7,
+      "themeId": "northern-european",
       "cell": 1555,
       "flags": {
         "capital": true,
@@ -591,6 +619,7 @@ export const ACTIVE_WORLD = {
       "population": 214,
       "state": 29,
       "culture": 7,
+      "themeId": "northern-european",
       "cell": 3139,
       "flags": {
         "capital": true,
@@ -611,6 +640,7 @@ export const ACTIVE_WORLD = {
       "population": 118,
       "state": 30,
       "culture": 3,
+      "themeId": "southern-european",
       "cell": 6297,
       "flags": {
         "capital": true,
@@ -631,6 +661,7 @@ export const ACTIVE_WORLD = {
       "population": 22,
       "state": 12,
       "culture": 7,
+      "themeId": "northern-european",
       "cell": 4668,
       "flags": {
         "capital": false,
@@ -651,6 +682,7 @@ export const ACTIVE_WORLD = {
       "population": 23,
       "state": 26,
       "culture": 9,
+      "themeId": "northern-european",
       "cell": 556,
       "flags": {
         "capital": false,
@@ -671,6 +703,7 @@ export const ACTIVE_WORLD = {
       "population": 20,
       "state": 27,
       "culture": 2,
+      "themeId": "southern-european",
       "cell": 1365,
       "flags": {
         "capital": false,
@@ -691,6 +724,7 @@ export const ACTIVE_WORLD = {
       "population": 107,
       "state": 27,
       "culture": 2,
+      "themeId": "southern-european",
       "cell": 1474,
       "flags": {
         "capital": false,
@@ -711,6 +745,7 @@ export const ACTIVE_WORLD = {
       "population": 54,
       "state": 11,
       "culture": 12,
+      "themeId": "middle-eastern",
       "cell": 2939,
       "flags": {
         "capital": false,
@@ -731,6 +766,7 @@ export const ACTIVE_WORLD = {
       "population": 22,
       "state": 27,
       "culture": 2,
+      "themeId": "southern-european",
       "cell": 1902,
       "flags": {
         "capital": false,
@@ -751,6 +787,7 @@ export const ACTIVE_WORLD = {
       "population": 120,
       "state": 21,
       "culture": 6,
+      "themeId": "southern-european",
       "cell": 6857,
       "flags": {
         "capital": false,
@@ -771,6 +808,7 @@ export const ACTIVE_WORLD = {
       "population": 26,
       "state": 26,
       "culture": 9,
+      "themeId": "northern-european",
       "cell": 720,
       "flags": {
         "capital": false,
@@ -791,6 +829,7 @@ export const ACTIVE_WORLD = {
       "population": 120,
       "state": 5,
       "culture": 7,
+      "themeId": "northern-european",
       "cell": 4638,
       "flags": {
         "capital": false,
@@ -811,6 +850,7 @@ export const ACTIVE_WORLD = {
       "population": 120,
       "state": 4,
       "culture": 12,
+      "themeId": "middle-eastern",
       "cell": 3601,
       "flags": {
         "capital": false,
@@ -831,6 +871,7 @@ export const ACTIVE_WORLD = {
       "population": 120,
       "state": 19,
       "culture": 7,
+      "themeId": "northern-european",
       "cell": 1733,
       "flags": {
         "capital": false,
@@ -851,6 +892,7 @@ export const ACTIVE_WORLD = {
       "population": 46,
       "state": 9,
       "culture": 12,
+      "themeId": "egyptian",
       "cell": 3598,
       "flags": {
         "capital": false,
@@ -871,6 +913,7 @@ export const ACTIVE_WORLD = {
       "population": 80,
       "state": 12,
       "culture": 7,
+      "themeId": "northern-european",
       "cell": 5581,
       "flags": {
         "capital": false,
@@ -891,6 +934,7 @@ export const ACTIVE_WORLD = {
       "population": 20,
       "state": 13,
       "culture": 12,
+      "themeId": "middle-eastern",
       "cell": 906,
       "flags": {
         "capital": false,
@@ -911,6 +955,7 @@ export const ACTIVE_WORLD = {
       "population": 49,
       "state": 10,
       "culture": 12,
+      "themeId": "egyptian",
       "cell": 5179,
       "flags": {
         "capital": false,
@@ -931,6 +976,7 @@ export const ACTIVE_WORLD = {
       "population": 25,
       "state": 12,
       "culture": 3,
+      "themeId": "southern-european",
       "cell": 7274,
       "flags": {
         "capital": false,
@@ -951,6 +997,7 @@ export const ACTIVE_WORLD = {
       "population": 78,
       "state": 21,
       "culture": 6,
+      "themeId": "southern-european",
       "cell": 7245,
       "flags": {
         "capital": false,
@@ -971,6 +1018,7 @@ export const ACTIVE_WORLD = {
       "population": 28,
       "state": 19,
       "culture": 4,
+      "themeId": "southern-european",
       "cell": 1734,
       "flags": {
         "capital": false,
@@ -991,6 +1039,7 @@ export const ACTIVE_WORLD = {
       "population": 57,
       "state": 12,
       "culture": 7,
+      "themeId": "northern-european",
       "cell": 5156,
       "flags": {
         "capital": false,
@@ -1011,6 +1060,7 @@ export const ACTIVE_WORLD = {
       "population": 20,
       "state": 11,
       "culture": 2,
+      "themeId": "southern-european",
       "cell": 1594,
       "flags": {
         "capital": false,
@@ -1031,6 +1081,7 @@ export const ACTIVE_WORLD = {
       "population": 120,
       "state": 5,
       "culture": 11,
+      "themeId": "southern-european",
       "cell": 6041,
       "flags": {
         "capital": false,
@@ -1051,6 +1102,7 @@ export const ACTIVE_WORLD = {
       "population": 25,
       "state": 26,
       "culture": 9,
+      "themeId": "northern-european",
       "cell": 717,
       "flags": {
         "capital": false,
@@ -1071,6 +1123,7 @@ export const ACTIVE_WORLD = {
       "population": 120,
       "state": 5,
       "culture": 11,
+      "themeId": "southern-european",
       "cell": 3203,
       "flags": {
         "capital": false,
@@ -1091,6 +1144,7 @@ export const ACTIVE_WORLD = {
       "population": 120,
       "state": 26,
       "culture": 9,
+      "themeId": "northern-european",
       "cell": 554,
       "flags": {
         "capital": false,
@@ -1111,6 +1165,7 @@ export const ACTIVE_WORLD = {
       "population": 45,
       "state": 18,
       "culture": 4,
+      "themeId": "southern-european",
       "cell": 1649,
       "flags": {
         "capital": false,
@@ -1131,6 +1186,7 @@ export const ACTIVE_WORLD = {
       "population": 117,
       "state": 10,
       "culture": 12,
+      "themeId": "middle-eastern",
       "cell": 5631,
       "flags": {
         "capital": false,
@@ -1151,6 +1207,7 @@ export const ACTIVE_WORLD = {
       "population": 20,
       "state": 5,
       "culture": 7,
+      "themeId": "egyptian",
       "cell": 4209,
       "flags": {
         "capital": false,
@@ -1171,6 +1228,7 @@ export const ACTIVE_WORLD = {
       "population": 66,
       "state": 12,
       "culture": 3,
+      "themeId": "southern-european",
       "cell": 6265,
       "flags": {
         "capital": false,
@@ -1191,6 +1249,7 @@ export const ACTIVE_WORLD = {
       "population": 93,
       "state": 12,
       "culture": 3,
+      "themeId": "southern-european",
       "cell": 6509,
       "flags": {
         "capital": false,
@@ -1211,6 +1270,7 @@ export const ACTIVE_WORLD = {
       "population": 24,
       "state": 12,
       "culture": 7,
+      "themeId": "northern-european",
       "cell": 5596,
       "flags": {
         "capital": false,
@@ -7155,7 +7215,39 @@ export const ACTIVE_WORLD = {
 
 export const ACTIVE_GEOGRAPHY = {
   "schema": "vibe-game-active-geography",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "themeCatalog": [
+    {
+      "id": "asian",
+      "label": "Asian",
+      "streetPaletteId": "asian-stone-lane",
+      "wallTextureId": "asian-plaster-stone"
+    },
+    {
+      "id": "middle-eastern",
+      "label": "Middle Eastern",
+      "streetPaletteId": "middle-eastern-sandstone-lane",
+      "wallTextureId": "middle-eastern-sandstone-plaster"
+    },
+    {
+      "id": "northern-european",
+      "label": "Northern European",
+      "streetPaletteId": "northern-european-cobble",
+      "wallTextureId": "northern-european-granite"
+    },
+    {
+      "id": "southern-european",
+      "label": "Southern European",
+      "streetPaletteId": "southern-european-paver",
+      "wallTextureId": "southern-european-limestone-stucco"
+    },
+    {
+      "id": "egyptian",
+      "label": "Egyptian",
+      "streetPaletteId": "egyptian-sandstone-processional",
+      "wallTextureId": "egyptian-cut-sandstone"
+    }
+  ],
   "biomes": [
     "Marine",
     "Hot desert",
@@ -178061,6 +178153,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 1,
       "name": "Egny",
+      "themeId": "southern-european",
       "group": "capital",
       "cell": 6358,
       "x": 161.47,
@@ -178080,6 +178173,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 2,
       "name": "Marsh",
+      "themeId": "northern-european",
       "group": "capital",
       "cell": 5530,
       "x": 502.62,
@@ -178099,6 +178193,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 3,
       "name": "Banu",
+      "themeId": "middle-eastern",
       "group": "capital",
       "cell": 6639,
       "x": 472.11,
@@ -178118,6 +178213,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 4,
       "name": "Kilkneth",
+      "themeId": "northern-european",
       "group": "capital",
       "cell": 4159,
       "x": 557.41,
@@ -178137,6 +178233,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 5,
       "name": "Bois",
+      "themeId": "southern-european",
       "group": "capital",
       "cell": 6468,
       "x": 139.18,
@@ -178156,6 +178253,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 6,
       "name": "Escre",
+      "themeId": "southern-european",
       "group": "capital",
       "cell": 5460,
       "x": 181.99,
@@ -178175,6 +178273,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 7,
       "name": "La-Vungu",
+      "themeId": "asian",
       "group": "capital",
       "cell": 2952,
       "x": 563.69,
@@ -178194,6 +178293,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 8,
       "name": "Nedon",
+      "themeId": "northern-european",
       "group": "capital",
       "cell": 5538,
       "x": 528.64,
@@ -178213,6 +178313,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 9,
       "name": "Dunsham",
+      "themeId": "northern-european",
       "group": "capital",
       "cell": 5065,
       "x": 537.49,
@@ -178232,6 +178333,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 10,
       "name": "Kida",
+      "themeId": "middle-eastern",
       "group": "capital",
       "cell": 6538,
       "x": 445.15,
@@ -178251,6 +178353,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 11,
       "name": "Jar",
+      "themeId": "middle-eastern",
       "group": "capital",
       "cell": 1281,
       "x": 522.52,
@@ -178270,6 +178373,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 12,
       "name": "Roca",
+      "themeId": "southern-european",
       "group": "capital",
       "cell": 6301,
       "x": 380.51,
@@ -178289,6 +178393,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 13,
       "name": "Mene",
+      "themeId": "northern-european",
       "group": "capital",
       "cell": 753,
       "x": 530.06,
@@ -178308,6 +178413,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 14,
       "name": "Nipha",
+      "themeId": "middle-eastern",
       "group": "capital",
       "cell": 1288,
       "x": 540.47,
@@ -178327,6 +178433,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 15,
       "name": "Giz",
+      "themeId": "middle-eastern",
       "group": "capital",
       "cell": 1949,
       "x": 602.51,
@@ -178346,6 +178453,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 16,
       "name": "Chipsea",
+      "themeId": "northern-european",
       "group": "capital",
       "cell": 3398,
       "x": 571.42,
@@ -178365,6 +178473,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 17,
       "name": "Soney",
+      "themeId": "northern-european",
       "group": "capital",
       "cell": 5206,
       "x": 557.98,
@@ -178384,6 +178493,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 18,
       "name": "Trilza",
+      "themeId": "southern-european",
       "group": "capital",
       "cell": 1223,
       "x": 259.75,
@@ -178403,6 +178513,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 19,
       "name": "Cadejos",
+      "themeId": "southern-european",
       "group": "capital",
       "cell": 1321,
       "x": 241.17,
@@ -178422,6 +178533,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 20,
       "name": "Casida",
+      "themeId": "southern-european",
       "group": "capital",
       "cell": 6843,
       "x": 155.28,
@@ -178441,6 +178553,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 21,
       "name": "Murgena",
+      "themeId": "southern-european",
       "group": "capital",
       "cell": 7156,
       "x": 173.6,
@@ -178460,6 +178573,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 22,
       "name": "Zaojastel",
+      "themeId": "southern-european",
       "group": "capital",
       "cell": 975,
       "x": 212.1,
@@ -178479,6 +178593,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 23,
       "name": "Da",
+      "themeId": "asian",
       "group": "capital",
       "cell": 2148,
       "x": 576.99,
@@ -178498,6 +178613,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 24,
       "name": "Chipleton",
+      "themeId": "northern-european",
       "group": "capital",
       "cell": 4593,
       "x": 554.93,
@@ -178517,6 +178633,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 25,
       "name": "Posco",
+      "themeId": "southern-european",
       "group": "capital",
       "cell": 6534,
       "x": 423.4,
@@ -178536,6 +178653,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 26,
       "name": "Hesvik",
+      "themeId": "northern-european",
       "group": "capital",
       "cell": 743,
       "x": 502.98,
@@ -178555,6 +178673,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 27,
       "name": "Sedancos",
+      "themeId": "southern-european",
       "group": "capital",
       "cell": 1012,
       "x": 365.56,
@@ -178574,6 +178693,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 28,
       "name": "Soche",
+      "themeId": "northern-european",
       "group": "capital",
       "cell": 1555,
       "x": 329.7,
@@ -178593,6 +178713,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 29,
       "name": "Rzhishek",
+      "themeId": "northern-european",
       "group": "capital",
       "cell": 3139,
       "x": 398.96,
@@ -178612,6 +178733,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 30,
       "name": "Cino",
+      "themeId": "southern-european",
       "group": "capital",
       "cell": 6297,
       "x": 360.16,
@@ -178631,6 +178753,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 31,
       "name": "Karororo",
+      "themeId": "northern-european",
       "group": "village",
       "cell": 4668,
       "x": 354.33,
@@ -178650,6 +178773,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 32,
       "name": "Holhus",
+      "themeId": "northern-european",
       "group": "village",
       "cell": 556,
       "x": 421.59,
@@ -178669,6 +178793,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 33,
       "name": "Rosiaponti",
+      "themeId": "southern-european",
       "group": "village",
       "cell": 1365,
       "x": 409.96,
@@ -178688,6 +178813,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 34,
       "name": "Bytriale",
+      "themeId": "southern-european",
       "group": "town",
       "cell": 1474,
       "x": 421,
@@ -178707,6 +178833,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 35,
       "name": "Dashnazal",
+      "themeId": "middle-eastern",
       "group": "village",
       "cell": 2939,
       "x": 503.01,
@@ -178726,6 +178853,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 36,
       "name": "Phagas",
+      "themeId": "southern-european",
       "group": "village",
       "cell": 1902,
       "x": 409.96,
@@ -178745,6 +178873,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 37,
       "name": "Durinona",
+      "themeId": "southern-european",
       "group": "town",
       "cell": 6857,
       "x": 223.44,
@@ -178764,6 +178893,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 38,
       "name": "Trelkes",
+      "themeId": "northern-european",
       "group": "village",
       "cell": 720,
       "x": 439.54,
@@ -178783,6 +178913,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 39,
       "name": "Verin",
+      "themeId": "northern-european",
       "group": "town",
       "cell": 4638,
       "x": 216.85,
@@ -178802,6 +178933,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 40,
       "name": "Shal",
+      "themeId": "middle-eastern",
       "group": "town",
       "cell": 3601,
       "x": 511.59,
@@ -178821,6 +178953,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 41,
       "name": "Perinsk",
+      "themeId": "northern-european",
       "group": "town",
       "cell": 1733,
       "x": 201,
@@ -178840,6 +178973,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 42,
       "name": "Armo",
+      "themeId": "egyptian",
       "group": "village",
       "cell": 3598,
       "x": 497.39,
@@ -178859,6 +178993,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 43,
       "name": "Godok",
+      "themeId": "northern-european",
       "group": "town",
       "cell": 5581,
       "x": 244.58,
@@ -178878,6 +179013,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 44,
       "name": "Inara",
+      "themeId": "middle-eastern",
       "group": "village",
       "cell": 906,
       "x": 600.38,
@@ -178897,6 +179033,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 45,
       "name": "Shapumnan",
+      "themeId": "egyptian",
       "group": "village",
       "cell": 5179,
       "x": 453.36,
@@ -178916,6 +179053,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 46,
       "name": "Canorio",
+      "themeId": "southern-european",
       "group": "village",
       "cell": 7274,
       "x": 368.45,
@@ -178935,6 +179073,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 47,
       "name": "Norumpocob",
+      "themeId": "southern-european",
       "group": "village",
       "cell": 7245,
       "x": 229.48,
@@ -178954,6 +179093,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 48,
       "name": "Ruegazuque",
+      "themeId": "southern-european",
       "group": "village",
       "cell": 1734,
       "x": 202.31,
@@ -178973,6 +179113,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 49,
       "name": "Vereyas",
+      "themeId": "northern-european",
       "group": "village",
       "cell": 5156,
       "x": 360.03,
@@ -178992,6 +179133,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 50,
       "name": "Kaselion",
+      "themeId": "southern-european",
       "group": "village",
       "cell": 1594,
       "x": 480.38,
@@ -179011,6 +179153,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 51,
       "name": "Boissierelles",
+      "themeId": "southern-european",
       "group": "town",
       "cell": 6041,
       "x": 101.07,
@@ -179030,6 +179173,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 52,
       "name": "Nelahlidvi",
+      "themeId": "northern-european",
       "group": "village",
       "cell": 717,
       "x": 434.82,
@@ -179049,6 +179193,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 53,
       "name": "Feins",
+      "themeId": "southern-european",
       "group": "town",
       "cell": 3203,
       "x": 176.29,
@@ -179068,6 +179213,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 54,
       "name": "Djutar",
+      "themeId": "northern-european",
       "group": "town",
       "cell": 554,
       "x": 416.52,
@@ -179087,6 +179233,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 55,
       "name": "Cindiga",
+      "themeId": "southern-european",
       "group": "village",
       "cell": 1649,
       "x": 290.72,
@@ -179106,6 +179253,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 56,
       "name": "Hinagar",
+      "themeId": "middle-eastern",
       "group": "town",
       "cell": 5631,
       "x": 448.61,
@@ -179125,6 +179273,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 57,
       "name": "Morokov",
+      "themeId": "egyptian",
       "group": "village",
       "cell": 4209,
       "x": 259.82,
@@ -179144,6 +179293,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 58,
       "name": "Mivici",
+      "themeId": "southern-european",
       "group": "village",
       "cell": 6265,
       "x": 224.36,
@@ -179163,6 +179313,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 59,
       "name": "Saleninis",
+      "themeId": "southern-european",
       "group": "town",
       "cell": 6509,
       "x": 313.66,
@@ -179182,6 +179333,7 @@ export const ACTIVE_GEOGRAPHY = {
     {
       "id": 60,
       "name": "Rombor",
+      "themeId": "northern-european",
       "group": "village",
       "cell": 5596,
       "x": 315.97,
@@ -179203,8 +179355,8 @@ export const ACTIVE_GEOGRAPHY = {
 
 export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
   "schema": "vibe-game-settlement-blueprints",
-  "schemaVersion": 1,
-  "generationVersion": "fmg-blueprint-wfc-v6",
+  "schemaVersion": 2,
+  "generationVersion": "fmg-blueprint-wfc-v9",
   "coordinateSpace": "fmg-svg-pixels",
   "wallRadiusUnits": "local-tiles",
   "blueprints": [
@@ -179228,6 +179380,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 300,
         "state": 1,
         "culture": 11,
+        "themeId": "southern-european",
         "cell": 6358,
         "feature": 7,
         "flags": {
@@ -179485,6 +179638,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Luari",
         "cultureType": "Nomadic",
         "cultureColor": "#b3de69",
+        "architectureThemeId": "southern-european",
         "religionId": 13,
         "religionName": "Luari Pantheon",
         "provinceId": null
@@ -179520,6 +179674,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 300,
         "state": 2,
         "culture": 5,
+        "themeId": "northern-european",
         "cell": 5530,
         "feature": 7,
         "flags": {
@@ -179770,6 +179925,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Angshire",
         "cultureType": "River",
         "cultureColor": "#c6b9c1",
+        "architectureThemeId": "northern-european",
         "religionId": 14,
         "religionName": "Angshire Deities",
         "provinceId": null
@@ -179805,6 +179961,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 300,
         "state": 3,
         "culture": 12,
+        "themeId": "middle-eastern",
         "cell": 6639,
         "feature": 7,
         "flags": {
@@ -180062,6 +180219,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Efratic",
         "cultureType": "Generic",
         "cultureColor": "#dababf",
+        "architectureThemeId": "middle-eastern",
         "religionId": 12,
         "religionName": "Efratic Beliefs",
         "provinceId": null
@@ -180092,6 +180250,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 70,
         "state": 4,
         "culture": 5,
+        "themeId": "northern-european",
         "cell": 4159,
         "feature": 7,
         "flags": {
@@ -180368,6 +180527,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Angshire",
         "cultureType": "River",
         "cultureColor": "#c6b9c1",
+        "architectureThemeId": "northern-european",
         "religionId": 14,
         "religionName": "Angshire Deities",
         "provinceId": 1
@@ -180413,6 +180573,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 300,
         "state": 5,
         "culture": 11,
+        "themeId": "southern-european",
         "cell": 6468,
         "feature": 7,
         "flags": {
@@ -180773,6 +180934,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Luari",
         "cultureType": "Nomadic",
         "cultureColor": "#b3de69",
+        "architectureThemeId": "southern-european",
         "religionId": 13,
         "religionName": "Luari Pantheon",
         "provinceId": 3
@@ -180813,6 +180975,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 58,
         "state": 6,
         "culture": 11,
+        "themeId": "southern-european",
         "cell": 5460,
         "feature": 7,
         "flags": {
@@ -181065,6 +181228,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Luari",
         "cultureType": "Nomadic",
         "cultureColor": "#b3de69",
+        "architectureThemeId": "southern-european",
         "religionId": 13,
         "religionName": "Luari Pantheon",
         "provinceId": null
@@ -181093,6 +181257,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 115,
         "state": 7,
         "culture": 8,
+        "themeId": "asian",
         "cell": 2952,
         "feature": 7,
         "flags": {
@@ -181328,6 +181493,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Vietic",
         "cultureType": "River",
         "cultureColor": "#eb8de7",
+        "architectureThemeId": "asian",
         "religionId": 8,
         "religionName": "Bensonese Pantheon",
         "provinceId": null
@@ -181363,6 +181529,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 47,
         "state": 8,
         "culture": 5,
+        "themeId": "northern-european",
         "cell": 5538,
         "feature": 7,
         "flags": {
@@ -181619,6 +181786,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Angshire",
         "cultureType": "River",
         "cultureColor": "#c6b9c1",
+        "architectureThemeId": "northern-european",
         "religionId": 14,
         "religionName": "Angshire Deities",
         "provinceId": null
@@ -181649,6 +181817,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 300,
         "state": 9,
         "culture": 5,
+        "themeId": "northern-european",
         "cell": 5065,
         "feature": 7,
         "flags": {
@@ -181926,6 +182095,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Angshire",
         "cultureType": "River",
         "cultureColor": "#c6b9c1",
+        "architectureThemeId": "northern-european",
         "religionId": 14,
         "religionName": "Angshire Deities",
         "provinceId": 6
@@ -181969,6 +182139,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 300,
         "state": 10,
         "culture": 12,
+        "themeId": "middle-eastern",
         "cell": 6538,
         "feature": 7,
         "flags": {
@@ -182286,6 +182457,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Efratic",
         "cultureType": "Generic",
         "cultureColor": "#dababf",
+        "architectureThemeId": "middle-eastern",
         "religionId": 16,
         "religionName": "Word of Micinorocch",
         "provinceId": 8
@@ -182329,6 +182501,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 198,
         "state": 11,
         "culture": 12,
+        "themeId": "middle-eastern",
         "cell": 1281,
         "feature": 7,
         "flags": {
@@ -182643,6 +182816,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Efratic",
         "cultureType": "Generic",
         "cultureColor": "#dababf",
+        "architectureThemeId": "middle-eastern",
         "religionId": 15,
         "religionName": "Hakadmor Gods",
         "provinceId": 10
@@ -182684,6 +182858,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 157,
         "state": 12,
         "culture": 3,
+        "themeId": "southern-european",
         "cell": 6301,
         "feature": 7,
         "flags": {
@@ -183121,6 +183296,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Tallian",
         "cultureType": "Nomadic",
         "cultureColor": "#fb8072",
+        "architectureThemeId": "southern-european",
         "religionId": 16,
         "religionName": "Word of Micinorocch",
         "provinceId": 12
@@ -183163,6 +183339,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 300,
         "state": 13,
         "culture": 9,
+        "themeId": "northern-european",
         "cell": 753,
         "feature": 5,
         "flags": {
@@ -183457,6 +183634,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Norse",
         "cultureType": "Generic",
         "cultureColor": "#fccde5",
+        "architectureThemeId": "northern-european",
         "religionId": 9,
         "religionName": "Norse Spirits",
         "provinceId": 16
@@ -183490,6 +183668,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 47,
         "state": 14,
         "culture": 12,
+        "themeId": "middle-eastern",
         "cell": 1288,
         "feature": 7,
         "flags": {
@@ -183731,6 +183910,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Efratic",
         "cultureType": "Generic",
         "cultureColor": "#dababf",
+        "architectureThemeId": "middle-eastern",
         "religionId": 15,
         "religionName": "Hakadmor Gods",
         "provinceId": null
@@ -183759,6 +183939,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 167,
         "state": 15,
         "culture": 12,
+        "themeId": "middle-eastern",
         "cell": 1949,
         "feature": 18,
         "flags": {
@@ -184005,6 +184186,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Efratic",
         "cultureType": "Generic",
         "cultureColor": "#dababf",
+        "architectureThemeId": "middle-eastern",
         "religionId": 12,
         "religionName": "Efratic Beliefs",
         "provinceId": null
@@ -184040,6 +184222,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 283,
         "state": 16,
         "culture": 5,
+        "themeId": "northern-european",
         "cell": 3398,
         "feature": 7,
         "flags": {
@@ -184276,6 +184459,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Angshire",
         "cultureType": "River",
         "cultureColor": "#c6b9c1",
+        "architectureThemeId": "northern-european",
         "religionId": 5,
         "religionName": "Old Angshire Forefathers",
         "provinceId": null
@@ -184304,6 +184488,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 54,
         "state": 17,
         "culture": 5,
+        "themeId": "northern-european",
         "cell": 5206,
         "feature": 7,
         "flags": {
@@ -184555,6 +184740,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Angshire",
         "cultureType": "River",
         "cultureColor": "#c6b9c1",
+        "architectureThemeId": "northern-european",
         "religionId": 14,
         "religionName": "Angshire Deities",
         "provinceId": null
@@ -184585,6 +184771,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 122,
         "state": 18,
         "culture": 4,
+        "themeId": "southern-european",
         "cell": 1223,
         "feature": 7,
         "flags": {
@@ -184882,6 +185069,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Astellian",
         "cultureType": "Hunting",
         "cultureColor": "#8dd3c7",
+        "architectureThemeId": "southern-european",
         "religionId": 4,
         "religionName": "Fuenturonese Deities",
         "provinceId": 18
@@ -184925,6 +185113,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 300,
         "state": 19,
         "culture": 4,
+        "themeId": "southern-european",
         "cell": 1321,
         "feature": 7,
         "flags": {
@@ -185221,6 +185410,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Astellian",
         "cultureType": "Hunting",
         "cultureColor": "#8dd3c7",
+        "architectureThemeId": "southern-european",
         "religionId": 4,
         "religionName": "Fuenturonese Deities",
         "provinceId": 20
@@ -185254,6 +185444,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 231,
         "state": 20,
         "culture": 6,
+        "themeId": "southern-european",
         "cell": 6843,
         "feature": 7,
         "flags": {
@@ -185512,6 +185703,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Romian",
         "cultureType": "Generic",
         "cultureColor": "#bc80bd",
+        "architectureThemeId": "southern-european",
         "religionId": 6,
         "religionName": "Romian Beliefs",
         "provinceId": null
@@ -185543,6 +185735,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 300,
         "state": 21,
         "culture": 6,
+        "themeId": "southern-european",
         "cell": 7156,
         "feature": 7,
         "flags": {
@@ -185864,6 +186057,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Romian",
         "cultureType": "Generic",
         "cultureColor": "#bc80bd",
+        "architectureThemeId": "southern-european",
         "religionId": 6,
         "religionName": "Romian Beliefs",
         "provinceId": 22
@@ -185897,6 +186091,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 106,
         "state": 22,
         "culture": 4,
+        "themeId": "southern-european",
         "cell": 975,
         "feature": 9,
         "flags": {
@@ -186148,6 +186343,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Astellian",
         "cultureType": "Hunting",
         "cultureColor": "#8dd3c7",
+        "architectureThemeId": "southern-european",
         "religionId": 4,
         "religionName": "Fuenturonese Deities",
         "provinceId": null
@@ -186176,6 +186372,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 300,
         "state": 23,
         "culture": 8,
+        "themeId": "asian",
         "cell": 2148,
         "feature": 7,
         "flags": {
@@ -186431,6 +186628,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Vietic",
         "cultureType": "River",
         "cultureColor": "#eb8de7",
+        "architectureThemeId": "asian",
         "religionId": 8,
         "religionName": "Bensonese Pantheon",
         "provinceId": null
@@ -186466,6 +186664,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 125,
         "state": 24,
         "culture": 5,
+        "themeId": "northern-european",
         "cell": 4593,
         "feature": 7,
         "flags": {
@@ -186698,6 +186897,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Angshire",
         "cultureType": "River",
         "cultureColor": "#c6b9c1",
+        "architectureThemeId": "northern-european",
         "religionId": 14,
         "religionName": "Angshire Deities",
         "provinceId": null
@@ -186726,6 +186926,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 300,
         "state": 25,
         "culture": 3,
+        "themeId": "southern-european",
         "cell": 6534,
         "feature": 7,
         "flags": {
@@ -186979,6 +187180,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Tallian",
         "cultureType": "Nomadic",
         "cultureColor": "#fb8072",
+        "architectureThemeId": "southern-european",
         "religionId": 16,
         "religionName": "Word of Micinorocch",
         "provinceId": null
@@ -187012,6 +187214,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 300,
         "state": 26,
         "culture": 9,
+        "themeId": "northern-european",
         "cell": 743,
         "feature": 5,
         "flags": {
@@ -187366,6 +187569,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Norse",
         "cultureType": "Generic",
         "cultureColor": "#fccde5",
+        "architectureThemeId": "northern-european",
         "religionId": 9,
         "religionName": "Norse Spirits",
         "provinceId": 24
@@ -187410,6 +187614,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 300,
         "state": 27,
         "culture": 4,
+        "themeId": "southern-european",
         "cell": 1012,
         "feature": 7,
         "flags": {
@@ -187726,6 +187931,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Astellian",
         "cultureType": "Hunting",
         "cultureColor": "#8dd3c7",
+        "architectureThemeId": "southern-european",
         "religionId": 4,
         "religionName": "Fuenturonese Deities",
         "provinceId": 27
@@ -187759,6 +187965,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 82,
         "state": 28,
         "culture": 7,
+        "themeId": "northern-european",
         "cell": 1555,
         "feature": 7,
         "flags": {
@@ -188006,6 +188213,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Slovan",
         "cultureType": "Nomadic",
         "cultureColor": "#80b1d3",
+        "architectureThemeId": "northern-european",
         "religionId": 7,
         "religionName": "Slovan Spirits",
         "provinceId": null
@@ -188041,6 +188249,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 214,
         "state": 29,
         "culture": 7,
+        "themeId": "northern-european",
         "cell": 3139,
         "feature": 7,
         "flags": {
@@ -188292,6 +188501,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Slovan",
         "cultureType": "Nomadic",
         "cultureColor": "#80b1d3",
+        "architectureThemeId": "northern-european",
         "religionId": 7,
         "religionName": "Slovan Spirits",
         "provinceId": null
@@ -188320,6 +188530,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 118,
         "state": 30,
         "culture": 3,
+        "themeId": "southern-european",
         "cell": 6297,
         "feature": 7,
         "flags": {
@@ -188545,6 +188756,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Tallian",
         "cultureType": "Nomadic",
         "cultureColor": "#fb8072",
+        "architectureThemeId": "southern-european",
         "religionId": 16,
         "religionName": "Word of Micinorocch",
         "provinceId": null
@@ -188580,6 +188792,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 22,
         "state": 12,
         "culture": 7,
+        "themeId": "northern-european",
         "cell": 4668,
         "feature": 7,
         "flags": {
@@ -188741,6 +188954,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Slovan",
         "cultureType": "Nomadic",
         "cultureColor": "#80b1d3",
+        "architectureThemeId": "northern-european",
         "religionId": 7,
         "religionName": "Slovan Spirits",
         "provinceId": 35
@@ -188781,6 +188995,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 23,
         "state": 26,
         "culture": 9,
+        "themeId": "northern-european",
         "cell": 556,
         "feature": 5,
         "flags": {
@@ -188949,6 +189164,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Norse",
         "cultureType": "Generic",
         "cultureColor": "#fccde5",
+        "architectureThemeId": "northern-european",
         "religionId": 9,
         "religionName": "Norse Spirits",
         "provinceId": 25
@@ -188989,6 +189205,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 20,
         "state": 27,
         "culture": 2,
+        "themeId": "southern-european",
         "cell": 1365,
         "feature": 10,
         "flags": {
@@ -189138,6 +189355,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Elladan",
         "cultureType": "Hunting",
         "cultureColor": "#fdb462",
+        "architectureThemeId": "southern-european",
         "religionId": 2,
         "religionName": "Elladan Druids",
         "provinceId": 28
@@ -189171,6 +189389,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 107,
         "state": 27,
         "culture": 2,
+        "themeId": "southern-european",
         "cell": 1474,
         "feature": 10,
         "flags": {
@@ -189320,6 +189539,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Elladan",
         "cultureType": "Hunting",
         "cultureColor": "#fdb462",
+        "architectureThemeId": "southern-european",
         "religionId": 2,
         "religionName": "Elladan Druids",
         "provinceId": 28
@@ -189353,6 +189573,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 54,
         "state": 11,
         "culture": 12,
+        "themeId": "middle-eastern",
         "cell": 2939,
         "feature": 7,
         "flags": {
@@ -189509,6 +189730,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Efratic",
         "cultureType": "Generic",
         "cultureColor": "#dababf",
+        "architectureThemeId": "middle-eastern",
         "religionId": 12,
         "religionName": "Efratic Beliefs",
         "provinceId": 11
@@ -189549,6 +189771,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 22,
         "state": 27,
         "culture": 2,
+        "themeId": "southern-european",
         "cell": 1902,
         "feature": 10,
         "flags": {
@@ -189698,6 +189921,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Elladan",
         "cultureType": "Hunting",
         "cultureColor": "#fdb462",
+        "architectureThemeId": "southern-european",
         "religionId": 2,
         "religionName": "Elladan Druids",
         "provinceId": 28
@@ -189731,6 +189955,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 120,
         "state": 21,
         "culture": 6,
+        "themeId": "southern-european",
         "cell": 6857,
         "feature": 7,
         "flags": {
@@ -189892,6 +190117,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Romian",
         "cultureType": "Generic",
         "cultureColor": "#bc80bd",
+        "architectureThemeId": "southern-european",
         "religionId": 6,
         "religionName": "Romian Beliefs",
         "provinceId": 23
@@ -189925,6 +190151,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 26,
         "state": 26,
         "culture": 9,
+        "themeId": "northern-european",
         "cell": 720,
         "feature": 5,
         "flags": {
@@ -190093,6 +190320,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Norse",
         "cultureType": "Generic",
         "cultureColor": "#fccde5",
+        "architectureThemeId": "northern-european",
         "religionId": 9,
         "religionName": "Norse Spirits",
         "provinceId": 26
@@ -190126,6 +190354,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 120,
         "state": 5,
         "culture": 7,
+        "themeId": "northern-european",
         "cell": 4638,
         "feature": 7,
         "flags": {
@@ -190290,6 +190519,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Slovan",
         "cultureType": "Nomadic",
         "cultureColor": "#80b1d3",
+        "architectureThemeId": "northern-european",
         "religionId": 7,
         "religionName": "Slovan Spirits",
         "provinceId": 4
@@ -190330,6 +190560,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 120,
         "state": 4,
         "culture": 12,
+        "themeId": "middle-eastern",
         "cell": 3601,
         "feature": 7,
         "flags": {
@@ -190496,6 +190727,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Efratic",
         "cultureType": "Generic",
         "cultureColor": "#dababf",
+        "architectureThemeId": "middle-eastern",
         "religionId": 12,
         "religionName": "Efratic Beliefs",
         "provinceId": 2
@@ -190536,6 +190768,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 120,
         "state": 19,
         "culture": 7,
+        "themeId": "northern-european",
         "cell": 1733,
         "feature": 7,
         "flags": {
@@ -190699,6 +190932,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Slovan",
         "cultureType": "Nomadic",
         "cultureColor": "#80b1d3",
+        "architectureThemeId": "northern-european",
         "religionId": 7,
         "religionName": "Slovan Spirits",
         "provinceId": 21
@@ -190732,6 +190966,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 46,
         "state": 9,
         "culture": 12,
+        "themeId": "egyptian",
         "cell": 3598,
         "feature": 7,
         "flags": {
@@ -190897,6 +191132,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Efratic",
         "cultureType": "Generic",
         "cultureColor": "#dababf",
+        "architectureThemeId": "egyptian",
         "religionId": 12,
         "religionName": "Efratic Beliefs",
         "provinceId": 7
@@ -190930,6 +191166,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 80,
         "state": 12,
         "culture": 7,
+        "themeId": "northern-european",
         "cell": 5581,
         "feature": 7,
         "flags": {
@@ -191088,6 +191325,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Slovan",
         "cultureType": "Nomadic",
         "cultureColor": "#80b1d3",
+        "architectureThemeId": "northern-european",
         "religionId": 7,
         "religionName": "Slovan Spirits",
         "provinceId": 14
@@ -191121,6 +191359,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 20,
         "state": 13,
         "culture": 12,
+        "themeId": "middle-eastern",
         "cell": 906,
         "feature": 5,
         "flags": {
@@ -191253,6 +191492,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Efratic",
         "cultureType": "Generic",
         "cultureColor": "#dababf",
+        "architectureThemeId": "middle-eastern",
         "religionId": 12,
         "religionName": "Efratic Beliefs",
         "provinceId": 17
@@ -191293,6 +191533,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 49,
         "state": 10,
         "culture": 12,
+        "themeId": "egyptian",
         "cell": 5179,
         "feature": 7,
         "flags": {
@@ -191453,6 +191694,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Efratic",
         "cultureType": "Generic",
         "cultureColor": "#dababf",
+        "architectureThemeId": "egyptian",
         "religionId": 12,
         "religionName": "Efratic Beliefs",
         "provinceId": 33
@@ -191493,6 +191735,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 25,
         "state": 12,
         "culture": 3,
+        "themeId": "southern-european",
         "cell": 7274,
         "feature": 7,
         "flags": {
@@ -191623,6 +191866,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Tallian",
         "cultureType": "Nomadic",
         "cultureColor": "#fb8072",
+        "architectureThemeId": "southern-european",
         "religionId": 16,
         "religionName": "Word of Micinorocch",
         "provinceId": 12
@@ -191656,6 +191900,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 78,
         "state": 21,
         "culture": 6,
+        "themeId": "southern-european",
         "cell": 7245,
         "feature": 7,
         "flags": {
@@ -191810,6 +192055,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Romian",
         "cultureType": "Generic",
         "cultureColor": "#bc80bd",
+        "architectureThemeId": "southern-european",
         "religionId": 6,
         "religionName": "Romian Beliefs",
         "provinceId": 23
@@ -191843,6 +192089,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 28,
         "state": 19,
         "culture": 4,
+        "themeId": "southern-european",
         "cell": 1734,
         "feature": 7,
         "flags": {
@@ -192006,6 +192253,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Astellian",
         "cultureType": "Hunting",
         "cultureColor": "#8dd3c7",
+        "architectureThemeId": "southern-european",
         "religionId": 4,
         "religionName": "Fuenturonese Deities",
         "provinceId": 21
@@ -192039,6 +192287,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 57,
         "state": 12,
         "culture": 7,
+        "themeId": "northern-european",
         "cell": 5156,
         "feature": 7,
         "flags": {
@@ -192204,6 +192453,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Slovan",
         "cultureType": "Nomadic",
         "cultureColor": "#80b1d3",
+        "architectureThemeId": "northern-european",
         "religionId": 16,
         "religionName": "Word of Micinorocch",
         "provinceId": 35
@@ -192237,6 +192487,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 20,
         "state": 11,
         "culture": 2,
+        "themeId": "southern-european",
         "cell": 1594,
         "feature": 7,
         "flags": {
@@ -192398,6 +192649,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Elladan",
         "cultureType": "Hunting",
         "cultureColor": "#fdb462",
+        "architectureThemeId": "southern-european",
         "religionId": 15,
         "religionName": "Hakadmor Gods",
         "provinceId": 10
@@ -192431,6 +192683,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 120,
         "state": 5,
         "culture": 11,
+        "themeId": "southern-european",
         "cell": 6041,
         "feature": 7,
         "flags": {
@@ -192590,6 +192843,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Luari",
         "cultureType": "Nomadic",
         "cultureColor": "#b3de69",
+        "architectureThemeId": "southern-european",
         "religionId": 13,
         "religionName": "Luari Pantheon",
         "provinceId": 3
@@ -192630,6 +192884,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 25,
         "state": 26,
         "culture": 9,
+        "themeId": "northern-european",
         "cell": 717,
         "feature": 5,
         "flags": {
@@ -192798,6 +193053,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Norse",
         "cultureType": "Generic",
         "cultureColor": "#fccde5",
+        "architectureThemeId": "northern-european",
         "religionId": 9,
         "religionName": "Norse Spirits",
         "provinceId": 26
@@ -192831,6 +193087,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 120,
         "state": 5,
         "culture": 11,
+        "themeId": "southern-european",
         "cell": 3203,
         "feature": 7,
         "flags": {
@@ -192987,6 +193244,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Luari",
         "cultureType": "Nomadic",
         "cultureColor": "#b3de69",
+        "architectureThemeId": "southern-european",
         "religionId": 11,
         "religionName": "Old Luari Spirits",
         "provinceId": 5
@@ -193020,6 +193278,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 120,
         "state": 26,
         "culture": 9,
+        "themeId": "northern-european",
         "cell": 554,
         "feature": 5,
         "flags": {
@@ -193188,6 +193447,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Norse",
         "cultureType": "Generic",
         "cultureColor": "#fccde5",
+        "architectureThemeId": "northern-european",
         "religionId": 9,
         "religionName": "Norse Spirits",
         "provinceId": 25
@@ -193221,6 +193481,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 45,
         "state": 18,
         "culture": 4,
+        "themeId": "southern-european",
         "cell": 1649,
         "feature": 7,
         "flags": {
@@ -193383,6 +193644,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Astellian",
         "cultureType": "Hunting",
         "cultureColor": "#8dd3c7",
+        "architectureThemeId": "southern-european",
         "religionId": 4,
         "religionName": "Fuenturonese Deities",
         "provinceId": 19
@@ -193423,6 +193685,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 117,
         "state": 10,
         "culture": 12,
+        "themeId": "middle-eastern",
         "cell": 5631,
         "feature": 7,
         "flags": {
@@ -193583,6 +193846,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Efratic",
         "cultureType": "Generic",
         "cultureColor": "#dababf",
+        "architectureThemeId": "middle-eastern",
         "religionId": 12,
         "religionName": "Efratic Beliefs",
         "provinceId": 9
@@ -193616,6 +193880,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 20,
         "state": 5,
         "culture": 7,
+        "themeId": "egyptian",
         "cell": 4209,
         "feature": 7,
         "flags": {
@@ -193772,6 +194037,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Slovan",
         "cultureType": "Nomadic",
         "cultureColor": "#80b1d3",
+        "architectureThemeId": "egyptian",
         "religionId": 7,
         "religionName": "Slovan Spirits",
         "provinceId": 29
@@ -193805,6 +194071,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 66,
         "state": 12,
         "culture": 3,
+        "themeId": "southern-european",
         "cell": 6265,
         "feature": 7,
         "flags": {
@@ -193962,6 +194229,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Tallian",
         "cultureType": "Nomadic",
         "cultureColor": "#fb8072",
+        "architectureThemeId": "southern-european",
         "religionId": 3,
         "religionName": "Tallian Spirits",
         "provinceId": 15
@@ -194002,6 +194270,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 93,
         "state": 12,
         "culture": 3,
+        "themeId": "southern-european",
         "cell": 6509,
         "feature": 7,
         "flags": {
@@ -194161,6 +194430,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Tallian",
         "cultureType": "Nomadic",
         "cultureColor": "#fb8072",
+        "architectureThemeId": "southern-european",
         "religionId": 16,
         "religionName": "Word of Micinorocch",
         "provinceId": 13
@@ -194194,6 +194464,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "population": 24,
         "state": 12,
         "culture": 7,
+        "themeId": "northern-european",
         "cell": 5596,
         "feature": 7,
         "flags": {
@@ -194348,6 +194619,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
         "cultureName": "Slovan",
         "cultureType": "Nomadic",
         "cultureColor": "#80b1d3",
+        "architectureThemeId": "northern-european",
         "religionId": 7,
         "religionName": "Slovan Spirits",
         "provinceId": 35
@@ -201153,7 +201425,7 @@ export const ACTIVE_SETTLEMENT_BLUEPRINTS = {
     "clusterCount": 30,
     "seatCount": 30,
     "fiefCount": 30,
-    "blueprintBytes": 172341,
+    "blueprintBytes": 176505,
     "byteLimit": 196608,
     "withinByteLimit": true
   }

@@ -47,7 +47,7 @@ test('a partial bake from another world hash is rejected instead of leaking into
     assert.ok(result.compatibilityErrors.some((error) => error.includes('worldContentHash')));
 });
 
-test('the active baked core remains fixed after terrain seam repair', () => {
+test('the active baked core remains fixed while vector constraints retain priority', () => {
     const location = getDefaultWorldLocation();
     const plan = createGeographicWorldPlan({
         worldX: location.x,
@@ -56,12 +56,18 @@ test('the active baked core remains fixed after terrain seam repair', () => {
     });
     const partial = plan.generation.partialBake;
     assert.equal(partial.registryCompatible, true);
-    assert.equal(partial.constraintConflicts, 0);
     assert.ok(partial.appliedCells > 0);
+    assert.equal(
+        partial.candidateCells,
+        partial.appliedCells + partial.constraintConflicts,
+        'every current baked candidate must either apply or yield to a fixed vector constraint'
+    );
 
     const offsetX = Math.floor(plan.width / 2);
     const offsetY = Math.floor(plan.height / 2);
-    let checked = 0;
+    let candidates = 0;
+    let applied = 0;
+    let superseded = 0;
     for (let row = 0; row < plan.height; row++) {
         for (let col = 0; col < plan.width; col++) {
             const key = createWorldSampleKey(
@@ -71,11 +77,14 @@ test('the active baked core remains fixed after terrain seam repair', () => {
             );
             const baked = BAKED_PARTIAL_CHUNKS.cells[key];
             if (!baked) continue;
-            checked++;
-            assert.equal(plan.terrainTileIds[row * plan.width + col], baked[0], `baked terrain drifted at ${key}`);
+            candidates++;
+            if (plan.terrainTileIds[row * plan.width + col] === baked[0]) applied++;
+            else superseded++;
         }
     }
-    assert.equal(checked, partial.appliedCells);
+    assert.equal(candidates, partial.candidateCells);
+    assert.equal(applied, partial.appliedCells);
+    assert.equal(superseded, partial.constraintConflicts);
 });
 
 test('sub-tile view jitter snaps to one canonical global sample lattice', () => {
@@ -122,7 +131,77 @@ test('a one-sample pan preserves every overlapping terrain and visual cell', () 
         assert.deepEqual(shiftedCell, cell, `one-sample pan changed global cell ${key}`);
     }
     assert.equal(checked, first.height * (first.width - 1));
+    const firstBuildings = indexPlanBuildings(first);
+    const shiftedBuildings = indexPlanBuildings(shifted);
+    let checkedBuildings = 0;
+    for (const [id, building] of firstBuildings) {
+        if (!shiftedBuildings.has(id)) continue;
+        checkedBuildings++;
+        assert.deepEqual(
+            shiftedBuildings.get(id),
+            building,
+            `one-sample pan moved global building module ${id}`
+        );
+    }
+    assert.ok(checkedBuildings > 0, 'the pan fixture must compare world-anchored building modules');
 });
+
+test('a pan across the 5x5 macro and 8x8 terrain frame boundary stays identical', () => {
+    const first = createGeographicWorldPlan({
+        worldX: 411 * WORLD_SAMPLE_SCALE,
+        worldY: 128 * WORLD_SAMPLE_SCALE,
+        variant: 3,
+        includeTerrainSnapshot: true,
+        useBakedPartialChunks: false
+    });
+    const shifted = createGeographicWorldPlan({
+        worldX: 412 * WORLD_SAMPLE_SCALE,
+        worldY: 128 * WORLD_SAMPLE_SCALE,
+        variant: 3,
+        includeTerrainSnapshot: true,
+        useBakedPartialChunks: false
+    });
+    const firstCells = indexPlanCells(first);
+    const shiftedCells = indexPlanCells(shifted);
+    let checked = 0;
+    for (const [key, cell] of firstCells) {
+        const shiftedCell = shiftedCells.get(key);
+        if (!shiftedCell) continue;
+        checked++;
+        assert.deepEqual(shiftedCell, cell, `macro/frame boundary changed global cell ${key}`);
+    }
+    assert.equal(checked, first.height * (first.width - 1));
+});
+
+function indexPlanBuildings(plan) {
+    const originCol = Math.round(plan.world.originX / WORLD_SAMPLE_SCALE);
+    const originRow = Math.round(plan.world.originY / WORLD_SAMPLE_SCALE);
+    const offsetX = Math.floor(plan.width / 2);
+    const offsetY = Math.floor(plan.height / 2);
+    return new Map((plan.buildings || []).map((building) => {
+        const [approachGridCol, approachGridRow] = building.entrance?.approachGrid || [];
+        const approach = Number.isFinite(approachGridCol) && Number.isFinite(approachGridRow)
+            ? { col: originCol + approachGridCol, row: originRow + approachGridRow }
+            : building.exteriorApproach || (
+                Number.isFinite(building.entrance?.x) && Number.isFinite(building.entrance?.y)
+                    ? building.entrance
+                    : null
+            );
+        return [building.id, {
+            col: originCol + building.x + offsetX,
+            row: originRow + building.y + offsetY,
+            width: building.width,
+            height: building.height,
+            baseElevation: building.baseElevation,
+            approach: approach && !Number.isFinite(approachGridCol)
+                ? {
+                    col: originCol + approach.x + offsetX,
+                    row: originRow + approach.y + offsetY
+                }
+                : approach
+        }];
+    }));
+}
 
 function indexPlanCells(plan) {
     const cells = new Map();

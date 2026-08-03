@@ -13,18 +13,27 @@ import {
     validateSettlementBlueprintSet
 } from './SettlementBlueprint.js';
 import {
+    BURG_THEME_IDS,
+    validateManifestBurgThemes
+} from './BurgThemeCatalog.js';
+import {
     ACTIVE_SETTLEMENT_BLUEPRINTS,
     ACTIVE_TOWNS,
     ACTIVE_WORLD
 } from './ActiveWorldData.js';
 
 const SOURCE_URL = new URL('../../../map-data-package/map-data.json', import.meta.url);
+const MANIFEST_URL = new URL('../../../map-data-package/manifest.json', import.meta.url);
 const source = JSON.parse(await readFile(SOURCE_URL, 'utf8'));
-const compiled = compileWorldBlueprints(source);
+const manifest = JSON.parse(await readFile(MANIFEST_URL, 'utf8'));
+const manifestThemes = validateManifestBurgThemes(manifest);
+assert.equal(manifestThemes.valid, true, manifestThemes.errors.join('\n'));
+const compilerOptions = { burgThemeById: manifestThemes.themeByBurgId };
+const compiled = compileWorldBlueprints(source, compilerOptions);
 const EXPECTED_BLUEPRINTS = 60;
 
 test('offline compiler deterministically emits all 60 strict settlement blueprints under 192 KB', () => {
-    const repeated = compileWorldBlueprints(source);
+    const repeated = compileWorldBlueprints(source, compilerOptions);
     assert.deepEqual(repeated, compiled);
     assert.equal(compiled.blueprints.length, EXPECTED_BLUEPRINTS);
     assert.equal(compiled.coverage.blueprintCount, EXPECTED_BLUEPRINTS);
@@ -33,6 +42,24 @@ test('offline compiler deterministically emits all 60 strict settlement blueprin
     assert.ok(Buffer.byteLength(JSON.stringify(compiled.blueprints)) <= SETTLEMENT_BLUEPRINT_SIZE_LIMIT);
     assert.doesNotThrow(() => assertSettlementBlueprintSet(compiled, { expectedCount: EXPECTED_BLUEPRINTS }));
     assert.equal(JSON.stringify(compiled.blueprints).includes('town_file'), false);
+});
+
+test('manifest theme IDs propagate exactly into every strict settlement blueprint', () => {
+    assert.equal(manifestThemes.themeByBurgId.size, EXPECTED_BLUEPRINTS);
+    assert.deepEqual(
+        new Set(compiled.blueprints.map((blueprint) => blueprint.burg.themeId)),
+        new Set(BURG_THEME_IDS)
+    );
+    for (const blueprint of compiled.blueprints) {
+        const expected = manifestThemes.themeByBurgId.get(blueprint.burgId);
+        assert.equal(blueprint.burg.themeId, expected);
+        assert.equal(blueprint.identity.architectureThemeId, expected);
+        assert.equal(validateSettlementBlueprint(blueprint).valid, true);
+    }
+    assert.throws(
+        () => compileWorldBlueprints(source),
+        /manifest-authoritative themeId/
+    );
 });
 
 test('world import publishes the compiled payload while keeping dedicated towns excluded', () => {

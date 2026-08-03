@@ -1,7 +1,23 @@
 import { ACTIVE_TOWN_VECTORS } from './ActiveTownVectorData.js';
+import {
+    BURG_THEME_CATALOG,
+    BURG_THEME_IDS,
+    isBurgThemeId
+} from './BurgThemeCatalog.js';
 
 export const TOWN_VECTOR_SCHEMA = 'vibe-game-burg-vectors';
-export const TOWN_VECTOR_SCHEMA_VERSION = 1;
+export const TOWN_VECTOR_SCHEMA_VERSION = 3;
+
+const STREET_KINDS = new Set(['dirt', 'main', 'dock']);
+const STREET_KIND_PRIORITY = Object.freeze({ dirt: 1, dock: 2, main: 3 });
+const STREET_SEGMENT_FORMAT = Object.freeze([
+    'y',
+    'startX',
+    'endX',
+    'kind',
+    'elevationTier',
+    'cellCount'
+]);
 
 const VECTOR_BY_BURG_ID = new Map(
     (ACTIVE_TOWN_VECTORS.towns || []).map((town) => [Number(town.burgId), town])
@@ -21,8 +37,12 @@ export function getActiveTownVectorSummary() {
         schemaVersion: ACTIVE_TOWN_VECTORS.schemaVersion,
         generationVersion: ACTIVE_TOWN_VECTORS.generationVersion,
         contentHash: ACTIVE_TOWN_VECTORS.contentHash,
+        themeCatalog: Object.freeze([...(ACTIVE_TOWN_VECTORS.themeCatalog || [])]),
         towns: ACTIVE_TOWN_VECTORS.coverage?.towns || VECTOR_BY_BURG_ID.size,
+        themedTowns: (ACTIVE_TOWN_VECTORS.towns || []).filter((town) => isBurgThemeId(town.themeId)).length,
         walls: ACTIVE_TOWN_VECTORS.coverage?.walls || 0,
+        streetCells: ACTIVE_TOWN_VECTORS.coverage?.streetCells || 0,
+        streetSegments: ACTIVE_TOWN_VECTORS.coverage?.streetSegments || 0,
         buildings: ACTIVE_TOWN_VECTORS.coverage?.buildings || 0
     });
 }
@@ -41,6 +61,7 @@ export function validateActiveTownVectorSet(payload = ACTIVE_TOWN_VECTORS) {
     if (!/^[0-9a-f]{64}$/.test(String(payload.contentHash || ''))) {
         errors.push('townVectors.contentHash must be a lowercase SHA-256 hash.');
     }
+    validateThemeCatalog(payload.themeCatalog, 'townVectors.themeCatalog', errors);
     if (!Array.isArray(payload.towns)) {
         errors.push('townVectors.towns must be an array.');
     } else {
@@ -55,6 +76,9 @@ export function validateActiveTownVectorSet(payload = ACTIVE_TOWN_VECTORS) {
             } else {
                 ids.add(town.burgId);
             }
+            if (!isBurgThemeId(town?.themeId)) {
+                errors.push(`${path}.themeId must be a canonical burg theme ID.`);
+            }
             if (!/^[0-9a-f]{64}$/.test(String(town?.vectorHash || ''))) {
                 errors.push(`${path}.vectorHash must be a lowercase SHA-256 hash.`);
             } else {
@@ -66,6 +90,7 @@ export function validateActiveTownVectorSet(payload = ACTIVE_TOWN_VECTORS) {
             if (!Array.isArray(town?.walls?.contours) || !Array.isArray(town?.walls?.gates)) {
                 errors.push(`${path}.walls must contain contours and gates.`);
             }
+            validateStreetVectors(town?.streetVectors, town?.grid, `${path}.streetVectors`, errors);
             if (!Array.isArray(town?.buildings)) errors.push(`${path}.buildings must be an array.`);
         }
         if (hashes.size !== payload.towns.length) {
@@ -123,6 +148,11 @@ export function projectTownVector(town, {
         ...gateKeys
     ]);
     const insideCellKeys = fillVectorInterior(projectedBounds, barrierKeys);
+    const streetCells = projectStreetVectors(town.streetVectors, {
+        transformPoint,
+        width,
+        height
+    });
     const buildings = (town.buildings || [])
         .map((building) => projectBuildingVector(building, {
             transformPoint,
@@ -136,6 +166,7 @@ export function projectTownVector(town, {
 
     return Object.freeze({
         burgId: town.burgId,
+        themeId: town.themeId,
         vectorHash: town.vectorHash,
         scale,
         bounds: Object.freeze(projectedBounds),
@@ -146,8 +177,135 @@ export function projectTownVector(town, {
         gateCells: Object.freeze(gateCells.map(Object.freeze)),
         gateCellKeys: gateKeys,
         insideCellKeys,
+        streetCells: Object.freeze(streetCells.map(Object.freeze)),
+        streetCellKeys: new Set(streetCells.map((cell) => gridKey(cell.col, cell.row))),
         buildings: Object.freeze(buildings)
     });
+}
+
+function validateThemeCatalog(catalog, path, errors) {
+    if (!Array.isArray(catalog)) {
+        errors.push(`${path} must be an array.`);
+        return;
+    }
+    const ids = new Set();
+    for (const [index, entry] of catalog.entries()) {
+        const entryPath = `${path}[${index}]`;
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+            errors.push(`${entryPath} must be an object.`);
+            continue;
+        }
+        if (!isBurgThemeId(entry.id)) errors.push(`${entryPath}.id must be a canonical burg theme ID.`);
+        if (ids.has(entry.id)) errors.push(`${entryPath}.id is duplicated.`);
+        ids.add(entry.id);
+        const expected = BURG_THEME_CATALOG[entry.id];
+        if (entry.label !== expected?.label) errors.push(`${entryPath}.label must match the shared burg theme catalog.`);
+        if (entry.streetPaletteId !== expected?.streetPaletteId) {
+            errors.push(`${entryPath}.streetPaletteId must match the shared burg theme catalog.`);
+        }
+        if (entry.wallTextureId !== expected?.wallTextureId) {
+            errors.push(`${entryPath}.wallTextureId must match the shared burg theme catalog.`);
+        }
+    }
+    for (const themeId of BURG_THEME_IDS) {
+        if (!ids.has(themeId)) errors.push(`${path} is missing ${themeId}.`);
+    }
+}
+
+function validateStreetVectors(streetVectors, grid, path, errors) {
+    if (!streetVectors || typeof streetVectors !== 'object' || Array.isArray(streetVectors)) {
+        errors.push(`${path} must be an object.`);
+        return;
+    }
+    if (!Array.isArray(streetVectors.segments)) {
+        errors.push(`${path}.segments must be an array.`);
+        return;
+    }
+    if (!Array.isArray(streetVectors.segmentFormat) ||
+        streetVectors.segmentFormat.join(',') !== STREET_SEGMENT_FORMAT.join(',')) {
+        errors.push(`${path}.segmentFormat must describe the compact horizontal segment tuple.`);
+    }
+    if (!Number.isInteger(streetVectors.sourceCellCount) || streetVectors.sourceCellCount < 0) {
+        errors.push(`${path}.sourceCellCount must be a non-negative integer.`);
+    }
+    if (streetVectors.sourceCellCount > 0) {
+        if (!Number.isFinite(streetVectors.elevationMin) || !Number.isFinite(streetVectors.elevationMax) ||
+            streetVectors.elevationMin > streetVectors.elevationMax) {
+            errors.push(`${path} must have ordered finite elevationMin/elevationMax values.`);
+        }
+    } else if (streetVectors.elevationMin !== null || streetVectors.elevationMax !== null) {
+        errors.push(`${path} must use null elevation bounds when it has no source cells.`);
+    }
+
+    const cellKeys = new Set();
+    let segmentCellCount = 0;
+    for (const [index, segment] of streetVectors.segments.entries()) {
+        const segmentPath = `${path}.segments[${index}]`;
+        if (!Array.isArray(segment) || segment.length !== STREET_SEGMENT_FORMAT.length) {
+            errors.push(`${segmentPath} must follow streetVectors.segmentFormat.`);
+            continue;
+        }
+        const [y, startX, endX, kind, elevationTier, cellCount] = segment;
+        if (!Number.isInteger(y) || !Number.isInteger(startX) ||
+            !Number.isInteger(endX) || startX > endX ||
+            y < 0 || y >= Number(grid?.height || 0) ||
+            startX < 0 || endX >= Number(grid?.width || 0)) {
+            errors.push(`${segmentPath} must define an in-bounds horizontal run.`);
+            continue;
+        }
+        if (!STREET_KINDS.has(kind)) {
+            errors.push(`${segmentPath}.kind must be dirt, main, or dock.`);
+        }
+        if (!Number.isInteger(elevationTier) || elevationTier < 0 || elevationTier > 6) {
+            errors.push(`${segmentPath}.elevationTier must be an integer from 0 to 6.`);
+        }
+        const expectedCount = endX - startX + 1;
+        if (cellCount !== expectedCount) {
+            errors.push(`${segmentPath}.cellCount must equal ${expectedCount}.`);
+        }
+        segmentCellCount += expectedCount;
+        for (let x = startX; x <= endX; x++) {
+            const key = gridKey(x, y);
+            if (cellKeys.has(key)) errors.push(`${segmentPath} overlaps another street segment at ${key}.`);
+            cellKeys.add(key);
+        }
+    }
+    if (segmentCellCount !== streetVectors.sourceCellCount ||
+        cellKeys.size !== streetVectors.sourceCellCount) {
+        errors.push(`${path}.sourceCellCount must match its unique segment cells.`);
+    }
+}
+
+function projectStreetVectors(streetVectors, { transformPoint, width, height }) {
+    const cells = new Map();
+    for (const segment of Array.isArray(streetVectors?.segments) ? streetVectors.segments : []) {
+        if (!Array.isArray(segment) || segment.length < 5) continue;
+        const [sourceY, startX, endX, sourceKind, sourceElevationTier] = segment;
+        for (let sourceX = startX; sourceX <= endX; sourceX++) {
+            const [projectedX, projectedY] = transformPoint([sourceX + 0.5, sourceY + 0.5]);
+            const col = Math.floor(projectedX);
+            const row = Math.floor(projectedY);
+            if (col < 0 || row < 0 || col >= width || row >= height) continue;
+            const candidate = {
+                col,
+                row,
+                kind: STREET_KINDS.has(sourceKind) ? sourceKind : 'dirt',
+                elevationTier: clampInteger(sourceElevationTier, 0, 6),
+                source: 'town-vector'
+            };
+            const key = gridKey(col, row);
+            const current = cells.get(key);
+            if (!current || compareProjectedStreetCells(candidate, current) > 0) cells.set(key, candidate);
+        }
+    }
+    return [...cells.values()].sort((left, right) =>
+        left.row - right.row || left.col - right.col ||
+        right.elevationTier - left.elevationTier || left.kind.localeCompare(right.kind));
+}
+
+function compareProjectedStreetCells(left, right) {
+    return Number(STREET_KIND_PRIORITY[left.kind] || 0) - Number(STREET_KIND_PRIORITY[right.kind] || 0) ||
+        left.elevationTier - right.elevationTier || right.kind.localeCompare(left.kind);
 }
 
 function projectBuildingVector(building, context) {

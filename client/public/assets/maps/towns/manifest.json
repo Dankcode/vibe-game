@@ -1,366 +1,458 @@
 {
   "schema": "vibe-game-burg-vectors",
-  "schemaVersion": 1,
-  "generationVersion": "fmg-town-vectors-v1",
-  "contentHash": "9d699526b15ee3ddaa530958699d3d5d49a8421a1f6e2b4aac976ea490b20ce9",
+  "schemaVersion": 3,
+  "generationVersion": "fmg-town-vectors-v3",
+  "contentHash": "b4224bc1b75124d425c1bb8c92d5d30c2c61029e336316b085dea155e752d77e",
+  "themeCatalog": [
+    {
+      "id": "asian",
+      "label": "Asian",
+      "streetPaletteId": "asian-stone-lane",
+      "wallTextureId": "asian-plaster-stone"
+    },
+    {
+      "id": "middle-eastern",
+      "label": "Middle Eastern",
+      "streetPaletteId": "middle-eastern-sandstone-lane",
+      "wallTextureId": "middle-eastern-sandstone-plaster"
+    },
+    {
+      "id": "northern-european",
+      "label": "Northern European",
+      "streetPaletteId": "northern-european-cobble",
+      "wallTextureId": "northern-european-granite"
+    },
+    {
+      "id": "southern-european",
+      "label": "Southern European",
+      "streetPaletteId": "southern-european-paver",
+      "wallTextureId": "southern-european-limestone-stucco"
+    },
+    {
+      "id": "egyptian",
+      "label": "Egyptian",
+      "streetPaletteId": "egyptian-sandstone-processional",
+      "wallTextureId": "egyptian-cut-sandstone"
+    }
+  ],
   "towns": [
     {
       "burgId": 1,
-      "vectorHash": "3f2cda5465a4c2561d5846b74e0c9ab6d26a6d361878234c33282c5873115430",
+      "themeId": "southern-european",
+      "vectorHash": "e1b7f3b046ae01ae430a76e49974bc05e861ecfd1be60112e69d71669cf238d8",
       "json": "burg-1.vector.json",
       "svg": "burg-1.svg"
     },
     {
       "burgId": 2,
-      "vectorHash": "71841b5aa341dd3c0db0953e08ffaa6d099d0d0f696a065ffece65598ca1bb58",
+      "themeId": "northern-european",
+      "vectorHash": "ee798a61c75ca366e700efd1acc52af5e0566d86f2c5899ec7610560fa03b8aa",
       "json": "burg-2.vector.json",
       "svg": "burg-2.svg"
     },
     {
       "burgId": 3,
-      "vectorHash": "5092f3eed51c3750afd9bd666b0e6b5829e262fc51f0a49934d2d9b9d92ba348",
+      "themeId": "middle-eastern",
+      "vectorHash": "1f28457ab4a5873bfa5a9e795639f4537d818b5edb135c1b7a4be0f867abe361",
       "json": "burg-3.vector.json",
       "svg": "burg-3.svg"
     },
     {
       "burgId": 4,
-      "vectorHash": "f4bcb58e127e59ff3465bfcdacda30b1b48477c8b77fa745bf7774109209ab5a",
+      "themeId": "northern-european",
+      "vectorHash": "b702435c138b11814af0cd0df440877ef265fdf77f9e48b9b19d998afedfac18",
       "json": "burg-4.vector.json",
       "svg": "burg-4.svg"
     },
     {
       "burgId": 5,
-      "vectorHash": "521742b2e4d9a1af7bc0b827ff5c57320d3f884895a8d4fdc011ec7bc12a28a1",
+      "themeId": "southern-european",
+      "vectorHash": "4bb22a44d0b7fd009a3f031de80600b9fa34a919553ac4e2539ab367658d6c69",
       "json": "burg-5.vector.json",
       "svg": "burg-5.svg"
     },
     {
       "burgId": 6,
-      "vectorHash": "7a0b1c786f6f597db9cc09dbb505a6b4cf6965f75f76e26a5a573e47a641d57e",
+      "themeId": "southern-european",
+      "vectorHash": "76fd5d9e2beb28a177f0633d488cf7ef3faf1dbb39ffc3c49489837378c07d48",
       "json": "burg-6.vector.json",
       "svg": "burg-6.svg"
     },
     {
       "burgId": 7,
-      "vectorHash": "d71eb09d6ae575f6f4b21a91a53b7ad1421e3a757c17e8bfff13f05c82711202",
+      "themeId": "asian",
+      "vectorHash": "18973b6c03968ea5824ab9d6b5c1b55418193ab34c8884b4ca13cdacc55edae9",
       "json": "burg-7.vector.json",
       "svg": "burg-7.svg"
     },
     {
       "burgId": 8,
-      "vectorHash": "059a9535b1335d060584d60ee76e6475e8331d05549878706d653f46308ba153",
+      "themeId": "northern-european",
+      "vectorHash": "ae27077eaf3dcee8e1c57f800672b389960b356d69a742dec4c46c73ba4f9a13",
       "json": "burg-8.vector.json",
       "svg": "burg-8.svg"
     },
     {
       "burgId": 9,
-      "vectorHash": "f53bab9e5cdc47674850960c6a87cf9be66180615ff2cba1cae8db80d18846db",
+      "themeId": "northern-european",
+      "vectorHash": "458b21848d8d64d45a1d4686358193c4f4cbb6fb5feee8d0b668987880bfda72",
       "json": "burg-9.vector.json",
       "svg": "burg-9.svg"
     },
     {
       "burgId": 10,
-      "vectorHash": "337e7d9ac783df16fc7a1ec88b370db7bce4d9c84667005d4945e757393664cb",
+      "themeId": "middle-eastern",
+      "vectorHash": "ccc641554f8995271a7cbffc2629c1ad1814530327b7d122af0805dc33ccecb2",
       "json": "burg-10.vector.json",
       "svg": "burg-10.svg"
     },
     {
       "burgId": 11,
-      "vectorHash": "39fbf64729f3fcf7ab938c1efa56cf8f651d1f3742c9e245f2049dbdb39b989d",
+      "themeId": "middle-eastern",
+      "vectorHash": "378f3ad4e5522ae1c17cba0f34d40835f12959e5e9c2208e316096afe90c2487",
       "json": "burg-11.vector.json",
       "svg": "burg-11.svg"
     },
     {
       "burgId": 12,
-      "vectorHash": "d78dfff71e6970659a161e61cb64d593f77be3af84b2c695745f32258065058d",
+      "themeId": "southern-european",
+      "vectorHash": "92e2ac80f64e88826b492916116034ea337a28051f2fb47303da9b4b3c69c498",
       "json": "burg-12.vector.json",
       "svg": "burg-12.svg"
     },
     {
       "burgId": 13,
-      "vectorHash": "cc824923834661712dfe2da8138f2d880e29dec270b12d9dbff14ae399bc299d",
+      "themeId": "northern-european",
+      "vectorHash": "ce95955f3c8bd1d639a909da74ee53e4e052c32bf064e8f78f15fe41799047cb",
       "json": "burg-13.vector.json",
       "svg": "burg-13.svg"
     },
     {
       "burgId": 14,
-      "vectorHash": "e4e40afa8628ba2fd418ac6c934f35701da1b833470db63d08e421095da25d0e",
+      "themeId": "middle-eastern",
+      "vectorHash": "c7693ed3994a641375b243007ed6b80ed42a16ba9564ce2a6a58ef1418425665",
       "json": "burg-14.vector.json",
       "svg": "burg-14.svg"
     },
     {
       "burgId": 15,
-      "vectorHash": "f56cd6a2e00877d9a249ef3ce1871def5a91eee8f58f45b48048165626ee7504",
+      "themeId": "middle-eastern",
+      "vectorHash": "c2125db0e8054c18811b7105140d41fef14fcda71ab9335b8a0c0a37868e983a",
       "json": "burg-15.vector.json",
       "svg": "burg-15.svg"
     },
     {
       "burgId": 16,
-      "vectorHash": "6d30f12d8344a7b0c2e3c29986e14bf9aa09b49a02ba6c803eddab8d5a3093a1",
+      "themeId": "northern-european",
+      "vectorHash": "4f460a90e9575fed1a044b7fb40e45c4d29a4002a566bcfdc29ea617ffda603f",
       "json": "burg-16.vector.json",
       "svg": "burg-16.svg"
     },
     {
       "burgId": 17,
-      "vectorHash": "60fbd92a8fb6b47ce6f984c637cf4ca47d640a8a0c44f0dcd268cb77b1f6e8ce",
+      "themeId": "northern-european",
+      "vectorHash": "eff95b647056ebc58a453ba7ca5d71b32deeacdc762e41bd2dd5183e84073f6f",
       "json": "burg-17.vector.json",
       "svg": "burg-17.svg"
     },
     {
       "burgId": 18,
-      "vectorHash": "e9e018f587e5bc1f05840390922d441970918598b1c839b3977151b4b0d11798",
+      "themeId": "southern-european",
+      "vectorHash": "4c7500057fecca09ba543fd4b740b4c76e03f22415d52745d2986a9ae5bdb564",
       "json": "burg-18.vector.json",
       "svg": "burg-18.svg"
     },
     {
       "burgId": 19,
-      "vectorHash": "ee2109159c705caf8c81f68924d6cfda9569e4b5c7a3bbdf5000a4bc33ffdc58",
+      "themeId": "southern-european",
+      "vectorHash": "051191226118fabd6535d586020e483e0b26c47ff54609ebcf6f7e5cc6186ff9",
       "json": "burg-19.vector.json",
       "svg": "burg-19.svg"
     },
     {
       "burgId": 20,
-      "vectorHash": "e0a375512b697fd4172250fb35cc6845f26f71f2166767ef960ceeee07938e26",
+      "themeId": "southern-european",
+      "vectorHash": "0758161a0ceb9ea7a9a114b63bf5dcf1972f1ea2ad60ed12acc80aaeda2e52eb",
       "json": "burg-20.vector.json",
       "svg": "burg-20.svg"
     },
     {
       "burgId": 21,
-      "vectorHash": "c552316ef8c628ac452e132ed0172d952264be63355c246194f5f14e917c8818",
+      "themeId": "southern-european",
+      "vectorHash": "c19cd8193b9e8fd00139cd8c84d2b4f19e28788c13753643453815fddc37defe",
       "json": "burg-21.vector.json",
       "svg": "burg-21.svg"
     },
     {
       "burgId": 22,
-      "vectorHash": "4cf59357b90ddb09e281e5b5f25dde501b840de513d826777da6a44eb21dad04",
+      "themeId": "southern-european",
+      "vectorHash": "d0a932c39db12f6676a043842eabb6f70e611d5f956a0e77742043886ab3e417",
       "json": "burg-22.vector.json",
       "svg": "burg-22.svg"
     },
     {
       "burgId": 23,
-      "vectorHash": "dcb88288bbdde0d3d1b22dc99661d4059d8976daa1bd4a6dabac3a74805aedfc",
+      "themeId": "asian",
+      "vectorHash": "fbc573666b8ec937006eff1a025029624f1c543609c343fe2237b90efe6c8df9",
       "json": "burg-23.vector.json",
       "svg": "burg-23.svg"
     },
     {
       "burgId": 24,
-      "vectorHash": "c8f53a0fa55bc4c5a23ff8d4dbc522ac43a2581e1c0312ad7695562420b85f63",
+      "themeId": "northern-european",
+      "vectorHash": "68ae4a0cbea13e1d73879174a761b51170a696e1945e0604b32eedd3d1025a3c",
       "json": "burg-24.vector.json",
       "svg": "burg-24.svg"
     },
     {
       "burgId": 25,
-      "vectorHash": "3dd3fa6b098fd6e16408602ada1cddbc703f30d4ede49c3ac3f033cca97e7c57",
+      "themeId": "southern-european",
+      "vectorHash": "93f7235e2f870db2fe7ae2100a71bc33395183854cc64fdaa15a84f9ec0966d5",
       "json": "burg-25.vector.json",
       "svg": "burg-25.svg"
     },
     {
       "burgId": 26,
-      "vectorHash": "95d1d6bf12f158e05c6b3d38df973d6a0777d26d8a517e05dcb0a694adc2fb99",
+      "themeId": "northern-european",
+      "vectorHash": "4cdb0d9887812f2256a710792a755977be32ec3349692aae69a5cbcda0cb3b6c",
       "json": "burg-26.vector.json",
       "svg": "burg-26.svg"
     },
     {
       "burgId": 27,
-      "vectorHash": "ae116d7cb6a6be76a5932e299584305f4123037fb1be248ee3a870525a611c7a",
+      "themeId": "southern-european",
+      "vectorHash": "69b030d28e1bf9930af8f3436e2ad16c6da9212170601ee1360b72d45158bc6e",
       "json": "burg-27.vector.json",
       "svg": "burg-27.svg"
     },
     {
       "burgId": 28,
-      "vectorHash": "4328659e4abe49502cc70e4d4c6fad91c98d3f62d1b9118f06db88ba8c41f7c0",
+      "themeId": "northern-european",
+      "vectorHash": "bb9a0e90d4723ceef822e991298a424770773fa6d544e265accc910eb38da333",
       "json": "burg-28.vector.json",
       "svg": "burg-28.svg"
     },
     {
       "burgId": 29,
-      "vectorHash": "c0b718d95c8835c4cc2e27ecad9666143bbdad4fbf7a51b4e1c06cb9b9981601",
+      "themeId": "northern-european",
+      "vectorHash": "fda26c40d22037a8fae9a63e7c85128ea5c0d676a8e4a030107250b878d2eadb",
       "json": "burg-29.vector.json",
       "svg": "burg-29.svg"
     },
     {
       "burgId": 30,
-      "vectorHash": "6475a3e3c4b52f20e276807db3da16047be7506ec197e1ef246437f38dcf9728",
+      "themeId": "southern-european",
+      "vectorHash": "369f9559d4a6a826ab4f651a9d8eb1fb4ca456f64fe5225a26a6f07bb09e72f4",
       "json": "burg-30.vector.json",
       "svg": "burg-30.svg"
     },
     {
       "burgId": 31,
-      "vectorHash": "9b37d6f27fd8c2e3a33911403eda0470c7e1fde301cac343ca89c69a163847c6",
+      "themeId": "northern-european",
+      "vectorHash": "a1a5a7e818eac69dffdd9915b116d1aa2125fa4035bde992ff19fbe294db7ee4",
       "json": "burg-31.vector.json",
       "svg": "burg-31.svg"
     },
     {
       "burgId": 32,
-      "vectorHash": "33dd5eaf78478c82892979e58e3a98ee8c5261340eac087c24d59a1d33036b80",
+      "themeId": "northern-european",
+      "vectorHash": "71d88b3a8b4fa261853ec72a0456a4975c52bda637f333237d534c360eb8db7c",
       "json": "burg-32.vector.json",
       "svg": "burg-32.svg"
     },
     {
       "burgId": 33,
-      "vectorHash": "224558c57876c526a30a89f8af0f4e4e46f4f7ef60fa6d2a1a2c5935adecafbc",
+      "themeId": "southern-european",
+      "vectorHash": "5e0aeaeed010fa021514071d2d56bf4706b7e269095cd516821155639c63d2d6",
       "json": "burg-33.vector.json",
       "svg": "burg-33.svg"
     },
     {
       "burgId": 34,
-      "vectorHash": "0e3c855b4d1279b4862fb692fd89794505934c8ba25d0aa29b7e008d199e64e0",
+      "themeId": "southern-european",
+      "vectorHash": "a7b4d1d9c717e2b0e136e65fcf9190b86c963f1ae6b8214ee05058903b9c151a",
       "json": "burg-34.vector.json",
       "svg": "burg-34.svg"
     },
     {
       "burgId": 35,
-      "vectorHash": "942a174a9d837ad15ef583e04333c6b559422d1671a2c8ebddf484195122eec1",
+      "themeId": "middle-eastern",
+      "vectorHash": "02f6bce9945d4f1d3df0f35ed5e2249784b2a863536756645c14b2a2713b83e2",
       "json": "burg-35.vector.json",
       "svg": "burg-35.svg"
     },
     {
       "burgId": 36,
-      "vectorHash": "ea0e3afde4426cc3e945e46fe178b63c7bf79bab3e4abbbe4821f736f00a0ce5",
+      "themeId": "southern-european",
+      "vectorHash": "e63ef9b6bd0c08165a56104969b6cf414c3e55a0a55b2b637da40f9a278fb9e9",
       "json": "burg-36.vector.json",
       "svg": "burg-36.svg"
     },
     {
       "burgId": 37,
-      "vectorHash": "67d17b36704ff8ecbcff23034ec0fde9f82106ded671e7c646e4a1380897c36b",
+      "themeId": "southern-european",
+      "vectorHash": "f2bfc6654dddf531e4e0b75613e252e87a387228c5cbba81a0c0182d15735b5d",
       "json": "burg-37.vector.json",
       "svg": "burg-37.svg"
     },
     {
       "burgId": 38,
-      "vectorHash": "952de200df7e98e1c2638c1828157346055193be3c97402cce8fbf360f62b950",
+      "themeId": "northern-european",
+      "vectorHash": "7c08f47c36696a6601226f4e2441eb188adfdb40f80aecc6f8e169ca0b9723e0",
       "json": "burg-38.vector.json",
       "svg": "burg-38.svg"
     },
     {
       "burgId": 39,
-      "vectorHash": "69d66a2a49577bd098a4970ef116b3b7fcbfc6d303a17ba44cab113151248e28",
+      "themeId": "northern-european",
+      "vectorHash": "7547140a01c75fce8be4dfb75dcb362d723fcc5410946abeaf948b3e9f5568c1",
       "json": "burg-39.vector.json",
       "svg": "burg-39.svg"
     },
     {
       "burgId": 40,
-      "vectorHash": "b4afb66617c63f88c80864c631c70ec09877813cb18e1d4d08bfd65cef49f152",
+      "themeId": "middle-eastern",
+      "vectorHash": "b5317d95a2569fefc00b1bbca71b920d7c92bd75fe006f0848f4b65b862f4368",
       "json": "burg-40.vector.json",
       "svg": "burg-40.svg"
     },
     {
       "burgId": 41,
-      "vectorHash": "7c07cbc35de9f5fd685790d116487a3292cd40a5a1b3245717179eb0ff70697e",
+      "themeId": "northern-european",
+      "vectorHash": "930de1510fb62018abdb45ca2a3b9452243b4e37e6b956a34953891451519546",
       "json": "burg-41.vector.json",
       "svg": "burg-41.svg"
     },
     {
       "burgId": 42,
-      "vectorHash": "be6d21935038efe1d4dd732d7f1b2a5813859cebbd2abf0b03fe68092c05a217",
+      "themeId": "egyptian",
+      "vectorHash": "b0b3ea5778e7ce753a3d89dac54cfe997183bce3950143cf09017fe22b5db132",
       "json": "burg-42.vector.json",
       "svg": "burg-42.svg"
     },
     {
       "burgId": 43,
-      "vectorHash": "6a5843b414abf1659e3ff746d142400f217f6a018057296b5b351cd19b6a2fcc",
+      "themeId": "northern-european",
+      "vectorHash": "4097986ad8d6798ab96debeca0b92a3e026692fc31e226ee94a80c19b56a7eda",
       "json": "burg-43.vector.json",
       "svg": "burg-43.svg"
     },
     {
       "burgId": 44,
-      "vectorHash": "cf04539044fd48ccc631013fa616f77b426c09c154f8401bba90622317e915dc",
+      "themeId": "middle-eastern",
+      "vectorHash": "0aaf9fab44ec6ad344039bbd10c920c20c7b3f027a696215414ade74a49abb75",
       "json": "burg-44.vector.json",
       "svg": "burg-44.svg"
     },
     {
       "burgId": 45,
-      "vectorHash": "b4bb1c404f5db41b1b4823a63ce1f31ce72dabe41ac596075bf13d41985b6fae",
+      "themeId": "egyptian",
+      "vectorHash": "7adbffcb351ccd950f73546ee6ea99c7301218640adc1f8323824a7b93a22564",
       "json": "burg-45.vector.json",
       "svg": "burg-45.svg"
     },
     {
       "burgId": 46,
-      "vectorHash": "d69cd8e2bd760b8493afb2087c935afe8a8abde2143c03754e7f80a31c7e20f3",
+      "themeId": "southern-european",
+      "vectorHash": "a8e40fac2ca1425249e59b104b6c6a698740529ed41696bbb228a73ed26f848e",
       "json": "burg-46.vector.json",
       "svg": "burg-46.svg"
     },
     {
       "burgId": 47,
-      "vectorHash": "15d29189edfddaa5feb63459397bca8adb98bf3b25f24bd2cabdf8fbc53e98f0",
+      "themeId": "southern-european",
+      "vectorHash": "e6f39e5dba70d0c6115a644943f4f104a7b1941034696ee40173f71de39b971a",
       "json": "burg-47.vector.json",
       "svg": "burg-47.svg"
     },
     {
       "burgId": 48,
-      "vectorHash": "181131988c554ccbe949591fdf1b80cc8d511cc20c4e0966b168e82267962e44",
+      "themeId": "southern-european",
+      "vectorHash": "202e52e274408bbdc528111d92328bcd387a2a49de6ce4ac4e15030279ed345c",
       "json": "burg-48.vector.json",
       "svg": "burg-48.svg"
     },
     {
       "burgId": 49,
-      "vectorHash": "6ba8ac2be6dafd2032756259665c804386755c5d83781f169524180721d9b3a1",
+      "themeId": "northern-european",
+      "vectorHash": "0942858955ab6535fb2af826088fbe6225d257665f7e00931e30a6e090799718",
       "json": "burg-49.vector.json",
       "svg": "burg-49.svg"
     },
     {
       "burgId": 50,
-      "vectorHash": "41025d350ee5aed983cf38afa8f8829c65479cfc670d4b8b2a04eae6696121bb",
+      "themeId": "southern-european",
+      "vectorHash": "c5cbe6df10e92970e17f43582261692d60eadeb8e24a05e8ccd1af3cf35de404",
       "json": "burg-50.vector.json",
       "svg": "burg-50.svg"
     },
     {
       "burgId": 51,
-      "vectorHash": "d8560734a2d95eeef0caacacf0c7513dba81c268fe7c1561a52ed939a9c46d6b",
+      "themeId": "southern-european",
+      "vectorHash": "cb49d35edaea8578718db320b12b44f30085e4c52680c8efa4fa30c1bf348838",
       "json": "burg-51.vector.json",
       "svg": "burg-51.svg"
     },
     {
       "burgId": 52,
-      "vectorHash": "5ae5828f685136416f6009d1be57db3271712f4ac59a7b5ab7aef3227bb3c83b",
+      "themeId": "northern-european",
+      "vectorHash": "97bf7194099ee4b8eedda569faaba3b79440e3cac3d978d0859e77d2e5126b73",
       "json": "burg-52.vector.json",
       "svg": "burg-52.svg"
     },
     {
       "burgId": 53,
-      "vectorHash": "1c26216cf2d961face017b3bdd17d775c21b49f91b5a18e1c143ab0df100ce2d",
+      "themeId": "southern-european",
+      "vectorHash": "7ed44e27217c1d9a3c39d7b2109060b3e8032fa2bcccccd8b97c4d555a3a1dd2",
       "json": "burg-53.vector.json",
       "svg": "burg-53.svg"
     },
     {
       "burgId": 54,
-      "vectorHash": "b381bbe2c582551d5a4a7a42c47dffe4a0b15ab95d52940d85b3ce1720d95eb6",
+      "themeId": "northern-european",
+      "vectorHash": "cf4a6077e3ec1c4a03aabd9b26d9f0fc9e8406c363a110da9580f99957752816",
       "json": "burg-54.vector.json",
       "svg": "burg-54.svg"
     },
     {
       "burgId": 55,
-      "vectorHash": "acfca701f90854647b6d4211db2c06594e3c97a1291cc5ae603b2ce56fa0eb4c",
+      "themeId": "southern-european",
+      "vectorHash": "abe4cabfc57b72a87728ad98d125dabee627db39c280266598c0e56a1a2b9a80",
       "json": "burg-55.vector.json",
       "svg": "burg-55.svg"
     },
     {
       "burgId": 56,
-      "vectorHash": "2dd1533536ad06f87b2ded09c9b32bc26f4a64452b2a457c617207066d24a22e",
+      "themeId": "middle-eastern",
+      "vectorHash": "2093ba936ef77b4e6713f05f7cabdd74b5be1e7e0472b8b3d4ae9b30023dbd03",
       "json": "burg-56.vector.json",
       "svg": "burg-56.svg"
     },
     {
       "burgId": 57,
-      "vectorHash": "661fa24a5c08f7d47a3c994cb208c44e7ac98127f1307e145ad389408f6aadc8",
+      "themeId": "egyptian",
+      "vectorHash": "9bbe4cb5046bddd1372ed1b419069e979c7c862c6d1ac9aa79f29bdc1b53e649",
       "json": "burg-57.vector.json",
       "svg": "burg-57.svg"
     },
     {
       "burgId": 58,
-      "vectorHash": "8b3ce183bd53259934340ef4803b1ddd2e94befaefedd6ad08dc158490eb66cc",
+      "themeId": "southern-european",
+      "vectorHash": "fb2df8a12cb0b8ba1c8a5515e3203ef335cda3caca2c3e67c223d7d7d1a7973e",
       "json": "burg-58.vector.json",
       "svg": "burg-58.svg"
     },
     {
       "burgId": 59,
-      "vectorHash": "92e8ffab5be353e5f8e9ba7f2cf77ba811cfa1d1b2fe45b6bd2b2c1a61803dfb",
+      "themeId": "southern-european",
+      "vectorHash": "6e364ced922c760ecaa798d63bd1be96aa8f8bb6b42b420eec3b00fb8ca25caa",
       "json": "burg-59.vector.json",
       "svg": "burg-59.svg"
     },
     {
       "burgId": 60,
-      "vectorHash": "af0fcd9c3fbe5e1aa0059099e88d8889406157d1128b6ee9807a667f8da8b37b",
+      "themeId": "northern-european",
+      "vectorHash": "2185e0041be429c46719f39e5403b8aae91bdb78a8c4e05cd58de8b31d0ad051",
       "json": "burg-60.vector.json",
       "svg": "burg-60.svg"
     }

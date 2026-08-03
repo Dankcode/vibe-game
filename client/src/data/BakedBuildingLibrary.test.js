@@ -3,10 +3,13 @@ import test from 'node:test';
 
 import {
     BAKED_BUILDING_BLUEPRINTS,
+    BAKED_BUILDING_BLUEPRINT_IDS,
     BakedBuildingPlacementError,
     createBakedBuildingPlan,
+    createFixedBakedBuilding,
     validateBakedBuilding
 } from './BakedBuildingLibrary.js';
+import { BURG_THEME_CATALOG, BURG_THEME_IDS } from './BurgThemeCatalog.js';
 import {
     STAIR_CONFIGURATION,
     assertStairFlightInvariants,
@@ -57,6 +60,17 @@ function isolatedCabinParcel(blocker = null) {
 }
 
 test('every baked blueprint has a boundary entrance and at least a contiguous 2x3 interior', () => {
+    assert.equal(BAKED_BUILDING_BLUEPRINT_IDS.length, 56);
+    assert.equal(new Set(BAKED_BUILDING_BLUEPRINT_IDS).size, 56);
+    assert.ok(new Set(Object.values(BAKED_BUILDING_BLUEPRINTS)
+        .map((blueprint) => blueprint.layout.join('\n'))).size >= 8);
+    for (const district of ['castle', 'civic', 'market', 'residential', 'artisan', 'garden', 'harbor']) {
+        assert.ok(
+            Object.values(BAKED_BUILDING_BLUEPRINTS).filter((blueprint) =>
+                blueprint.districts[0] === district).length >= 6,
+            `${district} needs a deep blueprint family`
+        );
+    }
     for (const [id, blueprint] of Object.entries(BAKED_BUILDING_BLUEPRINTS)) {
         const validation = validateBakedBuilding(blueprint);
         assert.equal(validation.valid, true, `${id}: ${validation.errors.join(', ')}`);
@@ -66,6 +80,56 @@ test('every baked blueprint has a boundary entrance and at least a contiguous 2x
     assert.deepEqual(BAKED_BUILDING_BLUEPRINTS.cabin.enterableSpace, {
         x: 1, y: 1, width: 2, height: 3, area: 6
     });
+});
+
+test('multi-storey landmarks bake distinct room plans and routed vertical connections', () => {
+    const keep = createFixedBakedBuilding({
+        blueprintId: 'castle-keep',
+        centerCol: 12,
+        centerRow: 12,
+        width: 24,
+        height: 24,
+        elevationRows: Array.from({ length: 24 }, () => Array(24).fill(3)),
+        seed: 'multi-room-keep',
+        townId: 'Test Seat',
+        district: 'castle'
+    });
+    assert.equal(keep.floors.length, 3);
+    assert.ok(keep.floors.every((floor) => floor.rooms.length >= 2));
+    assert.ok(keep.floors.slice(1).every((floor) => floor.verticalConnections.length >= 1));
+    assert.ok(new Set(keep.floors.flatMap((floor) => floor.rooms.map((room) => room.type))).size >= 6);
+    assert.equal(validateBakedBuilding(keep).valid, true);
+});
+
+test('one baked footprint resolves into five manifest-bound architecture families', () => {
+    const buildings = BURG_THEME_IDS.map((architectureThemeId) => createFixedBakedBuilding({
+        blueprintId: 'castle-keep',
+        centerCol: 12,
+        centerRow: 12,
+        width: 24,
+        height: 24,
+        elevationRows: Array.from({ length: 24 }, () => Array(24).fill(3)),
+        seed: 'same-keep-geometry',
+        townId: architectureThemeId,
+        district: 'castle',
+        architectureThemeId
+    }));
+    const first = buildings[0];
+    for (const building of buildings) {
+        const theme = BURG_THEME_CATALOG[building.architectureThemeId];
+        assert.ok(theme);
+        assert.equal(building.themeLabel, theme.label);
+        assert.ok(theme.styles.includes(building.style));
+        assert.ok(theme.roofStyles.includes(building.roofStyle));
+        assert.ok(theme.roofGeometries.includes(building.roofGeometry));
+        assert.ok(theme.facadeKits.includes(building.facadeKit));
+        assert.ok(theme.castleKits.includes(building.castleKit));
+        assert.deepEqual(building.footprintCells, first.footprintCells);
+        assert.deepEqual(building.floors, first.floors);
+        assert.equal(validateBakedBuilding(building).valid, true);
+    }
+    assert.equal(new Set(buildings.map((building) => building.architectureThemeId)).size, 5);
+    assert.equal(new Set(buildings.map((building) => building.themePalette.wallColor)).size, 5);
 });
 
 test('area baking is deterministic, varied, enterable, and non-overlapping', () => {
@@ -154,6 +218,73 @@ test('an exterior approach is a hard reserved traversal cell', () => {
         assert.equal(blocked.diagnostics.shortfall, 1, blocker);
         assert.equal(blocked.diagnostics.reason, 'minimum-not-met', blocker);
     }
+});
+
+test('baked buildings use relief-derived base tiers but never bridge an illegal cliff', () => {
+    const safe = isolatedCabinParcel();
+    safe.elevationRows = safe.elevationRows.map((row) => row.map(() => 4));
+    const reliefProfile = {
+        formulaVersion: 'fmg-burg-relief-v1',
+        reliefScore: 0.84,
+        reliefClass: 'high',
+        targetTierSpan: 5,
+        baseElevationTier: 4
+    };
+    const elevated = createBakedBuildingPlan({
+        ...safe,
+        districts: ['residential'],
+        seed: 'elevated-cabin-pad',
+        minBuildings: 1,
+        maxBuildings: 1,
+        buffer: 0,
+        reliefProfile
+    });
+    assert.equal(elevated.buildings.length, 1);
+    assert.equal(elevated.buildings[0].baseElevation, 4);
+    assert.equal(elevated.buildings[0].placementConstraints.reliefFormulaVersion, 'fmg-burg-relief-v1');
+    assert.equal(elevated.buildings[0].placementConstraints.reliefClass, 'high');
+    assert.equal(elevated.buildings[0].placementConstraints.elevationSpan, 0);
+
+    const cliff = isolatedCabinParcel();
+    for (let row = 2; row <= 6; row++) cliff.elevationRows[row][5] = 4;
+    const blocked = createBakedBuildingPlan({
+        ...cliff,
+        districts: ['residential'],
+        seed: 'cliff-cabin-pad',
+        minBuildings: 1,
+        maxBuildings: 1,
+        buffer: 0,
+        reliefProfile
+    });
+    assert.equal(blocked.buildings.length, 0);
+    assert.ok(blocked.diagnostics.illegalCliffCandidates > 0);
+    assert.equal(blocked.diagnostics.complete, false);
+});
+
+test('a redundant formula lane may yield to a cabin but an unlisted source road may not', () => {
+    const fixture = isolatedCabinParcel();
+    const replaceableRoadCells = new Set();
+    const mutable = fixture.rows.map((row) => row.split(''));
+    for (let row = 2; row <= 6; row++) {
+        for (let col = 2; col <= 5; col++) {
+            mutable[row][col] = 'R';
+            replaceableRoadCells.add(`${col},${row}`);
+        }
+    }
+    fixture.rows = mutable.map((row) => row.join(''));
+    const options = {
+        ...fixture,
+        districts: ['residential'],
+        seed: 'replace-formula-lane',
+        minBuildings: 1,
+        maxBuildings: 1,
+        buffer: 0
+    };
+    assert.equal(createBakedBuildingPlan(options).buildings.length, 0);
+    const replaced = createBakedBuildingPlan({ ...options, replaceableRoadCells });
+    assert.equal(replaced.buildings.length, 1);
+    assert.equal(replaced.buildings[0].blueprintId, 'cabin');
+    assert.deepEqual(replaced.buildings[0].entrance.approachGrid, [fixture.approach.col, fixture.approach.row]);
 });
 
 test('minimum landmark count can be enforced with a typed placement error', () => {

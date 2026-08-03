@@ -3,19 +3,35 @@
 // Offline town-vector compiler.
 //
 // The large per-burg town payloads are an authoring input only. This compiler extracts the
-// stable geometry that generation needs (wall contours, gates, and building footprints), writes
-// compact immutable vector assets, and deliberately leaves tile matrices, rooms, doodads, and
-// voxel dumps outside the runtime bundle.
+// stable geometry that generation needs (wall contours, graded street runs, gates, and building
+// footprints), writes compact immutable vector assets, and deliberately leaves tile matrices,
+// rooms, doodads, and voxel dumps outside the runtime bundle.
 
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+    isBurgThemeId,
+    resolveManifestBurgTheme,
+    serializeBurgThemeCatalog,
+    validateManifestBurgThemes
+} from '../client/src/data/BurgThemeCatalog.js';
 
 export const TOWN_VECTOR_SCHEMA = 'vibe-game-burg-vectors';
-export const TOWN_VECTOR_SCHEMA_VERSION = 1;
-export const TOWN_VECTOR_GENERATION_VERSION = 'fmg-town-vectors-v1';
+export const TOWN_VECTOR_SCHEMA_VERSION = 3;
+export const TOWN_VECTOR_GENERATION_VERSION = 'fmg-town-vectors-v3';
 export const TOWN_VECTOR_QUANTIZATION = 4;
+export const TOWN_STREET_ELEVATION_MIN = 0;
+export const TOWN_STREET_ELEVATION_MAX = 6;
+export const TOWN_STREET_SEGMENT_FORMAT = Object.freeze([
+    'y',
+    'startX',
+    'endX',
+    'kind',
+    'elevationTier',
+    'cellCount'
+]);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -28,7 +44,8 @@ export function compileTownVectorSet(entries = [], options = {}) {
     const towns = entries
         .map((entry) => compileTownVector(entry.town, {
             burgId: entry.burgId,
-            sourceFile: entry.sourceFile
+            sourceFile: entry.sourceFile,
+            themeId: entry.themeId
         }))
         .sort((left, right) => left.burgId - right.burgId);
     const packageBase = {
@@ -37,6 +54,7 @@ export function compileTownVectorSet(entries = [], options = {}) {
         generationVersion: options.generationVersion || TOWN_VECTOR_GENERATION_VERSION,
         coordinateSpace: 'burg-local-grid',
         quantization: TOWN_VECTOR_QUANTIZATION,
+        themeCatalog: serializeBurgThemeCatalog(),
         towns
     };
     const contentHash = hashCanonical(packageBase);
@@ -49,6 +67,8 @@ export function compileTownVectorSet(entries = [], options = {}) {
             wallContours: sum(towns, (town) => town.walls.contours.length),
             wallComponents: sum(towns, (town) => town.walls.componentCount),
             gates: sum(towns, (town) => town.walls.gates.length),
+            streetCells: sum(towns, (town) => town.streetVectors.sourceCellCount),
+            streetSegments: sum(towns, (town) => town.streetVectors.segments.length),
             buildings: sum(towns, (town) => town.buildings.length),
             sourceBytes: sum(entries, (entry) => Buffer.byteLength(JSON.stringify(entry.town))),
             vectorBytes: Buffer.byteLength(JSON.stringify(towns))
@@ -56,8 +76,11 @@ export function compileTownVectorSet(entries = [], options = {}) {
     };
 }
 
-export function compileTownVector(town, { burgId, sourceFile = '' } = {}) {
+export function compileTownVector(town, { burgId, sourceFile = '', themeId } = {}) {
     validateTownSource(town, burgId);
+    if (!isBurgThemeId(themeId)) {
+        throw new Error(`Town vector burg-${String(burgId)} requires a canonical manifest themeId.`);
+    }
     const grid = {
         width: positiveInteger(town.grid.width),
         height: positiveInteger(town.grid.height),
@@ -72,18 +95,21 @@ export function compileTownVector(town, { burgId, sourceFile = '' } = {}) {
     const contours = traceCellContours(wallCells);
     const gates = normalizePointList(town.matrix?.city_wall?.gates, grid)
         .map(([x, y]) => [x + 0.5, y + 0.5]);
+    const streetVectors = compileStreetVectors(town.streets, grid);
     const buildings = (town.buildings || [])
         .map((building, index) => compileBuildingVector(building, grid, town.grid.origin, index))
         .sort((left, right) => left.id.localeCompare(right.id));
     const bounds = geometryBounds({
         grid,
         wallCells,
+        streetVectors,
         buildings
     });
     const recordBase = {
         id: `burg-${positiveInteger(burgId)}`,
         burgId: positiveInteger(burgId),
         name: String(town.name || `Burg ${burgId}`),
+        themeId,
         seed: integer(town.seed),
         sourceFile: String(sourceFile || ''),
         grid,
@@ -96,6 +122,7 @@ export function compileTownVector(town, { burgId, sourceFile = '' } = {}) {
             sourceCellCount: wallCells.length,
             componentCount: countGridComponents(wallCells)
         },
+        streetVectors,
         buildings
     };
     return {
@@ -176,6 +203,78 @@ export function rasterizeContours(contours = [], width = 0, height = 0) {
     return cells;
 }
 
+export function compileStreetVectors(values = [], grid = { width: 0, height: 0 }) {
+    const cells = new Map();
+    for (const value of Array.isArray(values) ? values : []) {
+        const x = integer(value?.x);
+        const y = integer(value?.y);
+        if (x < 0 || y < 0 || x >= grid.width || y >= grid.height) continue;
+        const elevation = clampNumber(value?.elevation, 0, 1);
+        cells.set(gridKey(x, y), {
+            x,
+            y,
+            kind: normalizeStreetKind(value?.kind, value?.type),
+            elevation,
+            elevationTier: toStreetElevationTier(elevation)
+        });
+    }
+    const ordered = [...cells.values()].sort((left, right) =>
+        left.y - right.y || left.x - right.x || left.kind.localeCompare(right.kind) ||
+        left.elevationTier - right.elevationTier);
+    const segments = [];
+    for (const cell of ordered) {
+        const previous = segments.at(-1);
+        if (previous && previous[0] === cell.y && previous[2] + 1 === cell.x &&
+            previous[3] === cell.kind && previous[4] === cell.elevationTier) {
+            previous[2] = cell.x;
+            previous[5]++;
+            continue;
+        }
+        segments.push([cell.y, cell.x, cell.x, cell.kind, cell.elevationTier, 1]);
+    }
+    const elevations = ordered.map((cell) => cell.elevation);
+    return {
+        segmentFormat: [...TOWN_STREET_SEGMENT_FORMAT],
+        segments,
+        sourceCellCount: ordered.length,
+        elevationMin: elevations.length ? roundNumber(Math.min(...elevations), 6) : null,
+        elevationMax: elevations.length ? roundNumber(Math.max(...elevations), 6) : null
+    };
+}
+
+export function rasterizeStreetVectors(streetVectors = {}) {
+    const cells = [];
+    for (const segment of Array.isArray(streetVectors?.segments) ? streetVectors.segments : []) {
+        const y = integer(segment?.[0]);
+        const startX = integer(segment?.[1]);
+        const endX = integer(segment?.[2]);
+        for (let x = startX; x <= endX; x++) {
+            cells.push({
+                x,
+                y,
+                kind: normalizeStreetKind(segment?.[3]),
+                elevationTier: clampInteger(
+                    segment?.[4],
+                    TOWN_STREET_ELEVATION_MIN,
+                    TOWN_STREET_ELEVATION_MAX,
+                    TOWN_STREET_ELEVATION_MIN
+                )
+            });
+        }
+    }
+    return cells.sort((left, right) => left.y - right.y || left.x - right.x ||
+        left.kind.localeCompare(right.kind) || left.elevationTier - right.elevationTier);
+}
+
+export function toStreetElevationTier(elevation) {
+    return clampInteger(
+        Math.floor((Number(elevation || 0) * 100 - 19) / 11),
+        TOWN_STREET_ELEVATION_MIN,
+        TOWN_STREET_ELEVATION_MAX,
+        TOWN_STREET_ELEVATION_MIN
+    );
+}
+
 export function createTownVectorSvg(town) {
     const wallPath = town.walls.contours.map((contour) =>
         `${contour.map(([x, y], index) => `${index ? 'L' : 'M'}${formatNumber(x)} ${formatNumber(y)}`).join(' ')} Z`
@@ -187,11 +286,24 @@ export function createTownVectorSvg(town) {
     const gates = town.walls.gates.map(([x, y]) =>
         `<circle cx="${formatNumber(x)}" cy="${formatNumber(y)}" r="0.55" fill="#ffd166"/>`
     ).join('');
+    const streets = (town.streetVectors?.segments || []).map((segment) => {
+        const [y, startX, endX, kind, elevationTier] = segment;
+        const color = kind === 'main'
+            ? '#d9894e'
+            : kind === 'dock' ? '#8c6848' : '#c9a36b';
+        const opacity = 0.62 + clampInteger(elevationTier, 0, 6, 0) * 0.045;
+        return `<path d="M${formatNumber(startX)} ${formatNumber(y + 0.5)} ` +
+            `H${formatNumber(endX + 1)}" stroke="${color}" stroke-width="0.82" ` +
+            `stroke-linecap="butt" opacity="${formatNumber(opacity)}" ` +
+            `data-kind="${escapeXml(kind)}" data-elevation-tier="${elevationTier}"/>`;
+    }).join('');
     return [
         '<svg xmlns="http://www.w3.org/2000/svg"',
         ` viewBox="0 0 ${town.grid.width} ${town.grid.height}"`,
-        ` data-burg-id="${town.burgId}" data-vector-hash="${town.vectorHash}">`,
+        ` data-burg-id="${town.burgId}" data-theme-id="${escapeXml(town.themeId)}" ` +
+            `data-vector-hash="${town.vectorHash}">`,
         '<rect width="100%" height="100%" fill="#e8f2df"/>',
+        streets,
         wallPath
             ? `<path d="${wallPath}" fill="#667085" fill-rule="evenodd"/>`
             : '',
@@ -274,9 +386,13 @@ function normalizeRect(value, grid) {
     };
 }
 
-function geometryBounds({ grid, wallCells, buildings }) {
+function geometryBounds({ grid, wallCells, streetVectors, buildings }) {
     const points = [
         ...wallCells.flatMap(([x, y]) => [[x, y], [x + 1, y + 1]]),
+        ...(streetVectors?.segments || []).flatMap((segment) => [
+            [segment[1], segment[0]],
+            [segment[2] + 1, segment[0] + 1]
+        ]),
         ...buildings.flatMap((building) => building.polygon)
     ];
     if (!points.length) return { minX: 0, minY: 0, maxX: grid.width, maxY: grid.height };
@@ -424,6 +540,9 @@ function validateTownSource(town, burgId) {
     if (!Array.isArray(town.buildings)) {
         throw new Error(`Town source for burg ${String(burgId)} must define buildings.`);
     }
+    if (!Array.isArray(town.streets)) {
+        throw new Error(`Town source for burg ${String(burgId)} must define streets.`);
+    }
 }
 
 function canonicalize(value) {
@@ -440,6 +559,15 @@ function hashCanonical(value) {
 function normalizeColor(value, fallback) {
     const color = String(value || '').trim();
     return /^#[0-9a-f]{6}$/i.test(color) ? color.toLowerCase() : fallback;
+}
+
+function normalizeStreetKind(kind, type = '') {
+    const candidate = String(kind || '').trim().toLowerCase();
+    if (candidate === 'main' || candidate === 'dirt' || candidate === 'dock') return candidate;
+    const sourceType = String(type || '').trim().toUpperCase();
+    if (sourceType === 'ROAD_MAIN') return 'main';
+    if (sourceType === 'DOCK') return 'dock';
+    return 'dirt';
 }
 
 function escapeXml(value) {
@@ -499,7 +627,10 @@ async function readJson(filePath) {
 async function loadTownEntries(sourceDir, manifest) {
     const burgByFile = new Map((manifest.burgs || []).map((burg) => [
         String(burg.town_file || '').replaceAll('\\', '/'),
-        Number(burg.id)
+        {
+            burgId: Number(burg.id),
+            themeId: resolveManifestBurgTheme(manifest, burg.id)
+        }
     ]));
     const files = Array.isArray(manifest.files?.towns) ? manifest.files.towns : [];
     return Promise.all(files.map(async (relativeFile) => {
@@ -510,8 +641,11 @@ async function loadTownEntries(sourceDir, manifest) {
             throw new Error(`Town vector source escapes the package root: ${normalized}`);
         }
         const inferredId = Number(normalized.match(/burg-(\d+)\.json$/)?.[1]);
+        const manifestBurg = burgByFile.get(normalized);
+        const burgId = manifestBurg?.burgId || inferredId;
         return {
-            burgId: burgByFile.get(normalized) || inferredId,
+            burgId,
+            themeId: manifestBurg?.themeId || resolveManifestBurgTheme(manifest, burgId),
             sourceFile: normalized,
             town: await readJson(filePath)
         };
@@ -531,8 +665,10 @@ async function writeTownVectorOutputs(vectorPackage) {
         schemaVersion: vectorPackage.schemaVersion,
         generationVersion: vectorPackage.generationVersion,
         contentHash: vectorPackage.contentHash,
+        themeCatalog: vectorPackage.themeCatalog,
         towns: vectorPackage.towns.map((town) => ({
             burgId: town.burgId,
+            themeId: town.themeId,
             vectorHash: town.vectorHash,
             json: `burg-${town.burgId}.vector.json`,
             svg: `burg-${town.burgId}.svg`
@@ -557,6 +693,10 @@ async function writeTownVectorOutputs(vectorPackage) {
 async function main(argv = process.argv.slice(2)) {
     const sourceDir = path.resolve(argv[0] || DEFAULT_SOURCE_DIR);
     const manifest = await readJson(path.join(sourceDir, 'manifest.json'));
+    const themeValidation = validateManifestBurgThemes(manifest);
+    if (!themeValidation.valid) {
+        throw new Error(`Invalid burg theme manifest:\n${themeValidation.errors.map((error) => `- ${error}`).join('\n')}`);
+    }
     const entries = await loadTownEntries(sourceDir, manifest);
     const vectorPackage = compileTownVectorSet(entries);
     await writeTownVectorOutputs(vectorPackage);

@@ -2,12 +2,21 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { stampBuildingsOnRows } from './BuildingData.js';
+import { ACTIVE_GEOGRAPHY } from './ActiveWorldData.js';
+import { BURG_THEME_IDS, normalizeBurgThemeId } from './BurgThemeCatalog.js';
 import {
     createFantasyWorldPlanAt,
     getDefaultWorldLocation,
     getWorldMapLocations
 } from './FantasyWorldData.js';
 import { BUILDING_PARTS, TILE_SYMBOL_LIBRARY, isBlockWalkable } from './TileLibrary.js';
+import { FMG_BURG_RELIEF_FORMULA_VERSION } from './WorldConstraintField.js';
+import {
+    TERRAIN_MACRO_TILE_LIBRARY_VERSION,
+    TERRAIN_PRIMARY_MACRO_SIZE,
+    TERRAIN_TRANSITION_MACRO_SIZE
+} from './TerrainMacroTileLibrary.js';
+import { WORLD_PATH_CONNECTIVITY_VERSION } from './WorldPathConnectivity.js';
 
 const EXPECTED_WORLD_LOCATIONS = 60;
 // Physical footprints deliberately leave room for the fixed gates, roads, plazas and keep
@@ -47,6 +56,131 @@ test('all 60 FMG locations generate without terrain or building WFC contradictio
     }
 
     assert.equal(failures.length, 0, formatFailures('location generation failures', failures));
+});
+
+test('all FMG locations use vector tiers as macro inhibitors and place buildings on level pads', () => {
+    const failures = [];
+    for (const result of successfulLocationResults()) {
+        const elevation = result.plan.generation?.elevation || {};
+        if (elevation.formulaVersion !== FMG_BURG_RELIEF_FORMULA_VERSION) {
+            failures.push(`${locationLabel(result.location)} used relief ${elevation.formulaVersion || 'none'}`);
+        }
+        if (elevation.vectorElevationMode !== 'soft-macro-inhibitor' ||
+            (elevation.vectorElevationCells > 0 && !elevation.vectorElevationConstraintsApplied)) {
+            failures.push(`${locationLabel(result.location)} did not apply FMG tiers as macro inhibitors`);
+        }
+        if (elevation.illegalBuildingCliffs !== 0 || elevation.maximumBuildingElevationSpan > 0) {
+            failures.push(
+                `${locationLabel(result.location)} has ${elevation.illegalBuildingCliffs} cliff buildings ` +
+                `(maximum span ${elevation.maximumBuildingElevationSpan})`
+            );
+        }
+        if (elevation.illegalRoadCliffs !== 0 || elevation.maximumRoadElevationDelta > 1) {
+            failures.push(
+                `${locationLabel(result.location)} has ${elevation.illegalRoadCliffs} unsafe road edges ` +
+                `(maximum delta ${elevation.maximumRoadElevationDelta})`
+            );
+        }
+        if (!Array.isArray(elevation.settlementProfiles) || elevation.settlementProfiles.length === 0) {
+            failures.push(`${locationLabel(result.location)} emitted no FMG relief profile`);
+        }
+    }
+    assert.equal(failures.length, 0, formatFailures('burg relief contract failures', failures));
+});
+
+test('all FMG locations use coherent macro terrain and logical player connectors', () => {
+    const failures = [];
+    let checkedRiverSystems = 0;
+    let checkedGates = 0;
+    let checkedDoors = 0;
+    for (const result of successfulLocationResults()) {
+        const macro = result.plan.generation?.terrainMacroWfc || {};
+        const connectivity = result.plan.generation?.pathConnectivity || {};
+        if (macro.libraryVersion !== TERRAIN_MACRO_TILE_LIBRARY_VERSION ||
+            macro.primarySize !== TERRAIN_PRIMARY_MACRO_SIZE ||
+            macro.transitionSize !== TERRAIN_TRANSITION_MACRO_SIZE || !macro.globalAnchor) {
+            failures.push(`${locationLabel(result.location)} emitted an invalid terrain macro contract`);
+        }
+        if ((macro.primaryModules || 0) === 0 || (macro.isolatedElevationCells || 0) !== 0) {
+            failures.push(
+                `${locationLabel(result.location)} has ${macro.primaryModules || 0} primary modules and ` +
+                `${macro.isolatedElevationCells || 0} generated singleton elevations`
+            );
+        }
+        if (!macro.solved || (macro.incompatibleEdges || 0) !== 0 || (macro.fallbacks || 0) !== 0) {
+            failures.push(
+                `${locationLabel(result.location)} macro collapse solved=${Boolean(macro.solved)}, ` +
+                `incompatible=${macro.incompatibleEdges || 0}, fallbacks=${macro.fallbacks || 0}`
+            );
+        }
+        if (connectivity.formulaVersion !== WORLD_PATH_CONNECTIVITY_VERSION || !connectivity.valid) {
+            failures.push(
+                `${locationLabel(result.location)} failed logical connectivity: ` +
+                `${(connectivity.issueCodes || []).join(', ') || 'missing validator metadata'}`
+            );
+        }
+        const stats = connectivity;
+        checkedRiverSystems += stats.rivers?.systems || 0;
+        checkedGates += stats.gates?.gates || 0;
+        checkedDoors += stats.buildings?.doors || 0;
+        if ((stats.rivers?.continuousSystems || 0) !== (stats.rivers?.systems || 0)) {
+            failures.push(`${locationLabel(result.location)} contains a disconnected visible river system`);
+        }
+        if ((stats.gates?.connected || 0) !== (stats.gates?.gates || 0)) {
+            failures.push(`${locationLabel(result.location)} contains a hanging or roadless gate`);
+        }
+        if ((stats.buildings?.connectedDoors || 0) !== (stats.buildings?.doors || 0) ||
+            (stats.buildings?.levelFootprints || 0) !== (stats.buildings?.buildings || 0)) {
+            failures.push(`${locationLabel(result.location)} contains a hanging door or uneven foundation`);
+        }
+    }
+    assert.ok(checkedRiverSystems > 0, 'the location matrix must exercise FMG river continuity');
+    assert.ok(checkedGates > 0, 'the location matrix must exercise wall gates');
+    assert.ok(checkedDoors > 0, 'the location matrix must exercise enterable building doors');
+    assert.equal(failures.length, 0, formatFailures('macro/path connectivity failures', failures));
+});
+
+test('manifest burg themes remain exact through town tiles and both building WFC paths', () => {
+    const failures = [];
+    const observedThemes = new Set();
+    const burgById = new Map(ACTIVE_GEOGRAPHY.burgs.map((burg) => [Number(burg.id), burg]));
+
+    for (const result of successfulLocationResults()) {
+        const locationBurgId = Number(String(result.location.id || '').replace(/^burg-/, ''));
+        const expectedThemeId = normalizeBurgThemeId(burgById.get(locationBurgId)?.themeId, null);
+        const architecture = result.plan.generation?.architectureThemes || {};
+        const bySettlement = architecture.bySettlement || {};
+        const allowedThemes = new Set(Object.values(bySettlement).filter(Boolean));
+
+        if (!expectedThemeId) {
+            failures.push(`${locationLabel(result.location)} has no canonical manifest theme`);
+            continue;
+        }
+        observedThemes.add(expectedThemeId);
+        if (result.plan.sourceTown.architectureThemeId !== expectedThemeId) {
+            failures.push(`${locationLabel(result.location)} source theme ${result.plan.sourceTown.architectureThemeId} != ${expectedThemeId}`);
+        }
+        if (result.plan.theme.primaryArchitectureThemeId !== expectedThemeId) {
+            failures.push(`${locationLabel(result.location)} primary theme ${result.plan.theme.primaryArchitectureThemeId} != ${expectedThemeId}`);
+        }
+        for (const building of result.plan.buildings) {
+            const ownerThemeId = bySettlement[`burg-${building.burgId}`];
+            if (!ownerThemeId || building.architectureThemeId !== ownerThemeId) {
+                failures.push(`${locationLabel(result.location)} ${building.id} crossed ${ownerThemeId || 'unknown'} -> ${building.architectureThemeId}`);
+            }
+            if (!building.facadeKit || !building.roofGeometry || !building.themePalette) {
+                failures.push(`${locationLabel(result.location)} ${building.id} lacks themed render metadata`);
+            }
+        }
+        for (const themeId of result.plan.architectureThemeRows.flat().filter(Boolean)) {
+            if (!allowedThemes.has(themeId)) {
+                failures.push(`${locationLabel(result.location)} rendered unowned tile theme ${themeId}`);
+            }
+        }
+    }
+
+    assert.deepEqual([...observedThemes].sort(), [...BURG_THEME_IDS].sort());
+    assert.equal(failures.length, 0, formatFailures('burg architecture theme leakage', failures));
 });
 
 test('every view projects at most one source wall system with deterministic procedural fallbacks', () => {

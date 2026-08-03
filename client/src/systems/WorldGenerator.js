@@ -9,6 +9,7 @@ import {
     tileSupportsHabitat
 } from '../data/TileRegistry.js';
 import { BUILDING_PARTS, createTileCell, createVoxelBlock, createVoxelMatrix, getTopVoxel, getVoxelColumn } from '../data/TileLibrary.js';
+import { BURG_THEME_CATALOG } from '../data/BurgThemeCatalog.js';
 import { planBuildingFurniture } from './FurniturePlanner.js';
 
 export { ELEMENTS };
@@ -18,6 +19,39 @@ const BLOCKING_CLEARANCE_VOXELS = 1;
 const BUILDING_STAIR_STOREY_HEIGHT = 2;
 const BUILDING_STAIR_PAIR_STEP_HEIGHT = BUILDING_STAIR_STOREY_HEIGHT;
 const FURNITURE_SURFACE_LIFT = 0.08;
+
+// Architecture themes are intentionally finite. Burg generation supplies the resolved theme on
+// every building; these renderer fallbacks keep legacy maps working while ensuring a missing or
+// malformed theme never silently borrows another culture's kit.
+const ARCHITECTURE_THEME_RENDER_PROFILES = Object.freeze({
+    asian: createArchitectureThemeRenderProfile('asian', 'clay'),
+    'middle-eastern': createArchitectureThemeRenderProfile('middle-eastern', 'courtyard'),
+    'northern-european': createArchitectureThemeRenderProfile('northern-european', 'slate'),
+    'southern-european': createArchitectureThemeRenderProfile('southern-european', 'clay'),
+    egyptian: createArchitectureThemeRenderProfile('egyptian', 'stone-slab')
+});
+
+function createArchitectureThemeRenderProfile(themeId, roofTextureStyle) {
+    const theme = BURG_THEME_CATALOG[themeId];
+    const colorNumber = (value) => Number.parseInt(String(value).replace(/^#/, ''), 16) & 0xffffff;
+    return freezeArchitectureThemeProfile({
+        roofGeometry: theme.roofGeometries[0],
+        roofTextureStyle,
+        facadeKit: theme.facadeKits[0],
+        castleKit: theme.castleKits[0],
+        roofColors: theme.themePalette.roofColors.map(colorNumber),
+        wallColor: colorNumber(theme.themePalette.wallColor),
+        trimColor: colorNumber(theme.themePalette.trimColor),
+        accentColor: colorNumber(theme.themePalette.accentColor)
+    });
+}
+
+function freezeArchitectureThemeProfile(profile) {
+    return Object.freeze({
+        ...profile,
+        roofColors: Object.freeze([...profile.roofColors])
+    });
+}
 
 export class WorldGenerator {
     constructor(threeManager, options = {}) {
@@ -436,11 +470,34 @@ export class WorldGenerator {
         this.registerWorldDecorations(decorations);
     }
 
-    addTile(x, y, z, element, textureValue = 0, effect = 0, building = 0, affectSurface = true, visualVariant = 0, paletteId = 'meadow') {
+    addTile(
+        x,
+        y,
+        z,
+        element,
+        textureValue = 0,
+        effect = 0,
+        building = 0,
+        affectSurface = true,
+        visualVariant = 0,
+        paletteId = 'meadow',
+        architectureThemeId = null
+    ) {
         const voxel = this.getVoxelAt(x, y, z) ||
-            this.setVoxelAt(x, y, z, { element, texture: textureValue, effect, building, visualVariant, paletteId });
+            this.setVoxelAt(x, y, z, {
+                element,
+                texture: textureValue,
+                effect,
+                building,
+                visualVariant,
+                paletteId,
+                architectureThemeId
+            });
         const resolvedVisualVariant = voxel.visualVariant ?? visualVariant;
         const resolvedPaletteId = voxel.paletteId ?? paletteId;
+        const resolvedArchitectureThemeId = WorldGenerator.normalizeArchitectureThemeId(
+            voxel.architectureThemeId
+        );
         const tile = new Tile(this.threeManager, x, y, z, {
             element,
             textureValue,
@@ -448,6 +505,7 @@ export class WorldGenerator {
             building,
             visualVariant: resolvedVisualVariant,
             paletteId: resolvedPaletteId,
+            architectureThemeId: resolvedArchitectureThemeId,
             visualSeed: this.voxelMatrix?.seed || this.voxelMatrix?.world?.variantSeed || 0
         });
         tile.visibleByRange = false;
@@ -474,6 +532,7 @@ export class WorldGenerator {
                     building,
                     visualVariant: resolvedVisualVariant,
                     paletteId: resolvedPaletteId,
+                    architectureThemeId: resolvedArchitectureThemeId,
                     definition: getTileDefinition(element, textureValue, resolvedPaletteId),
                     voxel
                 });
@@ -1956,15 +2015,91 @@ export class WorldGenerator {
             ].includes(voxel.building);
     }
 
+    static normalizeArchitectureThemeId(value) {
+        const normalized = String(value || '').trim().toLowerCase().replace(/[\s_]+/g, '-');
+        return ARCHITECTURE_THEME_RENDER_PROFILES[normalized] ? normalized : null;
+    }
+
+    static normalizeThemeColor(value, fallback = 0xffffff) {
+        if (Number.isFinite(Number(value))) return Number(value) & 0xffffff;
+        const normalized = String(value || '').trim().replace(/^#/, '');
+        if (/^[0-9a-f]{6}$/i.test(normalized)) return Number.parseInt(normalized, 16);
+        return Number(fallback) & 0xffffff;
+    }
+
+    static resolveArchitectureThemeProfile(building = {}) {
+        const id = WorldGenerator.normalizeArchitectureThemeId(
+            building.architectureThemeId ?? building.burgThemeId ?? building.themeId
+        );
+        const preset = id ? ARCHITECTURE_THEME_RENDER_PROFILES[id] : null;
+        const suppliedPalette = building.themePalette && typeof building.themePalette === 'object'
+            ? building.themePalette
+            : {};
+        const fallbackRoofColors = preset?.roofColors || [];
+        const suppliedRoofColors = Array.isArray(suppliedPalette.roofColors)
+            ? suppliedPalette.roofColors.slice(0, 4)
+            : [];
+        const roofColors = (suppliedRoofColors.length ? suppliedRoofColors : fallbackRoofColors)
+            .map((color, index) => WorldGenerator.normalizeThemeColor(
+                color,
+                fallbackRoofColors[index % Math.max(1, fallbackRoofColors.length)] || 0x8f52ad
+            ));
+        return Object.freeze({
+            id: id || 'legacy-storybook',
+            themed: Boolean(id),
+            roofGeometry: String(building.roofGeometry || preset?.roofGeometry || '').trim().toLowerCase(),
+            roofTextureStyle: String(building.roofTextureStyle || preset?.roofTextureStyle || '').trim().toLowerCase(),
+            facadeKit: String(building.facadeKit || preset?.facadeKit || '').trim().toLowerCase(),
+            castleKit: String(building.castleKit || preset?.castleKit || '').trim().toLowerCase(),
+            palette: Object.freeze({
+                roofColors: Object.freeze(roofColors),
+                wallColor: WorldGenerator.normalizeThemeColor(
+                    suppliedPalette.wallColor,
+                    preset?.wallColor ?? (building.style === 'stone' ? 0xc3c4ba : 0xd39a69)
+                ),
+                trimColor: WorldGenerator.normalizeThemeColor(
+                    suppliedPalette.trimColor,
+                    preset?.trimColor ?? (building.style === 'stone' ? 0x8e99a2 : 0x5a3421)
+                ),
+                accentColor: WorldGenerator.normalizeThemeColor(
+                    suppliedPalette.accentColor,
+                    preset?.accentColor ?? building.districtPalette?.accent ?? 0x4fb7a7
+                )
+            })
+        });
+    }
+
     static resolveBuildingRoofProfile(building = {}) {
+        const themeProfile = WorldGenerator.resolveArchitectureThemeProfile(building);
         const architecture = String(building.architectureStyle || '').toLowerCase();
         const roofStyle = String(building.roofStyle || '').toLowerCase();
         const archetype = String(building.archetype || '').toLowerCase();
         const district = String(building.district || '').toLowerCase();
+        const roofGeometry = themeProfile.roofGeometry;
         const isKeep = architecture === 'keep' ||
             archetype === 'keep' ||
-            building.blueprintId === 'castle-keep';
-        const isTower = !isKeep && (
+            Boolean(building.vectorCastle) ||
+            building.blueprintId === 'castle-keep' ||
+            building.blueprintId === 'burg-vector-castle' ||
+            building.sourceType === 'burg-vector-castle';
+        const isAsianHipped = !isKeep && themeProfile.id === 'asian' && /hip/.test(roofGeometry);
+        const isTieredPagoda = !isKeep && themeProfile.id === 'asian' && !isAsianHipped;
+        const isMiddleEasternFlat = !isKeep && themeProfile.id === 'middle-eastern' &&
+            /flat|parapet|terrace/.test(roofGeometry) && !/dome/.test(roofGeometry);
+        const isDomed = !isKeep && themeProfile.id === 'middle-eastern' && !isMiddleEasternFlat;
+        const isNorthernTurreted = !isKeep && themeProfile.id === 'northern-european' &&
+            /turret/.test(roofGeometry);
+        const isSteepGabled = !isKeep && themeProfile.id === 'northern-european' && !isNorthernTurreted;
+        const isSouthernHipped = !isKeep && themeProfile.id === 'southern-european' &&
+            /hip/.test(roofGeometry);
+        const isLowTerracotta = !isKeep && themeProfile.id === 'southern-european' && !isSouthernHipped;
+        const isEgyptianFlat = !isKeep && themeProfile.id === 'egyptian' &&
+            /flat|parapet|terrace/.test(roofGeometry) && !/pylon/.test(roofGeometry);
+        const isPylonStepped = !isKeep && themeProfile.id === 'egyptian' && !isEgyptianFlat;
+        const hasThemeGeometry = isTieredPagoda || isAsianHipped || isDomed ||
+            isMiddleEasternFlat || isSteepGabled || isNorthernTurreted ||
+            isLowTerracotta || isSouthernHipped || isPylonStepped || isEgyptianFlat;
+        const isTower = !isKeep && !hasThemeGeometry && (
             archetype === 'tower' ||
             architecture === 'tower' ||
             roofStyle === 'tower'
@@ -1980,7 +2115,7 @@ export class WorldGenerator {
             'stepped',
             'terrace'
         ]);
-        const explicitlyFlat = !isKeep && !isTower && (
+        const explicitlyFlat = !isKeep && !isTower && !hasThemeGeometry && (
             flatTokens.has(architecture) ||
             flatTokens.has(roofStyle) ||
             flatTokens.has(archetype) ||
@@ -2007,21 +2142,49 @@ export class WorldGenerator {
             'slate',
             'thatch'
         ]);
-        const isGabled = !isKeep && !isTower && !explicitlyFlat && (
+        const isGabled = !isKeep && !isTower && !explicitlyFlat && !hasThemeGeometry && (
             gabledStyles.has(architecture) ||
             gabledStyles.has(roofStyle) ||
             ordinaryGabledArchetypes.has(archetype) ||
             ['artisan', 'garden', 'harbor', 'residential'].includes(district)
         );
+        const geometry = isKeep
+            ? (themeProfile.themed ? `castle:${themeProfile.castleKit}` : 'keep')
+            : isTieredPagoda ? 'tiered-pagoda'
+                : isAsianHipped ? 'asian-hipped'
+                    : isDomed ? 'dome-parapet'
+                        : isMiddleEasternFlat ? 'middle-eastern-flat-parapet'
+                            : isSteepGabled ? 'steep-gable'
+                                : isNorthernTurreted ? 'northern-turreted'
+                                    : isLowTerracotta ? 'low-terracotta'
+                                        : isSouthernHipped ? 'southern-hipped'
+                                            : isPylonStepped ? 'pylon-stepped'
+                                                : isEgyptianFlat ? 'egyptian-flat-parapet'
+                                                    : isTower ? 'tower'
+                                                        : isGabled ? 'gabled' : 'flat-parapet';
         return {
             architecture,
             roofStyle,
+            roofGeometry,
             archetype,
             district,
+            geometry,
+            themeProfile,
             isKeep,
             isTower,
             isGabled,
-            isFlatParapet: explicitlyFlat || (!isKeep && !isTower && !isGabled)
+            isTieredPagoda,
+            isAsianHipped,
+            isDomed,
+            isMiddleEasternFlat,
+            isSteepGabled,
+            isNorthernTurreted,
+            isLowTerracotta,
+            isSouthernHipped,
+            isPylonStepped,
+            isEgyptianFlat,
+            isFlatParapet: isMiddleEasternFlat || isEgyptianFlat || explicitlyFlat ||
+                (!isKeep && !isTower && !isGabled && !hasThemeGeometry)
         };
     }
 
@@ -2030,23 +2193,37 @@ export class WorldGenerator {
         const visualSeed = WorldGenerator.hashVisualSeed(
             `${this.voxelMatrix?.world?.contentHash || this.voxelMatrix?.contentHash || this.voxelMatrix?.seed || 0}:${building.id}:${building.roofStyle || building.style || 'timber'}`
         );
+        const roofProfile = WorldGenerator.resolveBuildingRoofProfile(building);
+        const { themeProfile } = roofProfile;
         roof.position.set(
             building.x + (building.width - 1) / 2,
             surfaceY + 0.23,
             building.y + (building.height - 1) / 2
         );
         roof.userData.buildingId = building.id;
+        roof.userData.obstructionTag = state?.obstructionTag || building.obstructionTag ||
+            building.buildingTag || `building:${building.id}`;
+        roof.userData.obstructionRole = 'roof';
+        roof.userData.hideAsUnit = true;
         roof.userData.obstructionZ = state?.roofObstructionZ ??
             Math.max(0, Math.floor(surfaceY - this.getTopSurfaceOffset()));
         roof.userData.architectureStyle = building.architectureStyle || building.roofStyle || building.style;
+        roof.userData.architectureThemeId = themeProfile.id;
         roof.userData.motionPhase = (visualSeed % 6283) / 1000;
 
         const roofMaterial = WorldGenerator.getRoofMaterial(
             building.roofStyle || building.architectureStyle || building.style,
-            visualSeed % 4
+            visualSeed % 4,
+            building
         );
-        const trimMaterial = WorldGenerator.getDistrictAccentMaterial(building.districtPalette?.accent) ||
+        const trimMaterial = WorldGenerator.getArchitectureThemeMaterial(building, 'trim') ||
+            WorldGenerator.getDistrictAccentMaterial(building.districtPalette?.accent) ||
             WorldGenerator.getTrimMaterial(building.style);
+        const accentMaterial = WorldGenerator.getArchitectureThemeMaterial(building, 'accent') ||
+            WorldGenerator.getDistrictAccentMaterial(building.districtPalette?.accent) ||
+            trimMaterial;
+        const wallMaterial = WorldGenerator.getArchitectureThemeMaterial(building, 'wall') ||
+            WorldGenerator.getDecorationMaterial('fortressStone');
         const tileGeometry = new THREE.BoxGeometry(0.98, 0.38, 0.98);
         const parapetHorizontal = new THREE.BoxGeometry(0.98, 0.28, 0.16);
         const parapetVertical = new THREE.BoxGeometry(0.16, 0.28, 0.98);
@@ -2054,23 +2231,38 @@ export class WorldGenerator {
         const startZ = -(building.height - 1) / 2;
 
         const footprint = this.getBuildingFootprint(building);
-        const roofProfile = WorldGenerator.resolveBuildingRoofProfile(building);
         const { isKeep, isTower, isGabled } = roofProfile;
-        roof.userData.roofProfile = isKeep
-            ? 'keep'
-            : isTower
-                ? 'tower'
-                : isGabled
-                    ? 'gabled'
-                    : 'flat-parapet';
+        roof.userData.roofProfile = roofProfile.geometry;
+        roof.userData.planarRoof = themeProfile.themed;
 
         if (isKeep) {
-            this.addKeepRoofGeometry(roof, building, {
+            if (themeProfile.themed) {
+                this.addThemedCastleGeometry(roof, building, {
+                    roofMaterial,
+                    trimMaterial,
+                    accentMaterial,
+                    wallMaterial,
+                    themeProfile
+                });
+            } else {
+                this.addKeepRoofGeometry(roof, building, {
+                    roofMaterial,
+                    trimMaterial,
+                    startX,
+                    startZ,
+                    footprint
+                });
+            }
+        } else if (themeProfile.themed) {
+            this.addThemedPlanarRoofGeometry(roof, building, {
                 roofMaterial,
                 trimMaterial,
+                accentMaterial,
+                wallMaterial,
+                roofProfile,
+                footprint,
                 startX,
-                startZ,
-                footprint
+                startZ
             });
         } else if (isTower) {
             const radius = Math.max(1.3, Math.min(building.width, building.height) * 0.58);
@@ -2164,10 +2356,13 @@ export class WorldGenerator {
         this.addRoofSilhouetteDetails(roof, building, {
             roofMaterial,
             trimMaterial,
+            accentMaterial,
+            wallMaterial,
             visualSeed,
             isKeep,
             isTower,
-            isGabled
+            isGabled,
+            themeProfile
         });
 
         roof.traverse((child) => {
@@ -2180,6 +2375,495 @@ export class WorldGenerator {
         return roof;
     }
 
+    addPlanarRoofPlate(group, options) {
+        const {
+            width,
+            depth,
+            material,
+            x = 0,
+            z = 0,
+            y = 0.12,
+            height = 0.08,
+            segments = 0
+        } = options;
+        const geometry = segments >= 6
+            ? new THREE.CylinderGeometry(
+                Math.max(0.2, Math.min(width, depth) / 2),
+                Math.max(0.2, Math.min(width, depth) / 2),
+                height,
+                segments
+            )
+            : new THREE.BoxGeometry(Math.max(0.2, width), height, Math.max(0.2, depth));
+        const plate = new THREE.Mesh(geometry, material);
+        plate.position.set(x, y, z);
+        if (segments >= 6) {
+            plate.scale.set(
+                Math.max(0.2, width) / Math.max(0.2, Math.min(width, depth)),
+                1,
+                Math.max(0.2, depth) / Math.max(0.2, Math.min(width, depth))
+            );
+        }
+        group.add(plate);
+        return plate;
+    }
+
+    addPlanarFootprintTiles(roof, building, options) {
+        const {
+            material,
+            footprint = this.getBuildingFootprint(building),
+            startX = -(building.width - 1) / 2,
+            startZ = -(building.height - 1) / 2,
+            y = 0.11,
+            height = 0.1,
+            size = 0.96
+        } = options;
+        const geometry = new THREE.BoxGeometry(size, height, size);
+        for (const { x: localX, y: localY } of footprint.cells) {
+            const tile = new THREE.Mesh(geometry, material);
+            tile.position.set(startX + localX, y, startZ + localY);
+            roof.add(tile);
+        }
+    }
+
+    addPlanarPerimeterTrim(roof, building, options) {
+        const {
+            material,
+            footprint = this.getBuildingFootprint(building),
+            startX = -(building.width - 1) / 2,
+            startZ = -(building.height - 1) / 2,
+            y = 0.19
+        } = options;
+        const horizontal = new THREE.BoxGeometry(0.98, 0.07, 0.13);
+        const vertical = new THREE.BoxGeometry(0.13, 0.07, 0.98);
+        for (const { x: localX, y: localY } of footprint.cells) {
+            const x = startX + localX;
+            const z = startZ + localY;
+            if (!footprint.set.has(localX + ',' + (localY - 1))) {
+                const edge = new THREE.Mesh(horizontal, material);
+                edge.position.set(x, y, z - 0.46);
+                roof.add(edge);
+            }
+            if (!footprint.set.has(localX + ',' + (localY + 1))) {
+                const edge = new THREE.Mesh(horizontal, material);
+                edge.position.set(x, y, z + 0.46);
+                roof.add(edge);
+            }
+            if (!footprint.set.has((localX - 1) + ',' + localY)) {
+                const edge = new THREE.Mesh(vertical, material);
+                edge.position.set(x - 0.46, y, z);
+                roof.add(edge);
+            }
+            if (!footprint.set.has((localX + 1) + ',' + localY)) {
+                const edge = new THREE.Mesh(vertical, material);
+                edge.position.set(x + 0.46, y, z);
+                roof.add(edge);
+            }
+        }
+    }
+
+    addThemedPlanarRoofGeometry(roof, building, options) {
+        const {
+            roofMaterial,
+            trimMaterial,
+            accentMaterial,
+            wallMaterial,
+            roofProfile,
+            footprint,
+            startX,
+            startZ
+        } = options;
+        const width = Math.max(1, Number(building.width) || 1);
+        const depth = Math.max(1, Number(building.height) || 1);
+        const geometry = roofProfile.geometry;
+
+        this.addPlanarFootprintTiles(roof, building, {
+            material: roofMaterial,
+            footprint,
+            startX,
+            startZ
+        });
+        this.addPlanarPerimeterTrim(roof, building, {
+            material: trimMaterial,
+            footprint,
+            startX,
+            startZ
+        });
+
+        if (geometry === 'tiered-pagoda') {
+            this.addPlanarRoofPlate(roof, {
+                width: Math.max(0.8, width - 0.42),
+                depth: Math.max(0.8, depth - 0.42),
+                material: accentMaterial,
+                y: 0.2,
+                height: 0.055
+            });
+            this.addPlanarRoofPlate(roof, {
+                width: depth >= width ? 0.14 : Math.max(0.8, width * 0.56),
+                depth: depth >= width ? Math.max(0.8, depth * 0.56) : 0.14,
+                material: trimMaterial,
+                y: 0.245,
+                height: 0.05
+            });
+            for (const [x, z] of [
+                [-width / 2, -depth / 2],
+                [width / 2, -depth / 2],
+                [width / 2, depth / 2],
+                [-width / 2, depth / 2]
+            ]) {
+                this.addPlanarRoofPlate(roof, {
+                    width: 0.2,
+                    depth: 0.2,
+                    x,
+                    z,
+                    material: accentMaterial,
+                    y: 0.205,
+                    height: 0.045
+                });
+            }
+        } else if (geometry === 'asian-hipped') {
+            this.addPlanarRoofPlate(roof, {
+                width: Math.max(0.75, width - 0.52),
+                depth: Math.max(0.75, depth - 0.52),
+                material: wallMaterial,
+                y: 0.19,
+                height: 0.05
+            });
+            this.addPlanarRoofPlate(roof, {
+                width: Math.max(0.62, width - 0.82),
+                depth: Math.max(0.62, depth - 0.82),
+                material: accentMaterial,
+                y: 0.235,
+                height: 0.045
+            });
+        } else if (geometry === 'dome-parapet') {
+            this.addPlanarRoofPlate(roof, {
+                width: Math.max(0.8, Math.min(width, depth) * 0.62),
+                depth: Math.max(0.8, Math.min(width, depth) * 0.62),
+                material: accentMaterial,
+                y: 0.215,
+                height: 0.065,
+                segments: 16
+            });
+            this.addPlanarRoofPlate(roof, {
+                width: Math.max(0.42, Math.min(width, depth) * 0.3),
+                depth: Math.max(0.42, Math.min(width, depth) * 0.3),
+                material: trimMaterial,
+                y: 0.27,
+                height: 0.045,
+                segments: 12
+            });
+        } else if (geometry === 'middle-eastern-flat-parapet') {
+            this.addPlanarRoofPlate(roof, {
+                width: Math.max(0.75, width - 0.7),
+                depth: Math.max(0.75, depth - 0.7),
+                material: wallMaterial,
+                y: 0.2,
+                height: 0.055
+            });
+            for (const x of [-width * 0.28, width * 0.28]) {
+                this.addPlanarRoofPlate(roof, {
+                    width: 0.16,
+                    depth: Math.max(0.7, depth * 0.56),
+                    x,
+                    material: accentMaterial,
+                    y: 0.245,
+                    height: 0.04
+                });
+            }
+        } else if (geometry === 'steep-gable') {
+            const ridgeAlongZ = depth >= width;
+            this.addPlanarRoofPlate(roof, {
+                width: ridgeAlongZ ? 0.16 : Math.max(0.8, width - 0.36),
+                depth: ridgeAlongZ ? Math.max(0.8, depth - 0.36) : 0.16,
+                material: accentMaterial,
+                y: 0.23,
+                height: 0.055
+            });
+            for (const offset of [-0.28, 0.28]) {
+                this.addPlanarRoofPlate(roof, {
+                    width: ridgeAlongZ ? 0.08 : Math.max(0.7, width - 0.52),
+                    depth: ridgeAlongZ ? Math.max(0.7, depth - 0.52) : 0.08,
+                    x: ridgeAlongZ ? offset * width : 0,
+                    z: ridgeAlongZ ? 0 : offset * depth,
+                    material: trimMaterial,
+                    y: 0.2,
+                    height: 0.04
+                });
+            }
+        } else if (geometry === 'northern-turreted') {
+            const cornerX = Math.max(0.3, width / 2 - 0.46);
+            const cornerZ = Math.max(0.3, depth / 2 - 0.46);
+            for (const [x, z] of [
+                [-cornerX, -cornerZ],
+                [cornerX, -cornerZ],
+                [cornerX, cornerZ],
+                [-cornerX, cornerZ]
+            ]) {
+                this.addPlanarRoofPlate(roof, {
+                    width: 0.68,
+                    depth: 0.68,
+                    x,
+                    z,
+                    material: wallMaterial,
+                    y: 0.225,
+                    height: 0.065,
+                    segments: 8
+                });
+            }
+            this.addPlanarRoofPlate(roof, {
+                width: 0.14,
+                depth: Math.max(0.8, depth - 0.46),
+                material: accentMaterial,
+                y: 0.26,
+                height: 0.045
+            });
+        } else if (geometry === 'low-terracotta') {
+            const ridgeAlongZ = depth >= width;
+            this.addPlanarRoofPlate(roof, {
+                width: ridgeAlongZ ? 0.18 : Math.max(0.8, width - 0.34),
+                depth: ridgeAlongZ ? Math.max(0.8, depth - 0.34) : 0.18,
+                material: trimMaterial,
+                y: 0.225,
+                height: 0.055
+            });
+            this.addPlanarRoofPlate(roof, {
+                width: Math.max(0.7, width - 0.62),
+                depth: Math.max(0.7, depth - 0.62),
+                material: accentMaterial,
+                y: 0.19,
+                height: 0.035
+            });
+        } else if (geometry === 'southern-hipped') {
+            this.addPlanarRoofPlate(roof, {
+                width: Math.max(0.8, width - 0.48),
+                depth: Math.max(0.8, depth - 0.48),
+                material: accentMaterial,
+                y: 0.205,
+                height: 0.06
+            });
+            this.addPlanarRoofPlate(roof, {
+                width: Math.max(0.58, width - 0.92),
+                depth: Math.max(0.58, depth - 0.92),
+                material: wallMaterial,
+                y: 0.25,
+                height: 0.04
+            });
+        } else if (geometry === 'pylon-stepped') {
+            for (let step = 0; step < 3; step++) {
+                this.addPlanarRoofPlate(roof, {
+                    width: Math.max(0.7, width - 0.34 - step * 0.34),
+                    depth: Math.max(0.7, depth - 0.34 - step * 0.28),
+                    material: step === 1 ? accentMaterial : wallMaterial,
+                    y: 0.19 + step * 0.055,
+                    height: 0.05
+                });
+            }
+            for (const x of [-width * 0.25, width * 0.25]) {
+                this.addPlanarRoofPlate(roof, {
+                    width: Math.max(0.32, width * 0.16),
+                    depth: Math.max(0.6, depth * 0.44),
+                    x,
+                    z: -depth * 0.18,
+                    material: trimMaterial,
+                    y: 0.31,
+                    height: 0.045
+                });
+            }
+        } else if (geometry === 'egyptian-flat-parapet') {
+            this.addPlanarRoofPlate(roof, {
+                width: Math.max(0.8, width - 0.5),
+                depth: Math.max(0.8, depth - 0.5),
+                material: wallMaterial,
+                y: 0.205,
+                height: 0.06
+            });
+            for (const z of [-depth * 0.28, 0, depth * 0.28]) {
+                this.addPlanarRoofPlate(roof, {
+                    width: Math.max(0.7, width - 0.48),
+                    depth: 0.11,
+                    z,
+                    material: z === 0 ? accentMaterial : trimMaterial,
+                    y: 0.25,
+                    height: 0.04
+                });
+            }
+        }
+
+        roof.userData.planarRoof = true;
+        roof.userData.planarRoofMaxLocalY = 0.36;
+    }
+
+    addHippedRoofCap(group, options) {
+        const {
+            width,
+            depth,
+            baseY = 0,
+            roofMaterial,
+            trimMaterial,
+            overhang = 0.18
+        } = options;
+        this.addPlanarRoofPlate(group, {
+            width: width + overhang * 2,
+            depth: depth + overhang * 2,
+            material: trimMaterial,
+            y: baseY + 0.045,
+            height: 0.09
+        });
+        this.addPlanarRoofPlate(group, {
+            width,
+            depth,
+            material: roofMaterial,
+            y: baseY + 0.115,
+            height: 0.055
+        });
+        return baseY + 0.145;
+    }
+
+    addThemedCastleGeometry(roof, building, options) {
+        const { roofMaterial, trimMaterial, accentMaterial, wallMaterial, themeProfile } = options;
+        const width = Math.max(3, Number(building.width) || 3);
+        const depth = Math.max(3, Number(building.height) || 3);
+        const footprint = this.getBuildingFootprint(building);
+        const startX = -(building.width - 1) / 2;
+        const startZ = -(building.height - 1) / 2;
+        const alternateKit = /palace|ring|palazzo|temple/.test(themeProfile.castleKit);
+
+        this.addPlanarFootprintTiles(roof, building, {
+            material: roofMaterial,
+            footprint,
+            startX,
+            startZ,
+            y: 0.11,
+            height: 0.11
+        });
+        this.addPlanarPerimeterTrim(roof, building, {
+            material: trimMaterial,
+            footprint,
+            startX,
+            startZ,
+            y: 0.2
+        });
+
+        if (themeProfile.id === 'asian') {
+            this.addPlanarRoofPlate(roof, {
+                width: width * (alternateKit ? 0.72 : 0.58),
+                depth: depth * (alternateKit ? 0.48 : 0.66),
+                material: accentMaterial,
+                y: 0.235,
+                height: 0.06
+            });
+            for (const [x, z] of [
+                [-width * 0.34, -depth * 0.34],
+                [width * 0.34, -depth * 0.34],
+                [width * 0.34, depth * 0.34],
+                [-width * 0.34, depth * 0.34]
+            ]) {
+                this.addPlanarRoofPlate(roof, {
+                    width: 0.58,
+                    depth: 0.58,
+                    x,
+                    z,
+                    material: wallMaterial,
+                    y: 0.275,
+                    height: 0.05
+                });
+            }
+        } else if (themeProfile.id === 'middle-eastern') {
+            this.addPlanarRoofPlate(roof, {
+                width: Math.min(width, depth) * (alternateKit ? 0.48 : 0.6),
+                depth: Math.min(width, depth) * (alternateKit ? 0.48 : 0.6),
+                material: accentMaterial,
+                y: 0.24,
+                height: 0.06,
+                segments: alternateKit ? 12 : 16
+            });
+            const cornerX = width / 2 - 0.48;
+            const cornerZ = depth / 2 - 0.48;
+            for (const [x, z] of [[-cornerX, -cornerZ], [cornerX, -cornerZ], [cornerX, cornerZ], [-cornerX, cornerZ]]) {
+                this.addPlanarRoofPlate(roof, {
+                    width: 0.62,
+                    depth: 0.62,
+                    x,
+                    z,
+                    material: wallMaterial,
+                    y: 0.275,
+                    height: 0.05,
+                    segments: 10
+                });
+            }
+        } else if (themeProfile.id === 'northern-european') {
+            this.addPlanarRoofPlate(roof, {
+                width: alternateKit ? width * 0.7 : 0.18,
+                depth: alternateKit ? 0.18 : depth * 0.72,
+                material: accentMaterial,
+                y: 0.25,
+                height: 0.065
+            });
+            const padZ = alternateKit ? depth * 0.31 : -depth * 0.31;
+            for (const x of [-width * 0.31, width * 0.31]) {
+                this.addPlanarRoofPlate(roof, {
+                    width: 0.72,
+                    depth: 0.72,
+                    x,
+                    z: padZ,
+                    material: wallMaterial,
+                    y: 0.285,
+                    height: 0.05,
+                    segments: 8
+                });
+            }
+        } else if (themeProfile.id === 'southern-european') {
+            this.addPlanarRoofPlate(roof, {
+                width: width * (alternateKit ? 0.68 : 0.54),
+                depth: depth * (alternateKit ? 0.5 : 0.62),
+                material: wallMaterial,
+                y: 0.235,
+                height: 0.055
+            });
+            for (const [x, z] of [
+                [-width * 0.32, -depth * 0.32],
+                [width * 0.32, -depth * 0.32],
+                [width * 0.32, depth * 0.32],
+                [-width * 0.32, depth * 0.32]
+            ]) {
+                this.addPlanarRoofPlate(roof, {
+                    width: 0.56,
+                    depth: 0.56,
+                    x,
+                    z,
+                    material: accentMaterial,
+                    y: 0.275,
+                    height: 0.05
+                });
+            }
+        } else {
+            for (let step = 0; step < 3; step++) {
+                this.addPlanarRoofPlate(roof, {
+                    width: width * (0.76 - step * 0.12),
+                    depth: depth * (0.68 - step * 0.1),
+                    material: step === 1 ? accentMaterial : wallMaterial,
+                    y: 0.21 + step * 0.055,
+                    height: 0.05
+                });
+            }
+            for (const x of [-width * 0.27, width * 0.27]) {
+                this.addPlanarRoofPlate(roof, {
+                    width: width * 0.16,
+                    depth: depth * (alternateKit ? 0.52 : 0.38),
+                    x,
+                    z: -depth * 0.2,
+                    material: trimMaterial,
+                    y: 0.34,
+                    height: 0.04
+                });
+            }
+        }
+
+        roof.userData.keep = true;
+        roof.userData.castleKit = themeProfile.castleKit;
+        roof.userData.planarRoof = true;
+        roof.userData.planarRoofMaxLocalY = 0.4;
+    }
     addKeepRoofGeometry(roof, building, options) {
         const { roofMaterial, trimMaterial, startX, startZ, footprint } = options;
         const stone = WorldGenerator.getDecorationMaterial('fortressStone');
@@ -2260,6 +2944,14 @@ export class WorldGenerator {
 
     addRoofSilhouetteDetails(roof, building, options) {
         const { roofMaterial, trimMaterial, visualSeed, isKeep, isTower, isGabled } = options;
+        const themeProfile = options.themeProfile || WorldGenerator.resolveArchitectureThemeProfile(building);
+        if (themeProfile.themed) {
+            // The themed roof and castle kits already own the silhouette. Returning here is
+            // deliberate: clocks, dormers, generic chimneys, and windmill rotors made every
+            // imported burg read as the same Western storybook town.
+            roof.userData.silhouetteDetailKit = themeProfile.roofGeometry;
+            return;
+        }
         const architecture = String(building.architectureStyle || '').toLowerCase();
         const district = String(building.district || '').toLowerCase();
         const archetype = String(building.archetype || '').toLowerCase();
@@ -2404,10 +3096,16 @@ export class WorldGenerator {
         );
         const district = String(building.district || 'residential').toLowerCase();
         const archetype = String(building.archetype || 'cottage').toLowerCase();
+        const themeProfile = WorldGenerator.resolveArchitectureThemeProfile(building);
         const baseY = Math.max(0, Number(building.baseElevation) || 0) + this.getTopSurfaceOffset();
         const wallHeight = Math.max(1.65, Math.max(1, Number(building.stories) || 1) * 1.72);
-        const accent = WorldGenerator.getDistrictAccentMaterial(building.districtPalette?.accent) ||
+        const accent = WorldGenerator.getArchitectureThemeMaterial(building, 'accent') ||
+            WorldGenerator.getDistrictAccentMaterial(building.districtPalette?.accent) ||
             WorldGenerator.getDecorationMaterial('bannerBlue');
+        const trim = WorldGenerator.getArchitectureThemeMaterial(building, 'trim') ||
+            WorldGenerator.getTrimMaterial(building.style);
+        const wall = WorldGenerator.getArchitectureThemeMaterial(building, 'wall') ||
+            WorldGenerator.getDecorationMaterial('stoneLight');
         const edgeCells = footprint.cells
             .map((cell) => ({ ...cell, edge: this.getBuildingEdge(building, cell.x, cell.y, footprint.set) }))
             .filter((cell) => cell.edge)
@@ -2419,41 +3117,57 @@ export class WorldGenerator {
         const frontEdge = building.door?.edge || edgeCells[0]?.edge || 'south';
         const frontCells = edgeCells.filter((cell) => cell.edge === frontEdge);
 
-        const bannerCount = district === 'civic' ? 2 : ['market', 'harbor'].includes(district) ? 1 : 0;
-        for (const cell of frontCells.slice(0, bannerCount)) {
-            const banner = this.createFacadeBanner(accent);
-            this.placeFacadeAttachment(banner, building, cell, baseY + wallHeight * 0.62, 0.525);
-            group.add(banner);
+        if (themeProfile.themed) {
+            this.addThemedFacadeDecorations(group, building, {
+                themeProfile,
+                frontCells,
+                frontEdge,
+                baseY,
+                wallHeight,
+                visualSeed,
+                accent,
+                trim,
+                wall
+            });
+        } else {
+            const bannerCount = district === 'civic' ? 2 : ['market', 'harbor'].includes(district) ? 1 : 0;
+            for (const cell of frontCells.slice(0, bannerCount)) {
+                const banner = this.createFacadeBanner(accent);
+                this.placeFacadeAttachment(banner, building, cell, baseY + wallHeight * 0.62, 0.525);
+                group.add(banner);
+            }
+
+            if (['market', 'harbor'].includes(district) || building.activity === 'trade') {
+                for (const cell of frontCells.slice(0, Math.min(3, Math.max(1, frontCells.length)))) {
+                    if (building.door?.x === cell.x && building.door?.y === cell.y) continue;
+                    const awning = this.createFacadeAwning(accent, visualSeed + cell.x * 13 + cell.y * 29);
+                    this.placeFacadeAttachment(awning, building, cell, baseY + wallHeight * 0.46, 0.68);
+                    group.add(awning);
+                }
+            } else if (['garden', 'residential'].includes(district)) {
+                for (const cell of frontCells.slice(0, 3)) {
+                    if (building.door?.x === cell.x && building.door?.y === cell.y) continue;
+                    const flowerBox = this.createFacadeFlowerBox(visualSeed + cell.x * 17 + cell.y * 37);
+                    this.placeFacadeAttachment(flowerBox, building, cell, baseY + wallHeight * 0.38, 0.56);
+                    group.add(flowerBox);
+                }
+            }
+
+            if (building.door) {
+                const doorCell = { x: building.door.x, y: building.door.y, edge: frontEdge };
+                const lantern = this.createFacadeLantern();
+                this.placeFacadeAttachment(lantern, building, doorCell, baseY + Math.min(1.5, wallHeight * 0.7), 0.64, 0.34);
+                group.add(lantern);
+                if ((district === 'civic' && ['hall', 'tower'].includes(archetype)) || building.architectureStyle === 'gatehouse') {
+                    const portal = this.createFacadePortal(accent);
+                    this.placeFacadeAttachment(portal, building, doorCell, baseY, 0.6);
+                    group.add(portal);
+                }
+            }
         }
 
-        if (['market', 'harbor'].includes(district) || building.activity === 'trade') {
-            for (const cell of frontCells.slice(0, Math.min(3, Math.max(1, frontCells.length)))) {
-                if (building.door?.x === cell.x && building.door?.y === cell.y) continue;
-                const awning = this.createFacadeAwning(accent, visualSeed + cell.x * 13 + cell.y * 29);
-                this.placeFacadeAttachment(awning, building, cell, baseY + wallHeight * 0.46, 0.68);
-                group.add(awning);
-            }
-        } else if (['garden', 'residential'].includes(district)) {
-            for (const cell of frontCells.slice(0, 3)) {
-                if (building.door?.x === cell.x && building.door?.y === cell.y) continue;
-                const flowerBox = this.createFacadeFlowerBox(visualSeed + cell.x * 17 + cell.y * 37);
-                this.placeFacadeAttachment(flowerBox, building, cell, baseY + wallHeight * 0.38, 0.56);
-                group.add(flowerBox);
-            }
-        }
-
-        if (building.door) {
-            const doorCell = { x: building.door.x, y: building.door.y, edge: frontEdge };
-            const lantern = this.createFacadeLantern();
-            this.placeFacadeAttachment(lantern, building, doorCell, baseY + Math.min(1.5, wallHeight * 0.7), 0.64, 0.34);
-            group.add(lantern);
-            if ((district === 'civic' && ['hall', 'tower'].includes(archetype)) || building.architectureStyle === 'gatehouse') {
-                const portal = this.createFacadePortal(accent);
-                this.placeFacadeAttachment(portal, building, doorCell, baseY, 0.6);
-                group.add(portal);
-            }
-        }
-
+        group.userData.architectureThemeId = themeProfile.id;
+        group.userData.facadeKit = themeProfile.themed ? themeProfile.facadeKit : 'storybook-facade';
         group.userData.lifePhase = (visualSeed % 6283) / 1000;
         group.userData.obstructionZ = state?.roofObstructionZ || 0;
         group.traverse((child) => {
@@ -2462,6 +3176,267 @@ export class WorldGenerator {
             child.raycast = () => {};
         });
         this.threeManager.addToWorld(group);
+        return group;
+    }
+
+    addThemedFacadeDecorations(group, building, options) {
+        const {
+            themeProfile,
+            frontCells,
+            frontEdge,
+            baseY,
+            wallHeight,
+            visualSeed,
+            accent,
+            trim,
+            wall
+        } = options;
+        const isDoorCell = (cell) => building.door?.x === cell.x && building.door?.y === cell.y;
+        const windowCells = frontCells.filter((cell) => !isDoorCell(cell)).slice(0, 3);
+        const doorCell = building.door
+            ? { x: building.door.x, y: building.door.y, edge: frontEdge }
+            : null;
+
+        if (themeProfile.id === 'asian') {
+            for (const cell of windowCells) {
+                const lattice = this.createThemeLatticeFacade(trim, accent, 'orthogonal');
+                this.placeFacadeAttachment(lattice, building, cell, baseY + wallHeight * 0.5, 0.555);
+                group.add(lattice);
+            }
+            if (doorCell) {
+                const portal = this.createAsianFacadePortal(trim, accent);
+                this.placeFacadeAttachment(portal, building, doorCell, baseY, 0.61);
+                group.add(portal);
+                const lantern = this.createAsianFacadeLantern(trim, accent);
+                this.placeFacadeAttachment(
+                    lantern,
+                    building,
+                    doorCell,
+                    baseY + Math.min(1.62, wallHeight * 0.72),
+                    0.7,
+                    0.38
+                );
+                group.add(lantern);
+            }
+        } else if (themeProfile.id === 'middle-eastern') {
+            for (const cell of windowCells) {
+                const screen = this.createThemeLatticeFacade(trim, accent, 'diamond');
+                this.placeFacadeAttachment(screen, building, cell, baseY + wallHeight * 0.5, 0.555);
+                group.add(screen);
+                if (building.activity === 'trade' || building.district === 'market') {
+                    const awning = this.createFacadeAwning(accent, visualSeed + cell.x * 13 + cell.y * 29);
+                    this.placeFacadeAttachment(awning, building, cell, baseY + wallHeight * 0.66, 0.68);
+                    group.add(awning);
+                }
+            }
+            if (doorCell) {
+                const portal = this.createThemedArchPortal(wall, trim, accent, true);
+                this.placeFacadeAttachment(portal, building, doorCell, baseY, 0.61);
+                group.add(portal);
+            }
+        } else if (themeProfile.id === 'northern-european') {
+            for (const cell of frontCells.slice(0, 4)) {
+                const brace = this.createTimberBraceFacade(trim, accent);
+                this.placeFacadeAttachment(brace, building, cell, baseY + wallHeight * 0.49, 0.545);
+                group.add(brace);
+            }
+            if (doorCell) {
+                const lantern = this.createFacadeLantern();
+                this.placeFacadeAttachment(
+                    lantern,
+                    building,
+                    doorCell,
+                    baseY + Math.min(1.52, wallHeight * 0.7),
+                    0.64,
+                    0.34
+                );
+                group.add(lantern);
+            }
+        } else if (themeProfile.id === 'southern-european') {
+            for (const cell of windowCells) {
+                const awning = this.createFacadeAwning(accent, visualSeed + cell.x * 19 + cell.y * 31);
+                this.placeFacadeAttachment(awning, building, cell, baseY + wallHeight * 0.54, 0.68);
+                group.add(awning);
+                if (building.district === 'garden' || building.district === 'residential') {
+                    const flowerBox = this.createFacadeFlowerBox(visualSeed + cell.x * 17 + cell.y * 37);
+                    this.placeFacadeAttachment(flowerBox, building, cell, baseY + wallHeight * 0.36, 0.58);
+                    group.add(flowerBox);
+                }
+            }
+            if (doorCell) {
+                const arcade = this.createThemedArchPortal(wall, trim, accent, false);
+                this.placeFacadeAttachment(arcade, building, doorCell, baseY, 0.61);
+                group.add(arcade);
+            }
+        } else {
+            for (const cell of frontCells.slice(0, 4)) {
+                const bands = this.createPylonFacadeBands(trim, accent);
+                this.placeFacadeAttachment(bands, building, cell, baseY + wallHeight * 0.5, 0.55);
+                group.add(bands);
+            }
+            if (doorCell) {
+                const pylon = this.createPylonFacadePortal(wall, trim, accent);
+                this.placeFacadeAttachment(pylon, building, doorCell, baseY, 0.62);
+                group.add(pylon);
+            }
+        }
+    }
+
+    createThemeLatticeFacade(trimMaterial, accentMaterial, pattern = 'orthogonal') {
+        const group = new THREE.Group();
+        const backing = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.7, 0.035), accentMaterial);
+        backing.position.z = -0.025;
+        group.add(backing);
+        for (const x of [-0.32, 0.32]) {
+            const side = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.82, 0.07), trimMaterial);
+            side.position.x = x;
+            group.add(side);
+        }
+        for (const y of [-0.38, 0.38]) {
+            const rail = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.07, 0.07), trimMaterial);
+            rail.position.y = y;
+            group.add(rail);
+        }
+        if (pattern === 'diamond') {
+            for (const rotation of [-0.68, 0.68]) {
+                const diagonal = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.82, 0.075), trimMaterial);
+                diagonal.rotation.z = rotation;
+                group.add(diagonal);
+            }
+        } else {
+            for (const x of [-0.12, 0.12]) {
+                const mullion = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.72, 0.075), trimMaterial);
+                mullion.position.x = x;
+                group.add(mullion);
+            }
+            const rail = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.055, 0.075), trimMaterial);
+            group.add(rail);
+        }
+        return group;
+    }
+
+    createAsianFacadePortal(trimMaterial, accentMaterial) {
+        const group = new THREE.Group();
+        for (const x of [-0.48, 0.48]) {
+            const post = new THREE.Mesh(new THREE.BoxGeometry(0.15, 1.95, 0.15), trimMaterial);
+            post.position.set(x, 0.98, 0);
+            group.add(post);
+        }
+        const lintel = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.18, 0.2), accentMaterial);
+        lintel.position.y = 1.88;
+        group.add(lintel);
+        const upperBeam = new THREE.Mesh(new THREE.BoxGeometry(1.42, 0.12, 0.3), trimMaterial);
+        upperBeam.position.y = 2.1;
+        group.add(upperBeam);
+        this.addHippedRoofCap(group, {
+            width: 1.22,
+            depth: 0.34,
+            rise: 0.3,
+            baseY: 2.16,
+            roofMaterial: accentMaterial,
+            trimMaterial,
+            overhang: 0.14
+        });
+        return group;
+    }
+
+    createAsianFacadeLantern(trimMaterial, accentMaterial) {
+        const group = new THREE.Group();
+        const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.42), trimMaterial);
+        bracket.position.z = 0.2;
+        group.add(bracket);
+        const frame = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.17, 0.32, 8), accentMaterial);
+        frame.position.set(0, -0.2, 0.42);
+        group.add(frame);
+        const tassel = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.2, 6), trimMaterial);
+        tassel.position.set(0, -0.46, 0.42);
+        group.add(tassel);
+        return group;
+    }
+
+    createThemedArchPortal(wallMaterial, trimMaterial, accentMaterial, pointed = false) {
+        const group = new THREE.Group();
+        for (const x of [-0.48, 0.48]) {
+            const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.18, 1.68, 0.18), wallMaterial);
+            pillar.position.set(x, 0.84, 0);
+            group.add(pillar);
+            const capital = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.12, 0.22), trimMaterial);
+            capital.position.set(x, 1.68, 0);
+            group.add(capital);
+        }
+        if (pointed) {
+            for (const side of [-1, 1]) {
+                const archSide = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.74, 0.16), trimMaterial);
+                archSide.position.set(side * 0.25, 1.91, 0);
+                archSide.rotation.z = side * 0.72;
+                group.add(archSide);
+            }
+        } else {
+            const arch = new THREE.Mesh(new THREE.TorusGeometry(0.48, 0.09, 7, 18, Math.PI), trimMaterial);
+            arch.position.y = 1.7;
+            group.add(arch);
+        }
+        const crest = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.28, 0.11), accentMaterial);
+        crest.position.set(0, pointed ? 2.28 : 2.1, 0);
+        crest.rotation.z = Math.PI / 4;
+        group.add(crest);
+        return group;
+    }
+
+    createTimberBraceFacade(trimMaterial, accentMaterial) {
+        const group = new THREE.Group();
+        const center = new THREE.Mesh(new THREE.BoxGeometry(0.09, 1.18, 0.07), trimMaterial);
+        group.add(center);
+        for (const rotation of [-0.58, 0.58]) {
+            const brace = new THREE.Mesh(new THREE.BoxGeometry(0.075, 1.12, 0.075), trimMaterial);
+            brace.rotation.z = rotation;
+            group.add(brace);
+        }
+        const crossbar = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.09, 0.08), accentMaterial);
+        crossbar.position.y = 0.32;
+        group.add(crossbar);
+        return group;
+    }
+
+    createPylonFacadeBands(trimMaterial, accentMaterial) {
+        const group = new THREE.Group();
+        for (let index = 0; index < 3; index++) {
+            const band = new THREE.Mesh(
+                new THREE.BoxGeometry(0.78 - index * 0.08, 0.1, 0.075),
+                index === 1 ? accentMaterial : trimMaterial
+            );
+            band.position.y = -0.34 + index * 0.34;
+            group.add(band);
+        }
+        const sun = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.045, 14), accentMaterial);
+        sun.rotation.x = Math.PI / 2;
+        sun.position.y = 0.36;
+        group.add(sun);
+        return group;
+    }
+
+    createPylonFacadePortal(wallMaterial, trimMaterial, accentMaterial) {
+        const group = new THREE.Group();
+        for (const x of [-0.48, 0.48]) {
+            for (let level = 0; level < 3; level++) {
+                const block = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.32 - level * 0.045, 0.62, 0.24),
+                    wallMaterial
+                );
+                block.position.set(x, 0.31 + level * 0.62, 0);
+                group.add(block);
+            }
+            const crown = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.12, 0.28), trimMaterial);
+            crown.position.set(x, 1.94, 0);
+            group.add(crown);
+        }
+        const lintel = new THREE.Mesh(new THREE.BoxGeometry(1.28, 0.24, 0.27), trimMaterial);
+        lintel.position.y = 1.72;
+        group.add(lintel);
+        const sun = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.055, 16), accentMaterial);
+        sun.rotation.x = Math.PI / 2;
+        sun.position.set(0, 2.02, -0.02);
+        group.add(sun);
         return group;
     }
 
@@ -2606,7 +3581,7 @@ export class WorldGenerator {
         const isNorthSouth = edge === 'north' || edge === 'south';
         const material = WorldGenerator.getDoorMaterial(building.doorStyle);
         const accentMaterial = WorldGenerator.getDoorAccentMaterial(building.doorStyle);
-        const frameMaterial = WorldGenerator.getDoorFrameMaterial(building.style);
+        const frameMaterial = WorldGenerator.getDoorFrameMaterial(building.style, building);
         const panel = new THREE.Mesh(
             new THREE.BoxGeometry(isNorthSouth ? doorWidth : thickness, doorHeight, isNorthSouth ? thickness : doorWidth),
             material
@@ -2675,7 +3650,10 @@ export class WorldGenerator {
         lintel.raycast = () => {};
         group.add(lintel);
 
-        const threshold = new THREE.Mesh(thresholdGeometry, WorldGenerator.getFloorAccentMaterial(building.style));
+        const threshold = new THREE.Mesh(
+            thresholdGeometry,
+            WorldGenerator.getFloorAccentMaterial(building.style, building)
+        );
         threshold.position.set(frameX, 0.04, frameZ);
         threshold.receiveShadow = true;
         threshold.raycast = () => {};
@@ -2929,34 +3907,84 @@ export class WorldGenerator {
         group.add(flame);
     }
 
-    static getRoofMaterial(style, variant = 0) {
+    static setBoundedMaterialCacheEntry(cache, key, material, maxEntries = 96) {
+        if (!cache.has(key) && cache.size >= maxEntries) {
+            const oldestKey = cache.keys().next().value;
+            if (oldestKey !== undefined) cache.delete(oldestKey);
+        }
+        cache.set(key, material);
+        return material;
+    }
+
+    static getArchitectureThemeMaterial(building, channel = 'trim') {
+        const profile = WorldGenerator.resolveArchitectureThemeProfile(building);
+        if (!profile.themed) return null;
+        const normalizedChannel = ['wall', 'trim', 'accent'].includes(channel) ? channel : 'trim';
+        const color = profile.palette[`${normalizedChannel}Color`];
+        if (!WorldGenerator.architectureThemeMaterialCache) {
+            WorldGenerator.architectureThemeMaterialCache = new Map();
+        }
+        const colorKey = (Number(color) & 0xffffff).toString(16).padStart(6, '0');
+        const key = `${profile.id}:${normalizedChannel}:${colorKey}`;
+        if (!WorldGenerator.architectureThemeMaterialCache.has(key)) {
+            const material = new THREE.MeshStandardMaterial({
+                color,
+                roughness: normalizedChannel === 'accent' ? 0.64 : normalizedChannel === 'trim' ? 0.76 : 0.9,
+                metalness: normalizedChannel === 'accent' ? 0.08 : 0.015
+            });
+            material.name = `architecture-theme:${key}`;
+            WorldGenerator.setBoundedMaterialCacheEntry(
+                WorldGenerator.architectureThemeMaterialCache,
+                key,
+                material,
+                80
+            );
+        }
+        return WorldGenerator.architectureThemeMaterialCache.get(key);
+    }
+
+    static getRoofMaterial(style, variant = 0, themeContext = null) {
         if (!WorldGenerator.roofMaterialCache) WorldGenerator.roofMaterialCache = new Map();
-        const styleKey = String(style || 'timber').toLowerCase();
+        const themeProfile = WorldGenerator.resolveArchitectureThemeProfile(themeContext || {});
+        const styleKey = String(
+            themeProfile.themed
+                ? (themeProfile.roofTextureStyle || style || 'timber')
+                : (style || 'timber')
+        ).toLowerCase();
         const variantIndex = Math.abs(Math.floor(Number(variant) || 0)) % 4;
-        const key = `${styleKey}:${variantIndex}`;
+        const colors = {
+            stone: [0x7f8ea6, 0x9b86a8, 0x6f98a2, 0xa28d78],
+            timber: [0x8f52ad, 0xc25768, 0x427da0, 0x4f966c],
+            clay: [0xe5684c, 0xd84f76, 0xf08a42, 0xb85b8f],
+            slate: [0x2d8397, 0x3c69a1, 0x4f58a8, 0x276f78],
+            copper: [0x28a694, 0x3db7a6, 0x4b8f86, 0x62b18d],
+            thatch: [0xd7b54d, 0xe6c65e, 0xc89d42, 0xe0a94f],
+            tower: [0x6657a4, 0x3d8291, 0x874f91, 0x3f6ca8],
+            courtyard: [0xc06f47, 0xc75861, 0xb5863d, 0x9f5e8e],
+            gabled: [0xd95345, 0x9a55a5, 0x2d8a9b, 0xe0713d],
+            market: [0xf0a544, 0xd95b74, 0x4fa4a0, 0x8b62bc],
+            'stone-slab': [0xd4ad5e, 0xc69648, 0xe1bd6a, 0xb9873f]
+        };
+        const palette = themeProfile.themed && themeProfile.palette.roofColors.length
+            ? themeProfile.palette.roofColors
+            : (colors[styleKey] || colors.timber);
+        const baseColor = palette[variantIndex % palette.length];
+        const colorKey = (Number(baseColor) & 0xffffff).toString(16).padStart(6, '0');
+        const key = themeProfile.themed
+            ? `theme:${themeProfile.id}:${styleKey}:${variantIndex}:${colorKey}`
+            : `legacy:${styleKey}:${variantIndex}`;
         if (!WorldGenerator.roofMaterialCache.has(key)) {
-            const colors = {
-                stone: [0x7f8ea6, 0x9b86a8, 0x6f98a2, 0xa28d78],
-                timber: [0x8f52ad, 0xc25768, 0x427da0, 0x4f966c],
-                clay: [0xe5684c, 0xd84f76, 0xf08a42, 0xb85b8f],
-                slate: [0x2d8397, 0x3c69a1, 0x4f58a8, 0x276f78],
-                copper: [0x28a694, 0x3db7a6, 0x4b8f86, 0x62b18d],
-                thatch: [0xd7b54d, 0xe6c65e, 0xc89d42, 0xe0a94f],
-                tower: [0x6657a4, 0x3d8291, 0x874f91, 0x3f6ca8],
-                courtyard: [0xc06f47, 0xc75861, 0xb5863d, 0x9f5e8e],
-                gabled: [0xd95345, 0x9a55a5, 0x2d8a9b, 0xe0713d],
-                market: [0xf0a544, 0xd95b74, 0x4fa4a0, 0x8b62bc]
-            };
-            const palette = colors[styleKey] || colors.timber;
-            const baseColor = palette[variantIndex];
             const texture = WorldGenerator.createRoofTexture(styleKey, baseColor, variantIndex);
             const material = new THREE.MeshStandardMaterial({
                 color: texture ? 0xffffff : baseColor,
                 map: texture || null,
-                roughness: styleKey === 'thatch' ? 0.94 : styleKey === 'copper' ? 0.66 : 0.8,
+                roughness: styleKey === 'thatch' || styleKey === 'stone-slab'
+                    ? 0.94
+                    : styleKey === 'copper' ? 0.66 : 0.8,
                 metalness: styleKey === 'copper' ? 0.1 : 0.02
             });
-            WorldGenerator.roofMaterialCache.set(key, material);
+            material.name = `building-roof:${key}`;
+            WorldGenerator.setBoundedMaterialCacheEntry(WorldGenerator.roofMaterialCache, key, material, 96);
         }
         return WorldGenerator.roofMaterialCache.get(key);
     }
@@ -3022,6 +4050,33 @@ export class WorldGenerator {
                 const x = (index * 29 + variant * 17) % 91;
                 const y = (index * 43 + variant * 11) % 91;
                 ctx.fillRect(x, y, 4 + (index % 3) * 2, 3 + (index % 2) * 2);
+            }
+        } else if (style === 'stone-slab') {
+            const blockWidth = 24;
+            const blockHeight = 18;
+            for (let row = -blockHeight; row < 96 + blockHeight; row += blockHeight) {
+                const offset = ((Math.floor(row / blockHeight) + variant) & 1) * (blockWidth / 2);
+                for (let col = -blockWidth + offset; col < 96 + blockWidth; col += blockWidth) {
+                    ctx.globalAlpha = 1;
+                    ctx.fillStyle = ((col / blockWidth + row / blockHeight + variant) & 1)
+                        ? midtone
+                        : css(baseColor);
+                    ctx.fillRect(col + 1, row + 1, blockWidth - 2, blockHeight - 2);
+                    ctx.strokeStyle = shadow;
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(col, row, blockWidth, blockHeight);
+                }
+            }
+            ctx.globalAlpha = 0.34;
+            ctx.fillStyle = highlight;
+            for (let y = 11 + variant * 3; y < 96; y += 36) {
+                for (let x = 8; x < 96; x += 24) {
+                    ctx.save();
+                    ctx.translate(x, y);
+                    ctx.rotate(Math.PI / 4);
+                    ctx.fillRect(-3, -3, 6, 6);
+                    ctx.restore();
+                }
             }
         } else if (['clay', 'courtyard', 'gabled', 'market'].includes(style)) {
             const tileWidth = 18;
@@ -3201,7 +4256,9 @@ export class WorldGenerator {
         return WorldGenerator.waterfallMistMaterial;
     }
 
-    static getTrimMaterial(style) {
+    static getTrimMaterial(style, themeContext = null) {
+        const themeMaterial = WorldGenerator.getArchitectureThemeMaterial(themeContext || {}, 'trim');
+        if (themeMaterial) return themeMaterial;
         if (!WorldGenerator.trimMaterialCache) WorldGenerator.trimMaterialCache = new Map();
         const key = style || 'timber';
         if (!WorldGenerator.trimMaterialCache.has(key)) {
@@ -3242,7 +4299,9 @@ export class WorldGenerator {
         return WorldGenerator.doorAccentMaterialCache.get(key);
     }
 
-    static getDoorFrameMaterial(style) {
+    static getDoorFrameMaterial(style, themeContext = null) {
+        const themeMaterial = WorldGenerator.getArchitectureThemeMaterial(themeContext || {}, 'trim');
+        if (themeMaterial) return themeMaterial;
         if (!WorldGenerator.doorFrameMaterialCache) WorldGenerator.doorFrameMaterialCache = new Map();
         const key = style || 'timber';
         if (!WorldGenerator.doorFrameMaterialCache.has(key)) {
@@ -3255,7 +4314,9 @@ export class WorldGenerator {
         return WorldGenerator.doorFrameMaterialCache.get(key);
     }
 
-    static getFloorAccentMaterial(style) {
+    static getFloorAccentMaterial(style, themeContext = null) {
+        const themeMaterial = WorldGenerator.getArchitectureThemeMaterial(themeContext || {}, 'wall');
+        if (themeMaterial) return themeMaterial;
         if (!WorldGenerator.floorAccentMaterialCache) WorldGenerator.floorAccentMaterialCache = new Map();
         const key = style || 'timber';
         if (!WorldGenerator.floorAccentMaterialCache.has(key)) {
@@ -3821,7 +4882,16 @@ export class WorldGenerator {
         const existing = this.getVoxelAt(x, y, z);
         const visualVariant = existing?.visualVariant ?? 0;
         const paletteId = existing?.paletteId ?? 'meadow';
-        const voxel = this.setVoxelAt(x, y, z, { element, texture: textureValue, effect, building, visualVariant, paletteId });
+        const architectureThemeId = existing?.architectureThemeId ?? null;
+        const voxel = this.setVoxelAt(x, y, z, {
+            element,
+            texture: textureValue,
+            effect,
+            building,
+            visualVariant,
+            paletteId,
+            architectureThemeId
+        });
         const tile = this.getTileAt(x, y, z);
         if (tile) {
             console.log(`[WorldGenerator] Modifying tile at ${x},${y},${z} to Element:${element}, Var:${textureValue}`);
@@ -3905,6 +4975,7 @@ export class WorldGenerator {
             effect: topVoxel.effect,
             building: topVoxel.building,
             paletteId: topVoxel.paletteId,
+            architectureThemeId: WorldGenerator.normalizeArchitectureThemeId(topVoxel.architectureThemeId),
             definition: topVoxel.definition,
             voxel: topVoxel
         });
@@ -3976,6 +5047,7 @@ export class WorldGenerator {
             variant: t.textureValue,
             visualVariant: t.visualVariant,
             paletteId: t.paletteId,
+            architectureThemeId: t.architectureThemeId,
             effect: t.effect,
             building: t.building
         }));
@@ -3997,7 +5069,8 @@ export class WorldGenerator {
                     tileData.building,
                     true,
                     tileData.visualVariant ?? 0,
-                    tileData.paletteId ?? 'meadow'
+                    tileData.paletteId ?? 'meadow',
+                    tileData.architectureThemeId ?? null
                 );
             });
             console.log(`[WorldGenerator] Loaded ${data.length} tiles.`);

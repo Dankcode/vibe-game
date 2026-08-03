@@ -11,9 +11,13 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+    isBurgThemeId,
+    validateManifestBurgThemes
+} from '../client/src/data/BurgThemeCatalog.js';
 
-export const SETTLEMENT_BLUEPRINT_SCHEMA_VERSION = 1;
-export const SETTLEMENT_BLUEPRINT_GENERATION_VERSION = 'fmg-blueprint-wfc-v6';
+export const SETTLEMENT_BLUEPRINT_SCHEMA_VERSION = 2;
+export const SETTLEMENT_BLUEPRINT_GENERATION_VERSION = 'fmg-blueprint-wfc-v9';
 // Sixty settlements at the intentionally compact ~3 KB/blueprint envelope fit beneath this cap.
 // Keep the budget explicit so a future FMG export cannot grow runtime data without validation.
 export const SETTLEMENT_BLUEPRINT_SIZE_LIMIT = 192 * 1024;
@@ -74,6 +78,7 @@ const CONSUMED_FIELD_PATTERNS = Object.freeze([
 export function compileWorldBlueprints(source, options = {}) {
     validateSource(source);
     const burgs = sortByNumericId(source.entities.burgs);
+    const burgThemeById = normalizeBurgThemeById(options.burgThemeById, burgs);
     const cells = sortByNumericId(source.world.cells);
     const states = sortByNumericId(source.entities.states || []);
     const cultures = sortByNumericId(source.entities.cultures || []);
@@ -92,6 +97,7 @@ export function compileWorldBlueprints(source, options = {}) {
         cellsById,
         stateById,
         cultureById,
+        burgThemeById,
         provinceById,
         religionById,
         routes,
@@ -220,6 +226,7 @@ function compileBurgFacts(burg, context) {
         population,
         state: number(burg.state),
         culture: number(burg.culture),
+        themeId: context.burgThemeById.get(number(burg.id)),
         cell: number(burg.cell),
         feature: number(burg.feature),
         flags,
@@ -310,6 +317,7 @@ function compileBlueprint(facts, role, factsById, globalWater, context) {
             population: facts.population,
             state: facts.state,
             culture: facts.culture,
+            themeId: facts.themeId,
             cell: facts.cell,
             feature: facts.feature,
             flags: { ...facts.flags, walls: role.hierarchy === 'seat' }
@@ -706,6 +714,7 @@ function compileIdentity(facts, context, region) {
         cultureName: String(culture?.name || ''),
         cultureType: String(culture?.type || ''),
         cultureColor: normalizeColor(culture?.color),
+        architectureThemeId: facts.themeId,
         religionId: religion?.id ? number(religion.id) : null,
         religionName: String(religion?.name || ''),
         provinceId: region?.id || null
@@ -966,7 +975,15 @@ function clamp(value, minimum, maximum) {
 async function main(argv = process.argv.slice(2)) {
     const sourcePath = path.resolve(argv[0] || DEFAULT_SOURCE);
     const source = JSON.parse(await readFile(sourcePath, 'utf8'));
-    const compiled = compileWorldBlueprints(source);
+    const manifestPath = path.resolve(argv[1] || path.join(path.dirname(sourcePath), 'manifest.json'));
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+    const themeValidation = validateManifestBurgThemes(manifest);
+    if (!themeValidation.valid) {
+        throw new Error(`Invalid burg theme manifest:\n${themeValidation.errors.map((error) => `- ${error}`).join('\n')}`);
+    }
+    const compiled = compileWorldBlueprints(source, {
+        burgThemeById: themeValidation.themeByBurgId
+    });
     console.log(JSON.stringify({
         ok: compiled.coverage.unexplainedFields.length === 0 && compiled.coverage.withinByteLimit,
         source: sourcePath,
@@ -981,6 +998,31 @@ async function main(argv = process.argv.slice(2)) {
         unexplainedFields: compiled.coverage.unexplainedFields
     }, null, 2));
     if (!compiled.coverage.withinByteLimit || compiled.coverage.unexplainedFields.length) process.exitCode = 1;
+}
+
+function normalizeBurgThemeById(value, burgs) {
+    const source = value instanceof Map
+        ? value
+        : value && typeof value === 'object' && !Array.isArray(value)
+            ? new Map(Object.entries(value).map(([burgId, themeId]) => [Number(burgId), themeId]))
+            : new Map();
+    const result = new Map();
+    const errors = [];
+    for (const burg of burgs) {
+        const burgId = number(burg.id);
+        const themeId = source.get(burgId) ?? source.get(String(burgId));
+        if (!isBurgThemeId(themeId)) {
+            errors.push(`burg ${burgId} must have a manifest-authoritative themeId.`);
+            continue;
+        }
+        result.set(burgId, themeId);
+    }
+    const burgIds = new Set(burgs.map((burg) => number(burg.id)));
+    for (const burgId of source.keys()) {
+        if (!burgIds.has(Number(burgId))) errors.push(`theme mapping contains unknown burg ${String(burgId)}.`);
+    }
+    if (errors.length) throw new Error(`Invalid burg theme mapping:\n${errors.map((error) => `- ${error}`).join('\n')}`);
+    return result;
 }
 
 const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : '';

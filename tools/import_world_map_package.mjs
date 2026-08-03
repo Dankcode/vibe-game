@@ -16,6 +16,10 @@ import {
     compileWorldBlueprints,
     SETTLEMENT_BLUEPRINT_GENERATION_VERSION
 } from './compile_world_blueprints.mjs';
+import {
+    serializeBurgThemeCatalog,
+    validateManifestBurgThemes
+} from '../client/src/data/BurgThemeCatalog.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -37,11 +41,17 @@ async function main(argv = process.argv.slice(2)) {
     const imageFile = path.resolve(sourceDir, manifest.files?.image || 'map-data.png');
     const source = await readJson(worldFile);
     validateSource(source, manifest);
+    const themeValidation = validateManifestBurgThemes(manifest);
+    if (!themeValidation.valid) {
+        throw new Error(`Invalid burg theme manifest:\n${themeValidation.errors.map((error) => `- ${error}`).join('\n')}`);
+    }
+    const burgThemeById = themeValidation.themeByBurgId;
 
     const cells = (source.world.cells || []).map(compactCell);
     const geography = {
         schema: 'vibe-game-active-geography',
-        schemaVersion: 1,
+        schemaVersion: 2,
+        themeCatalog: serializeBurgThemeCatalog(),
         biomes: [...(source.legacy_fmg_refs?.biomes || [])],
         cells,
         features: (source.world.features || []).map(compactFeature),
@@ -50,10 +60,11 @@ async function main(argv = process.argv.slice(2)) {
         states: compactColorEntities(source.entities?.states),
         cultures: compactColorEntities(source.entities?.cultures),
         provinces: compactColorEntities(source.entities?.provinces),
-        burgs: (source.entities?.burgs || []).map((burg) => compactBurg(burg, cells))
+        burgs: (source.entities?.burgs || []).map((burg) => compactBurg(burg, cells, burgThemeById))
     };
     const settlementBlueprints = compileWorldBlueprints(source, {
-        generationVersion: GENERATION_VERSION
+        generationVersion: GENERATION_VERSION,
+        burgThemeById
     });
 
     const contentHash = createHash('sha256')
@@ -101,6 +112,7 @@ async function main(argv = process.argv.slice(2)) {
         burgAnchors: geography.burgs.length,
         settlementBlueprints: settlementBlueprints.blueprints.length,
         settlementClusters: settlementBlueprints.clusters.length,
+        burgThemes: burgThemeById.size,
         settlementBlueprintBytes: settlementBlueprints.coverage.blueprintBytes,
         settlementCoverageUnexplained: settlementBlueprints.coverage.unexplainedFields.length,
         excludedTownPayloads: true
@@ -187,14 +199,16 @@ function compactColorEntities(records = []) {
     }));
 }
 
-function compactBurg(burg = {}, cells = []) {
+function compactBurg(burg = {}, cells = [], burgThemeById = new Map()) {
+    const burgId = finiteInteger(burg.id);
     const cell = cells.find((candidate) => candidate.id === Number(burg.cell));
     const coordinate = Array.isArray(burg.coordinate_center)
         ? burg.coordinate_center
         : [cell?.x || 0, cell?.y || 0];
     return {
-        id: finiteInteger(burg.id),
+        id: burgId,
         name: String(burg.name || `Burg ${burg.id}`),
+        themeId: burgThemeById.get(burgId),
         group: String(burg.group || 'town'),
         cell: finiteInteger(burg.cell),
         x: round(coordinate[0], 2),
@@ -224,6 +238,7 @@ function toWorldLocation(burg) {
         population: burg.population,
         state: burg.state,
         culture: burg.culture,
+        themeId: burg.themeId,
         cell: burg.cell,
         flags: { ...burg.flags }
     };

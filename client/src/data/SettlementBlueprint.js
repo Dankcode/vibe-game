@@ -1,4 +1,6 @@
-export const SETTLEMENT_BLUEPRINT_SCHEMA_VERSION = 1;
+import { isBurgThemeId } from './BurgThemeCatalog.js';
+
+export const SETTLEMENT_BLUEPRINT_SCHEMA_VERSION = 2;
 export const SETTLEMENT_BLUEPRINT_MAX_BYTES = 192 * 1024;
 export const SETTLEMENT_HIERARCHIES = Object.freeze(['seat', 'fief']);
 export const SETTLEMENT_DISTRICTS = Object.freeze([
@@ -155,6 +157,9 @@ function validateBlueprintShape(blueprint, errors, path) {
     validateDistrictDirectives(blueprint.districtDirectives, errors, `${path}.districtDirectives`);
     validateInhibitors(blueprint.inhibitors, errors, `${path}.inhibitors`);
     validateIdentity(blueprint.identity, errors, `${path}.identity`);
+    if (blueprint.identity?.architectureThemeId !== blueprint.burg?.themeId) {
+        errors.push(`${path}.identity.architectureThemeId must match ${path}.burg.themeId.`);
+    }
     validateRegion(blueprint.region, errors, `${path}.region`);
     validateLoreHooks(blueprint.loreHooks, errors, `${path}.loreHooks`);
     if (!/^[0-9a-f]{20}$/.test(String(blueprint.skeletonHash || ''))) {
@@ -172,6 +177,7 @@ function validateBurgRecord(burg, errors, path) {
     requirePositive(burg.population, `${path}.population`, errors);
     requireInteger(burg.state, `${path}.state`, errors, 0);
     requireInteger(burg.culture, `${path}.culture`, errors, 0);
+    if (!isBurgThemeId(burg.themeId)) errors.push(`${path}.themeId must be a canonical burg theme ID.`);
     requireInteger(burg.cell, `${path}.cell`, errors, 0);
     requireInteger(burg.feature, `${path}.feature`, errors, 0);
     if (!isRecord(burg.flags)) errors.push(`${path}.flags must be an object.`);
@@ -380,6 +386,9 @@ function validateIdentity(identity, errors, path) {
     for (const field of ['stateName', 'stateForm', 'stateColor', 'cultureName', 'cultureType', 'cultureColor', 'religionName']) {
         requireString(identity[field], `${path}.${field}`, errors, true);
     }
+    if (!isBurgThemeId(identity.architectureThemeId)) {
+        errors.push(`${path}.architectureThemeId must be a canonical burg theme ID.`);
+    }
     requireNullableInteger(identity.religionId, `${path}.religionId`, errors);
     requireNullableInteger(identity.provinceId, `${path}.provinceId`, errors);
 }
@@ -559,7 +568,7 @@ function utf8ByteLength(value) {
 
 const TOP_LEVEL_FIELDS = ['schema', 'schemaVersion', 'generationVersion', 'coordinateSpace', 'wallRadiusUnits', 'blueprints', 'clusters', 'globalWater', 'coverage'];
 const BLUEPRINT_FIELDS = ['id', 'burgId', 'name', 'x', 'y', 'anchorX', 'anchorY', 'anchorCell', 'tileScale', 'clusterId', 'tier', 'hierarchy', 'seatOf', 'liegeBurgId', 'burg', 'wallRings', 'castle', 'wards', 'roads', 'climate', 'water', 'districtDirectives', 'inhibitors', 'identity', 'region', 'loreHooks', 'skeletonHash'];
-const BURG_FIELDS = ['group', 'population', 'state', 'culture', 'cell', 'feature', 'flags'];
+const BURG_FIELDS = ['group', 'population', 'state', 'culture', 'themeId', 'cell', 'feature', 'flags'];
 const FLAG_FIELDS = ['capital', 'port', 'citadel', 'plaza', 'walls', 'temple'];
 const WALL_RING_FIELDS = ['ring', 'radius', 'thickness', 'heightVoxels', 'gates'];
 const GATE_FIELDS = ['bearing', 'towardRoute', 'towardFief', 'grand', 'edge'];
@@ -577,7 +586,7 @@ const TEMPLE_FIELDS = ['enabled', 'religionId'];
 const WATCHTOWER_FIELDS = ['count'];
 const SIGNPOST_FIELDS = ['enabled', 'destinations'];
 const INHIBITOR_FIELDS = ['gridWidth', 'gridHeight', 'maxFloors', 'buildingHint', 'roomHint', 'streetIntensity', 'wallEvidence', 'farmHint', 'decorBudget', 'chaosCap'];
-const IDENTITY_FIELDS = ['stateName', 'stateForm', 'stateColor', 'cultureName', 'cultureType', 'cultureColor', 'religionId', 'religionName', 'provinceId'];
+const IDENTITY_FIELDS = ['stateName', 'stateForm', 'stateColor', 'cultureName', 'cultureType', 'cultureColor', 'architectureThemeId', 'religionId', 'religionName', 'provinceId'];
 const REGION_FIELDS = ['id', 'name', 'fullName', 'color'];
 const LORE_FIELDS = ['id', 'title', 'summary', 'sourceHash'];
 const CLUSTER_FIELDS = ['id', 'state', 'stateName', 'seatBurgId', 'memberBurgIds', 'fiefBurgIds', 'roadIds', 'anchorX', 'anchorY'];

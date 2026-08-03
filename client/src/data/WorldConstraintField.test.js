@@ -2,9 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+    FMG_BURG_RELIEF_FORMULA_VERSION,
     createBlueprintSkeleton,
     createSettlementConstraintAnchors,
     createWorldConstraintField,
+    deriveFmgBurgReliefProfile,
     getWallGateCells,
     isInsideWallBounds,
     isWallBoundaryCell
@@ -20,7 +22,8 @@ const TEST_BLUEPRINTS = Object.freeze({
         anchorY: 80,
         clusterId: 'state-7',
         hierarchy: 'seat',
-        burg: { population: 196, state: 7, culture: 2, flags: { walls: true, capital: true } },
+        burg: { population: 196, state: 7, culture: 2, themeId: 'asian', flags: { walls: true, capital: true } },
+        identity: { architectureThemeId: 'asian' },
         wallRings: [
             { ring: 0, radius: 12, thickness: 2, heightVoxels: 6, gates: [{ bearing: 0, grand: true }, { bearing: 180, grand: true }] },
             { ring: 1, radius: 7, thickness: 1, heightVoxels: 5, gates: [{ bearing: 0, grand: true }, { bearing: 180, grand: true }] }
@@ -95,6 +98,7 @@ test('wall interiors strongly inhibit terrain chaos while wilderness stays freer
         sampleScale: 1
     });
     const skeleton = createBlueprintSkeleton({ settlements, width, height });
+    assert.ok([...skeleton.cells.values()].every((cell) => cell.architectureThemeId === 'asian'));
     const result = createWorldConstraintField({ fields, width, height, settlements, skeleton });
     const center = result.cells[15 * width + 20];
     const corner = result.cells[0];
@@ -146,4 +150,172 @@ test('high-confidence global water becomes a fixed terrain constraint', () => {
     assert.equal(result.cells[0].hardWater, true);
     assert.equal(result.cells[1].hardWater, true);
     assert.equal(result.diagnostics.hardWaterCells, 2);
+});
+
+test('FMG height, climate, ward variance and vector tiers deterministically scale burg relief', () => {
+    const width = 18;
+    const height = 14;
+    const insideCellKeys = new Set();
+    for (let row = 2; row <= 11; row++) {
+        for (let col = 2; col <= 15; col++) insideCellKeys.add(`${col},${row}`);
+    }
+    const baseSettlement = {
+        burg: { id: 777, name: 'Reliefburg' },
+        col: 9,
+        row: 7,
+        radius: 7,
+        wallBounds: { minCol: 2, minRow: 2, maxCol: 15, maxRow: 11, insideCellKeys },
+        wards: [{ wfcPriors: { elevationVariance: 0.2 } }],
+        blueprint: {
+            climate: { biome: 'PLAINS', latitude: 18, temperature: 18, snowline: 90 }
+        },
+        townVector: { streetCells: [{ col: 4, row: 7, elevationTier: 2 }] }
+    };
+    const lowFields = Array.from({ length: width * height }, () => ({ land: 0.92, height: 32 }));
+    const highFields = Array.from({ length: width * height }, (_, id) => ({
+        land: 0.92,
+        height: 18 + (id % width) * 4 + Math.floor(id / width) * 1.5
+    }));
+    const highSettlement = {
+        ...baseSettlement,
+        wards: [{ wfcPriors: { elevationVariance: 0.92 } }],
+        blueprint: {
+            climate: { biome: 'HIGHLAND', latitude: 58, temperature: -8, snowline: 38 }
+        },
+        townVector: {
+            streetCells: [
+                { col: 4, row: 7, elevationTier: 1 },
+                { col: 13, row: 7, elevationTier: 6 }
+            ]
+        }
+    };
+    const low = deriveFmgBurgReliefProfile({ settlement: baseSettlement, fields: lowFields, width, height });
+    const high = deriveFmgBurgReliefProfile({ settlement: highSettlement, fields: highFields, width, height });
+    const repeated = deriveFmgBurgReliefProfile({ settlement: highSettlement, fields: highFields, width, height });
+
+    assert.deepEqual(high, repeated);
+    assert.equal(high.formulaVersion, FMG_BURG_RELIEF_FORMULA_VERSION);
+    assert.ok(high.sampledHeight.range > low.sampledHeight.range);
+    assert.ok(high.components.topography > low.components.topography);
+    assert.ok(high.components.vectorStreets > low.components.vectorStreets);
+    assert.ok(high.reliefScore > low.reliefScore);
+    assert.ok(high.targetTierSpan > low.targetTierSpan);
+    assert.equal(high.gradientAxis, 'east-west');
+});
+
+test('FMG vector streets keep priority and elevation before street-map WFC infill', () => {
+    const width = 24;
+    const height = 20;
+    const insideCellKeys = new Set();
+    for (let row = 2; row <= 17; row++) {
+        for (let col = 2; col <= 21; col++) insideCellKeys.add(`${col},${row}`);
+    }
+    const settlement = {
+        burg: { id: 901, name: 'Elevated Test Burg', themeId: 'egyptian' },
+        architectureThemeId: 'egyptian',
+        blueprint: {
+            anchorX: 0,
+            anchorY: 0,
+            hierarchy: 'seat',
+            roads: [],
+            water: {
+                fords: [{ id: 'protected-ford', position: [0, 5], riverId: 'river-test' }]
+            },
+            identity: { architectureThemeId: 'egyptian' }
+        },
+        col: 12,
+        row: 9,
+        radius: 10,
+        walled: true,
+        wallBounds: {
+            minCol: 2,
+            minRow: 2,
+            maxCol: 21,
+            maxRow: 17,
+            width: 20,
+            height: 16,
+            insideCellKeys
+        },
+        wallRings: [],
+        wards: [{ ring: 0, district: 'market' }],
+        townVector: {
+            vectorHash: 'vector-street-priority',
+            wallHeightVoxels: 5,
+            walkwayWidth: 1,
+            wallCells: [{ col: 2, row: 8 }, { col: 2, row: 9 }],
+            gateCells: [{ col: 2, row: 9 }],
+            insideCellKeys,
+            streetCells: [
+                { col: 2, row: 9, kind: 'main', elevationTier: 4, source: 'town-vector' },
+                { col: 11, row: 9, kind: 'main', elevationTier: 4, source: 'town-vector' },
+                { col: 12, row: 9, kind: 'main', elevationTier: 5, source: 'town-vector' },
+                { col: 13, row: 9, kind: 'dirt', elevationTier: 5, source: 'town-vector' }
+            ]
+        }
+    };
+    const skeleton = createBlueprintSkeleton({ settlements: [settlement], width, height });
+    const sourceRoad = skeleton.cells.get(9 * width + 12);
+    const sourceGate = skeleton.cells.get(9 * width + 2);
+    const sourceWall = skeleton.cells.get(8 * width + 2);
+    const sourceFord = skeleton.cells.get(14 * width + 12);
+    assert.equal(sourceRoad.kind, 'road');
+    assert.equal(sourceRoad.source, 'town-vector');
+    assert.equal(sourceRoad.roadKind, 'town-vector-main');
+    assert.equal(sourceRoad.elevationTier, 5);
+    assert.equal(sourceRoad.architectureThemeId, 'egyptian');
+    assert.equal(sourceGate.kind, 'gate');
+    assert.equal(sourceGate.elevationTier, 4, 'the source street tier must survive through a higher-priority gate');
+    assert.equal(sourceGate.elevationSource, 'town-vector');
+    assert.equal(sourceGate.architectureThemeId, 'egyptian');
+    assert.equal(sourceWall.kind, 'wall', 'baked street masks cannot overwrite an FMG vector wall');
+    assert.equal(sourceFord.kind, 'ford', 'hard authored water keeps authority over baked street masks');
+    assert.ok([...skeleton.cells.values()].every((cell) => cell.architectureThemeId === 'egyptian'));
+    assert.ok(skeleton.diagnostics.vectorStreetCells >= 3);
+    assert.ok(skeleton.diagnostics.streetMapCells > 0);
+    assert.ok(Object.keys(skeleton.diagnostics.streetMapModules).length > 0);
+    assert.ok(skeleton.diagnostics.streetMapPortalCells > 0);
+    assert.equal(skeleton.diagnostics.reliefFormulaVersion, FMG_BURG_RELIEF_FORMULA_VERSION);
+    assert.equal(skeleton.diagnostics.reliefProfiles.length, 1);
+
+    // The generated gate avenue must be a cardinally contiguous path from the burg center to the
+    // authored gate, regardless of which 5x5 masks were selected around it.
+    for (let col = 2; col <= settlement.col; col++) {
+        const cell = skeleton.cells.get(settlement.row * width + col);
+        assert.ok(['gate', 'road', 'dock', 'bridge', 'ford'].includes(cell?.kind),
+            `gate approach cannot hang at ${col},${settlement.row}`);
+    }
+
+    const portalCells = [...skeleton.cells.values()].filter((cell) =>
+        cell.source === 'baked-street-wfc' && cell.portal && cell.portalId);
+    const portalsById = new Map();
+    for (const cell of portalCells) {
+        if (!portalsById.has(cell.portalId)) portalsById.set(cell.portalId, []);
+        portalsById.get(cell.portalId).push(cell);
+    }
+    const reciprocalPairs = [...portalsById.values()].filter((cells) => cells.length === 2);
+    assert.ok(reciprocalPairs.length > 0);
+    for (const [left, right] of reciprocalPairs) {
+        assert.equal(Math.abs(left.col - right.col) + Math.abs(left.row - right.row), 1);
+        assert.equal(left.reciprocalModuleId, right.moduleId);
+        assert.equal(right.reciprocalModuleId, left.moduleId);
+    }
+
+    const fields = Array.from({ length: width * height }, () => ({
+        land: 0.9,
+        height: 35,
+        routeInfluence: 0,
+        riverInfluence: 0
+    }));
+    const constraints = createWorldConstraintField({
+        fields,
+        width,
+        height,
+        settlements: [settlement],
+        skeleton
+    });
+    const sourceRoadConstraint = constraints.cells[9 * width + 12];
+    assert.equal(sourceRoadConstraint.fixedElevation, 5);
+    assert.equal(sourceRoadConstraint.fixedElevationSource, 'town-vector');
+    assert.equal(sourceRoadConstraint.sourceStreetKind, 'main');
+    assert.ok(constraints.diagnostics.fixedElevationCells >= 4);
 });

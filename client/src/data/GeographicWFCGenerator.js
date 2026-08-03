@@ -17,6 +17,7 @@ import {
     createSettlementConstraintAnchors,
     createBlueprintSkeleton,
     createWorldConstraintField,
+    FMG_BURG_RELIEF_FORMULA_VERSION,
     getSettlementWardAt,
     isInsideWallBounds
 } from './WorldConstraintField.js';
@@ -27,6 +28,7 @@ import {
 import {
     createBakedBuildingPlan,
     createFixedBakedBuilding,
+    analyzeBuildingFootprintElevation,
     validateBakedBuilding
 } from './BakedBuildingLibrary.js';
 import { BAKED_PARTIAL_CHUNKS } from './BakedChunkData.js';
@@ -38,6 +40,25 @@ import {
     getActiveTownVectorHash,
     getActiveTownVectorSummary
 } from './TownVectorData.js';
+import {
+    getBurgTheme,
+    normalizeBurgThemeId,
+    resolveBurgThemeBuildingStyle
+} from './BurgThemeCatalog.js';
+import {
+    TERRAIN_MACRO_TILE_LIBRARY_VERSION,
+    TERRAIN_PRIMARY_MACRO_SIZE,
+    TERRAIN_TRANSITION_MACRO_SIZE,
+    applyTerrainMacroTileToElevationRows,
+    collapseTerrainMacroTileGrid,
+    createDeterministicTerrainMacroPatch,
+    findIsolatedElevationSpikes
+} from './TerrainMacroTileLibrary.js';
+import {
+    WORLD_PATH_CONNECTIVITY_VERSION,
+    getWorldPathConnectivityGenerationMetadata,
+    validateWorldPathConnectivity
+} from './WorldPathConnectivity.js';
 
 // Compact view window (was 80x60): ~19% fewer generated columns per view, directly cutting the
 // tile/mesh count that made LOD heavy. The smaller window pairs with steeper elevation macro
@@ -130,6 +151,7 @@ export function createGeographicWorldPlan({
     const settlementAnchors = rawSettlementAnchors;
     const fixedSkeleton = createBlueprintSkeleton({
         settlements: settlementAnchors,
+        fields,
         width: safeWidth,
         height: safeHeight,
         sampleScale: WORLD_SAMPLE_SCALE
@@ -169,6 +191,33 @@ export function createGeographicWorldPlan({
         terrainFrame.constraints,
         frameCollapse.bakedCellIds
     );
+    const initialTerrainMacroDiagnostics = frameElevationRows.macroDiagnostics;
+    const frameMacroTerrainElevationRows = frameElevationRows.map((row) => row.slice());
+    // Natural water and route overlays are resolved inside the same canonical halo as terrain
+    // collapse. Applying them only after cropping made river elevations depend on which side of
+    // a viewport boundary happened to be visible, so overlapping clients could disagree about
+    // the same global cell.
+    const frameRows = createTerrainRows(
+        frameCollapse.tileIds,
+        terrainFrame.width,
+        terrainFrame.height
+    );
+    const framePaletteRows = createPaletteRows(
+        frameCollapse.tileIds,
+        terrainFrame.fields,
+        terrainFrame.width,
+        terrainFrame.height,
+        terrainFrame.constraints
+    );
+    overlayGeographicWaterAndRoutes(
+        frameRows,
+        framePaletteRows,
+        frameElevationRows,
+        terrainFrame.fields,
+        terrainFrame.width,
+        terrainFrame.height,
+        terrainFrame.constraints
+    );
     const collapse = cropTerrainCollapse(
         frameCollapse,
         terrainFrame,
@@ -179,10 +228,23 @@ export function createGeographicWorldPlan({
         useBakedPartialChunks
     );
     const elevationRows = cropTerrainRows(frameElevationRows, terrainFrame, safeWidth, safeHeight);
-    const rows = createTerrainRows(collapse.tileIds, safeWidth, safeHeight);
-    const paletteRows = createPaletteRows(collapse.tileIds, fields, safeWidth, safeHeight, constraints);
-
-    overlayGeographicWaterAndRoutes(rows, paletteRows, elevationRows, fields, safeWidth, safeHeight, constraints);
+    const macroTerrainElevationRows = cropTerrainRows(
+        frameMacroTerrainElevationRows,
+        terrainFrame,
+        safeWidth,
+        safeHeight
+    );
+    const rows = cropTerrainRows(frameRows, terrainFrame, safeWidth, safeHeight);
+    const paletteRows = cropTerrainRows(framePaletteRows, terrainFrame, safeWidth, safeHeight);
+    repairCroppedFmgRiverContinuity({
+        rows,
+        paletteRows,
+        elevationRows,
+        fields,
+        width: safeWidth,
+        height: safeHeight,
+        constraintField: constraints
+    });
     const settlement = synthesizeSettlements({
         rows,
         paletteRows,
@@ -198,6 +260,57 @@ export function createGeographicWorldPlan({
         anchors: settlementAnchors,
         constraintField: constraints,
         skeleton: fixedSkeleton
+    });
+    enforceRequestedVectorElevations(rows, elevationRows, fixedSkeleton, settlement.buildings);
+    repairCroppedFmgRiverContinuity({
+        rows,
+        paletteRows,
+        elevationRows,
+        fields,
+        width: safeWidth,
+        height: safeHeight,
+        constraintField: constraints,
+        buildings: settlement.buildings
+    });
+    const roadNetworkRepair = connectWorldRoadNetwork({
+        rows,
+        paletteRows,
+        buildings: settlement.buildings,
+        width: safeWidth,
+        height: safeHeight
+    });
+    stabilizeWorldInfrastructureElevations({
+        rows,
+        elevationRows,
+        macroTerrainElevationRows,
+        fields,
+        skeleton: fixedSkeleton,
+        buildings: settlement.buildings,
+        width: safeWidth,
+        height: safeHeight
+    });
+    const finalElevationRepair = repairFinalWorldElevationSpikes({
+        rows,
+        elevationRows,
+        buildings: settlement.buildings,
+        width: safeWidth,
+        height: safeHeight
+    });
+    const finalElevationSpikes = findIsolatedElevationSpikes(elevationRows);
+    const terrainMacroDiagnostics = Object.freeze({
+        ...initialTerrainMacroDiagnostics,
+        finalRepairedCells: finalElevationRepair.repairedCells,
+        finalRepairedBySymbol: finalElevationRepair.repairedBySymbol,
+        isolatedElevationCells: finalElevationSpikes.length,
+        isolatedElevationSamples: Object.freeze(finalElevationSpikes.slice(0, 12))
+    });
+    const architectureThemeRows = createArchitectureThemeRows({
+        rows,
+        buildings: settlement.buildings,
+        settlements: settlement.settlements,
+        skeleton: fixedSkeleton,
+        width: safeWidth,
+        height: safeHeight
     });
     const decorations = synthesizeDecorations({
         rows,
@@ -228,16 +341,50 @@ export function createGeographicWorldPlan({
     const stateColor = index.stateById.get(dominantBiome.state)?.color || '#65d58d';
     const cultureColor = index.cultureById.get(dominantBiome.culture)?.color || '#7d76e8';
     const activeTownVectorHash = getActiveTownVectorHash();
-    const contentHash = `${ACTIVE_WORLD.contentHash}:${activeTownVectorHash}:${viewSeed.toString(16).padStart(8, '0')}`;
+    const contentHash = [
+        ACTIVE_WORLD.contentHash,
+        activeTownVectorHash,
+        TERRAIN_MACRO_TILE_LIBRARY_VERSION,
+        terrainMacroDiagnostics?.assignmentHash || 'no-macro-plan',
+        viewSeed.toString(16).padStart(8, '0')
+    ].join(':');
     const sourceAnchor = nearestBurg && nearestBurg.distance <= Math.max(safeWidth, safeHeight) * WORLD_SAMPLE_SCALE * 0.58
         ? nearestBurg.burg
         : null;
+    const primaryArchitectureThemeId = normalizeBurgThemeId(
+        sourceAnchor?.themeId ??
+        settlement.settlements[0]?.architectureThemeId ??
+        settlement.settlements[0]?.burg?.themeId ??
+        settlementAnchors[0]?.architectureThemeId ??
+        settlementAnchors[0]?.burg?.themeId,
+        null
+    );
+    const primaryArchitectureTheme = getBurgTheme(primaryArchitectureThemeId);
+    const elevationDiagnostics = createWorldElevationDiagnostics({
+        rows,
+        elevationRows,
+        settlements: settlement.settlements,
+        buildings: settlement.buildings,
+        skeleton: fixedSkeleton,
+        terrainMacroDiagnostics
+    });
+    const logicalConnectivity = createWorldLogicalConnectivity({
+        rows,
+        elevationRows,
+        fields,
+        skeleton: fixedSkeleton,
+        settlements: settlement.settlements,
+        buildings: settlement.buildings,
+        width: safeWidth,
+        height: safeHeight
+    });
 
-    return {
+    const plan = {
         rows,
         elevationRows,
         wallHeightRows,
         paletteRows,
+        architectureThemeRows,
         visualVariantRows,
         // Pre-overlay terrain snapshot for the partial-chunk bake tool: the raw collapsed tile ids
         // (no water/route overlay, no settlement stamping) so baked cells can be re-fixed into the
@@ -245,6 +392,7 @@ export function createGeographicWorldPlan({
         terrainTileIds: includeTerrainSnapshot ? collapse.tileIds.slice() : undefined,
         buildings: settlement.buildings,
         decorations,
+        logicalConnectivity,
         connectDoors: false,
         procedural: true,
         width: safeWidth,
@@ -261,6 +409,8 @@ export function createGeographicWorldPlan({
             id: sourceAnchor ? `burg-${sourceAnchor.id}` : `region-${Math.round(centerX)}-${Math.round(centerY)}`,
             name: regionName,
             biome: dominantBiome.name,
+            architectureThemeId: primaryArchitectureThemeId,
+            architectureThemeLabel: primaryArchitectureTheme?.label ?? null,
             generated: true,
             requestedWorldX: centerX,
             requestedWorldY: centerY,
@@ -276,6 +426,8 @@ export function createGeographicWorldPlan({
             id: dominantPalette,
             paletteId: dominantPalette,
             biome: dominantBiome.name,
+            primaryArchitectureThemeId,
+            primaryArchitectureThemeLabel: primaryArchitectureTheme?.label ?? null,
             stateColor,
             cultureColor,
             skyColor: getThemeSkyColor(dominantPalette),
@@ -308,20 +460,52 @@ export function createGeographicWorldPlan({
             townPayloadsRead: false,
             townVectors: getActiveTownVectorSummary(),
             terrainWfc: collapse.diagnostics,
+            terrainMacroWfc: terrainMacroDiagnostics,
             partialBake: collapse.diagnostics.partialBake,
             buildingWfc: settlement.diagnostics,
             constraintField: constraints.diagnostics,
+            elevation: elevationDiagnostics,
+            roadNetworkRepair,
             settlements: settlement.settlements.length,
             coupledTerrainAndBuildings: true,
             couplingMode: 'shared-constraint-sequential-wfc',
             worldAnchoredChunks: true,
+            worldAnchoredMacroTiles: true,
             minimumInterior: '2x3',
             blueprintFirst: true,
             activeClusterId: settlementAnchors[0]?.clusterId ?? null,
             fixedSkeletonHash: fixedSkeleton.hash,
-            fixedSkeleton: fixedSkeleton.diagnostics
+            fixedSkeleton: fixedSkeleton.diagnostics,
+            vectorStreets: Object.freeze({
+                cells: fixedSkeleton.diagnostics.vectorStreetCells || 0,
+                fixedElevationCells: fixedSkeleton.diagnostics.vectorStreetElevationCells || 0,
+                elevationTiers: Object.freeze([
+                    ...(fixedSkeleton.diagnostics.vectorStreetElevationTiers || [])
+                ]),
+                streetMapCells: fixedSkeleton.diagnostics.streetMapCells || 0,
+                streetMapModules: Object.freeze({
+                    ...(fixedSkeleton.diagnostics.streetMapModules || {})
+                }),
+                steppedStreetCells: fixedSkeleton.diagnostics.streetMapSteppedCells || 0,
+                generatedElevationRange: fixedSkeleton.diagnostics.streetMapElevationRange || 0,
+                reliefFormulaVersion: FMG_BURG_RELIEF_FORMULA_VERSION
+            }),
+            architectureThemes: Object.freeze({
+                primary: primaryArchitectureThemeId,
+                bySettlement: Object.freeze(Object.fromEntries(
+                    settlementAnchors.map((entry) => [
+                        `burg-${entry.burg.id}`,
+                        normalizeBurgThemeId(entry.architectureThemeId ?? entry.burg?.themeId, null)
+                    ])
+                )),
+                histogram: Object.freeze(createArchitectureThemeHistogram(settlementAnchors))
+            })
         }
     };
+    const pathConnectivity = validateWorldPathConnectivity(plan);
+    plan.generation.pathConnectivity = getWorldPathConnectivityGenerationMetadata(pathConnectivity);
+    plan.generation.pathConnectivityIssues = pathConnectivity.issues.slice(0, 24);
+    return plan;
 }
 
 function createBlueprintWallHeightRows(skeleton, width, height) {
@@ -331,6 +515,493 @@ function createBlueprintWallHeightRows(skeleton, width, height) {
         rows[cell.row][cell.col] = clampInteger(cell.heightVoxels ?? 4, 3, 9);
     }
     return rows;
+}
+
+function createWorldElevationDiagnostics({
+    rows,
+    elevationRows,
+    settlements,
+    buildings,
+    skeleton,
+    terrainMacroDiagnostics = null
+}) {
+    const tiers = elevationRows.flat().map(Number).filter(Number.isFinite);
+    const buildingTiers = (buildings || [])
+        .map((building) => Number(building.baseElevation))
+        .filter(Number.isFinite);
+    const sourceElevationCells = [...(skeleton?.cells?.values?.() || [])].filter((cell) =>
+        (cell.source === 'town-vector' || cell.elevationSource === 'town-vector') &&
+        Number.isFinite(Number(cell.elevationTier)));
+    const sourceElevationMismatches = sourceElevationCells.filter((cell) =>
+        Number(elevationRows[cell.row]?.[cell.col]) !== Number(cell.elevationTier));
+    const sourceElevationDeviations = sourceElevationCells.map((cell) => Math.abs(
+        Number(elevationRows[cell.row]?.[cell.col]) - Number(cell.elevationTier)
+    )).filter(Number.isFinite);
+    const settlementProfiles = [...(skeleton?.reliefByBurgId?.values?.() || [])]
+        .sort((left, right) => left.burgId - right.burgId);
+    const width = elevationRows[0]?.length || 0;
+    const height = elevationRows.length;
+    const buildingElevationSafety = (buildings || []).map((building) => {
+        const originCol = Number(building.x) + Math.floor(width / 2);
+        const originRow = Number(building.y) + Math.floor(height / 2);
+        const footprint = (building.footprintCells || []).map((cell) => ({
+            col: originCol + cell.x,
+            row: originRow + cell.y
+        }));
+        return analyzeBuildingFootprintElevation(footprint, elevationRows);
+    });
+    const illegalBuildingCliffs = buildingElevationSafety.filter((safety) =>
+        safety.maxAdjacentDelta > 1 || safety.span > 1);
+    const roadElevationSafety = analyzeRoadElevationSafety(rows, elevationRows);
+    return Object.freeze({
+        formulaVersion: FMG_BURG_RELIEF_FORMULA_VERSION,
+        terrainTierMinimum: tiers.length ? Math.min(...tiers) : 0,
+        terrainTierMaximum: tiers.length ? Math.max(...tiers) : 0,
+        terrainTierRange: tiers.length ? Math.max(...tiers) - Math.min(...tiers) : 0,
+        settlementProfiles: Object.freeze(settlementProfiles),
+        highReliefSettlements: settlementProfiles.filter((profile) => profile.reliefClass === 'high').length,
+        meanReliefScore: settlementProfiles.length
+            ? round(settlementProfiles.reduce((sum, profile) => sum + profile.reliefScore, 0) / settlementProfiles.length, 4)
+            : 0,
+        vectorElevationCells: sourceElevationCells.length,
+        vectorElevationMismatches: sourceElevationMismatches.length,
+        exactVectorElevationsPreserved: sourceElevationMismatches.length === 0,
+        vectorElevationMode: 'soft-macro-inhibitor',
+        vectorElevationConstraintsApplied: sourceElevationCells.length > 0,
+        vectorElevationMeanDeviation: sourceElevationDeviations.length
+            ? round(sourceElevationDeviations.reduce((sum, value) => sum + value, 0) /
+                sourceElevationDeviations.length, 4)
+            : 0,
+        vectorElevationMaximumDeviation: sourceElevationDeviations.length
+            ? Math.max(...sourceElevationDeviations)
+            : 0,
+        steppedStreetCells: skeleton?.diagnostics?.streetMapSteppedCells || 0,
+        generatedStreetElevationRange: skeleton?.diagnostics?.streetMapElevationRange || 0,
+        macroTiles: terrainMacroDiagnostics,
+        buildingBaseElevationMinimum: buildingTiers.length ? Math.min(...buildingTiers) : null,
+        buildingBaseElevationMaximum: buildingTiers.length ? Math.max(...buildingTiers) : null,
+        buildingBaseElevationTiers: Object.freeze([...new Set(buildingTiers)].sort((left, right) => left - right)),
+        illegalBuildingCliffs: illegalBuildingCliffs.length,
+        maximumBuildingElevationSpan: buildingElevationSafety.length
+            ? Math.max(...buildingElevationSafety.map((safety) => safety.span))
+            : 0,
+        illegalRoadCliffs: roadElevationSafety.illegalEdges,
+        maximumRoadElevationDelta: roadElevationSafety.maximumDelta
+    });
+}
+
+function analyzeRoadElevationSafety(rows, elevationRows) {
+    const roadSymbols = new Set(['R', ':', ';', '=']);
+    let illegalEdges = 0;
+    let maximumDelta = 0;
+    for (let row = 0; row < rows.length; row++) {
+        for (let col = 0; col < (rows[row]?.length || 0); col++) {
+            if (!roadSymbols.has(rows[row]?.[col])) continue;
+            for (const [dx, dy] of [[1, 0], [0, 1], [1, 1], [-1, 1]]) {
+                const neighborCol = col + dx;
+                const neighborRow = row + dy;
+                if (!roadSymbols.has(rows[neighborRow]?.[neighborCol])) continue;
+                const delta = Math.abs(
+                    Number(elevationRows[row]?.[col]) - Number(elevationRows[neighborRow]?.[neighborCol])
+                );
+                if (!Number.isFinite(delta)) continue;
+                maximumDelta = Math.max(maximumDelta, delta);
+                if (delta > 1) illegalEdges++;
+            }
+        }
+    }
+    return Object.freeze({ illegalEdges, maximumDelta });
+}
+
+function createWorldLogicalConnectivity({
+    rows,
+    elevationRows,
+    fields,
+    skeleton,
+    settlements,
+    buildings,
+    width,
+    height
+}) {
+    const waterSymbols = new Set(['W', '~', 'B']);
+    const riverCellsBySourceId = new Map();
+    for (let row = 0; row < height; row++) {
+        for (let col = 0; col < width; col++) {
+            const id = row * width + col;
+            const field = fields[id];
+            if (!waterSymbols.has(rows[row]?.[col]) || field?.riverId === null ||
+                field?.riverId === undefined || Number(field.riverPathInfluence) < 0.35) continue;
+            const sourceId = String(field.riverId);
+            if (!riverCellsBySourceId.has(sourceId)) riverCellsBySourceId.set(sourceId, new Map());
+            riverCellsBySourceId.get(sourceId).set(elevationCellKey(col, row), {
+                col,
+                row,
+                fmgRiverId: sourceId
+            });
+        }
+    }
+    // FMG identity is the river-system authority. Splitting the visible water first made every
+    // disconnected fragment look like a separate valid river; grouping by source id exposes
+    // actual sampling gaps and lets the validator reject them.
+    const rivers = [...riverCellsBySourceId.entries()]
+        .sort(([left], [right]) => left.localeCompare(right, undefined, { numeric: true }))
+        .map(([sourceId, cells]) => {
+            const components = splitLogicalCellComponents(cells);
+            const connectors = [];
+            for (const bridge of skeleton?.cells?.values?.() || []) {
+                if (bridge.kind !== 'bridge') continue;
+                for (const [[leftX, leftY], [rightX, rightY]] of [
+                    [[-1, 0], [1, 0]],
+                    [[0, -1], [0, 1]]
+                ]) {
+                    const left = { col: bridge.col + leftX, row: bridge.row + leftY };
+                    const right = { col: bridge.col + rightX, row: bridge.row + rightY };
+                    if (!cells.has(elevationCellKey(left.col, left.row)) ||
+                        !cells.has(elevationCellKey(right.col, right.row))) continue;
+                    connectors.push({
+                        id: `fmg-river-${sourceId}-bridge-${bridge.col}-${bridge.row}`,
+                        kind: 'bridge-underpass',
+                        allowNonWater: true,
+                        cells: [left, { col: bridge.col, row: bridge.row }, right]
+                    });
+                    break;
+                }
+            }
+            const boundaryComponentIndex = components.findIndex((component) =>
+                component.some((cell) => cell.col <= 2 || cell.row <= 2 ||
+                    cell.col >= width - 3 || cell.row >= height - 3));
+            if (boundaryComponentIndex >= 0 && components.length > 1) {
+                const boundaryComponent = components[boundaryComponentIndex];
+                for (let componentIndex = 0; componentIndex < components.length; componentIndex++) {
+                    if (componentIndex === boundaryComponentIndex) continue;
+                    const pair = findClosestLogicalComponentPair([
+                        boundaryComponent,
+                        components[componentIndex]
+                    ]);
+                    if (!pair) continue;
+                    // The FMG polyline leaves this LOD and re-enters it. A virtual connector
+                    // records the offscreen continuation without painting a fake chord across
+                    // the visible world.
+                    connectors.push({
+                        id: `fmg-river-${sourceId}-offscreen-${componentIndex}`,
+                        virtual: true,
+                        cells: [
+                            { col: pair.left.col, row: pair.left.row },
+                            { col: pair.right.col, row: pair.right.row }
+                        ]
+                    });
+                }
+            }
+            return {
+                id: `fmg-river-${sourceId}`,
+                fmgRiverIds: [sourceId],
+                components: components.map((component, componentIndex) => ({
+                    id: `fmg-river-${sourceId}:component-${componentIndex}`,
+                    cells: component.map(({ col, row }) => ({ col, row }))
+                })),
+                connectors
+            };
+        });
+
+    const settlementByTownId = new Map((settlements || []).map((settlement) => [
+        Number(settlement.burg?.id),
+        settlement
+    ]));
+    const gates = deriveLogicalGates({ rows, skeleton, settlementByTownId, width, height });
+    const requiredPaths = deriveBuildingGateRequiredPaths({
+        buildings,
+        gates,
+        settlements,
+        width,
+        height
+    });
+    return Object.freeze({
+        version: WORLD_PATH_CONNECTIVITY_VERSION,
+        rivers: Object.freeze(rivers),
+        gates: Object.freeze(gates),
+        movementConnectors: Object.freeze(deriveElevationMovementConnectors({
+            rows,
+            elevationRows,
+            width,
+            height
+        })),
+        requiredPaths: Object.freeze(requiredPaths)
+    });
+}
+
+function deriveBuildingGateRequiredPaths({ buildings, gates, settlements, width, height }) {
+    const offsetX = Math.floor(width / 2);
+    const offsetY = Math.floor(height / 2);
+    const burgIdByName = new Map((settlements || []).map((settlement) => [
+        String(settlement.burg?.name || ''),
+        Number(settlement.burg?.id)
+    ]));
+    const paths = [];
+    for (const building of buildings || []) {
+        const from = resolveBuildingApproachCell(building, offsetX, offsetY);
+        if (!from) continue;
+        const burgId = burgIdByName.get(String(building.townId || ''));
+        const candidates = (gates || []).filter((gate) =>
+            !Number.isFinite(burgId) || gate.id.startsWith(`burg-${burgId}-`));
+        if (!candidates.length) continue;
+        const gate = [...candidates].sort((left, right) =>
+            manhattanGridDistance(from, left.grid) - manhattanGridDistance(from, right.grid) ||
+            left.id.localeCompare(right.id))[0];
+        paths.push(Object.freeze({
+            id: `building-${building.id || building.blueprintId || paths.length}-to-${gate.id}`,
+            from,
+            to: gate.grid,
+            requireSharedRoadComponent: true
+        }));
+    }
+    return paths.sort((left, right) => left.id.localeCompare(right.id));
+}
+
+function deriveElevationMovementConnectors({ rows, elevationRows, width, height }) {
+    const connectors = [];
+    const stairSymbols = new Set([':', ';']);
+    for (let row = 0; row < height; row++) {
+        for (let col = 0; col < width; col++) {
+            if (!stairSymbols.has(rows[row]?.[col])) continue;
+            for (const [dx, dy] of [[1, 0], [0, 1]]) {
+                const neighbor = { col: col + dx, row: row + dy };
+                if (!stairSymbols.has(rows[neighbor.row]?.[neighbor.col])) continue;
+                const delta = Math.abs(
+                    Number(elevationRows[row]?.[col]) - Number(elevationRows[neighbor.row]?.[neighbor.col])
+                );
+                if (!Number.isFinite(delta) || delta <= 1 || delta > 2) continue;
+                connectors.push(Object.freeze({
+                    id: `macro-stairs-${col}-${row}-${neighbor.col}-${neighbor.row}`,
+                    kind: 'stairs',
+                    pairedStair: true,
+                    bidirectional: true,
+                    from: { col, row },
+                    to: neighbor
+                }));
+            }
+        }
+    }
+    return connectors;
+}
+
+function manhattanGridDistance(left, right) {
+    return Math.abs(Number(left?.col) - Number(right?.col)) +
+        Math.abs(Number(left?.row) - Number(right?.row));
+}
+
+function deriveLogicalGates({ rows, skeleton, settlementByTownId, width, height }) {
+    const gateCellByKey = new Map(
+        [...(skeleton?.cells?.values?.() || [])]
+            .filter((cell) => cell.kind === 'gate')
+            .map((cell) => [elevationCellKey(cell.col, cell.row), cell])
+    );
+    const candidates = [];
+    // A real gate is the cross-section where a gate corridor cuts through wall blocks. Formula
+    // rings may encode the whole approach lane as `gate`; validating every lane cell would turn a
+    // single opening into dozens of false hanging gates (especially at a clipped view edge).
+    for (let row = 0; row < height; row++) {
+        let col = 0;
+        while (col < width) {
+            if (!gateCellByKey.has(elevationCellKey(col, row))) {
+                col++;
+                continue;
+            }
+            const start = col;
+            while (col + 1 < width && gateCellByKey.has(elevationCellKey(col + 1, row))) col++;
+            const end = col;
+            if (rows[row]?.[start - 1] === 'T' && rows[row]?.[end + 1] === 'T') {
+                const centerCol = Math.floor((start + end) / 2);
+                const source = gateCellByKey.get(elevationCellKey(centerCol, row)) ||
+                    gateCellByKey.get(elevationCellKey(start, row));
+                const settlement = settlementByTownId.get(Number(source?.townId));
+                candidates.push({
+                    ...source,
+                    col: centerCol,
+                    row,
+                    edge: row < Number(settlement?.row) ? 'north' : 'south'
+                });
+            }
+            col++;
+        }
+    }
+    for (let col = 0; col < width; col++) {
+        let row = 0;
+        while (row < height) {
+            if (!gateCellByKey.has(elevationCellKey(col, row))) {
+                row++;
+                continue;
+            }
+            const start = row;
+            while (row + 1 < height && gateCellByKey.has(elevationCellKey(col, row + 1))) row++;
+            const end = row;
+            if (rows[start - 1]?.[col] === 'T' && rows[end + 1]?.[col] === 'T') {
+                const centerRow = Math.floor((start + end) / 2);
+                const source = gateCellByKey.get(elevationCellKey(col, centerRow)) ||
+                    gateCellByKey.get(elevationCellKey(col, start));
+                const settlement = settlementByTownId.get(Number(source?.townId));
+                candidates.push({
+                    ...source,
+                    col,
+                    row: centerRow,
+                    edge: col < Number(settlement?.col) ? 'west' : 'east'
+                });
+            }
+            row++;
+        }
+    }
+    const visibleCandidates = candidates.filter((candidate) => {
+        if (candidate.edge === 'north') return candidate.row > 0;
+        if (candidate.edge === 'south') return candidate.row < height - 1;
+        if (candidate.edge === 'west') return candidate.col > 0;
+        return candidate.col < width - 1;
+    });
+    const clustered = [];
+    for (const candidate of visibleCandidates.sort((left, right) =>
+        Number(left.townId) - Number(right.townId) || left.edge.localeCompare(right.edge) ||
+        left.row - right.row || left.col - right.col)) {
+        const existing = clustered.find((entry) => Number(entry.townId) === Number(candidate.townId) &&
+            entry.edge === candidate.edge && Math.abs(entry.col - candidate.col) <= 2 &&
+            Math.abs(entry.row - candidate.row) <= 2);
+        if (!existing) clustered.push(candidate);
+    }
+    return clustered
+        .map((cell, index) => createLogicalGate(
+            { ...cell, id: `burg-${cell.townId}-gate-${index}` },
+            settlementByTownId.get(Number(cell.townId)),
+            index
+        ))
+        .filter(Boolean)
+        .sort((left, right) => left.id.localeCompare(right.id));
+}
+
+function splitLogicalCellComponents(cells) {
+    const remaining = new Map(cells);
+    const components = [];
+    while (remaining.size) {
+        const start = remaining.values().next().value;
+        const queue = [start];
+        const component = [];
+        remaining.delete(elevationCellKey(start.col, start.row));
+        while (queue.length) {
+            const current = queue.shift();
+            component.push(current);
+            for (const { x, y } of CARDINALS) {
+                const key = elevationCellKey(current.col + x, current.row + y);
+                const neighbor = remaining.get(key);
+                if (!neighbor) continue;
+                remaining.delete(key);
+                queue.push(neighbor);
+            }
+        }
+        components.push(component.sort((left, right) => left.row - right.row || left.col - right.col));
+    }
+    return components.sort((left, right) =>
+        left[0].row - right[0].row || left[0].col - right[0].col);
+}
+
+function createLogicalGate(cell, settlement, index) {
+    const grid = { col: cell.col, row: cell.row };
+    const directions = {
+        north: { x: 0, y: -1 },
+        east: { x: 1, y: 0 },
+        south: { x: 0, y: 1 },
+        west: { x: -1, y: 0 }
+    };
+    let edge = directions[cell.edge] ? cell.edge : null;
+    if (!edge && settlement) {
+        const dx = cell.col - settlement.col;
+        const dy = cell.row - settlement.row;
+        edge = Math.abs(dx) >= Math.abs(dy)
+            ? dx < 0 ? 'west' : 'east'
+            : dy < 0 ? 'north' : 'south';
+    }
+    if (!edge) return null;
+    const outsideDirection = directions[edge];
+    return Object.freeze({
+        id: String(cell.id ?? `burg-${cell.townId || 'world'}-gate-${index}`),
+        grid,
+        edge,
+        inside: {
+            col: cell.col - outsideDirection.x,
+            row: cell.row - outsideDirection.y
+        },
+        outside: {
+            col: cell.col + outsideDirection.x,
+            row: cell.row + outsideDirection.y
+        },
+        road: grid
+    });
+}
+
+function createArchitectureThemeRows({ rows, buildings, settlements, skeleton, width, height }) {
+    const themeRows = Array.from({ length: height }, () => Array(width).fill(null));
+    const settlementThemeById = new Map();
+    for (const settlement of settlements || []) {
+        const themeId = normalizeBurgThemeId(
+            settlement.architectureThemeId ?? settlement.burg?.themeId,
+            null
+        );
+        if (!themeId) continue;
+        settlementThemeById.set(Number(settlement.burg.id), themeId);
+        const bounds = settlement.wallBounds;
+        if (!bounds) continue;
+        for (let row = Math.max(0, bounds.minRow); row <= Math.min(height - 1, bounds.maxRow); row++) {
+            for (let col = Math.max(0, bounds.minCol); col <= Math.min(width - 1, bounds.maxCol); col++) {
+                if (bounds.insideCellKeys instanceof Set && !isInsideWallBounds(col, row, bounds)) continue;
+                // Theme only authored town fabric. Natural terrain inside a loose rectangular
+                // projection remains biome-driven and cannot leak a burg's architecture beyond
+                // its roads, plazas, walls, and developed ground.
+                if (!['T', 'R', ';', ':', '=', '.', ','].includes(rows[row]?.[col])) continue;
+                themeRows[row][col] = themeId;
+            }
+        }
+    }
+
+    // Parser-authored vector streets, gates, walls, docks, and castle plots are authoritative.
+    // Stamp them after the broad town fabric so adjacent burg projections cannot overwrite them.
+    for (const cell of skeleton?.cells?.values?.() || []) {
+        if (!themeRows[cell.row] || themeRows[cell.row][cell.col] === undefined) continue;
+        const themeId = normalizeBurgThemeId(
+            cell.architectureThemeId ?? settlementThemeById.get(Number(cell.townId)),
+            null
+        );
+        if (themeId) themeRows[cell.row][cell.col] = themeId;
+    }
+
+    const offsetX = Math.floor(width / 2);
+    const offsetY = Math.floor(height / 2);
+    for (const building of buildings || []) {
+        const themeId = normalizeBurgThemeId(building.architectureThemeId, null);
+        if (!themeId) continue;
+        const cells = building.footprintCells?.length
+            ? building.footprintCells
+            : Array.from({ length: building.width * building.height }, (_, index) => ({
+                x: index % building.width,
+                y: Math.floor(index / building.width)
+            }));
+        for (const cell of cells) {
+            const col = building.x + offsetX + cell.x;
+            const row = building.y + offsetY + cell.y;
+            if (themeRows[row]?.[col] !== undefined) themeRows[row][col] = themeId;
+        }
+        const [approachCol, approachRow] = building.entrance?.approachGrid || [];
+        if (themeRows[approachRow]?.[approachCol] !== undefined) {
+            themeRows[approachRow][approachCol] = themeId;
+        }
+    }
+    return themeRows;
+}
+
+function createArchitectureThemeHistogram(settlements) {
+    const histogram = {};
+    for (const settlement of settlements || []) {
+        const themeId = normalizeBurgThemeId(
+            settlement.architectureThemeId ?? settlement.burg?.themeId,
+            null
+        );
+        if (themeId) histogram[themeId] = (histogram[themeId] || 0) + 1;
+    }
+    return histogram;
 }
 
 export function sampleGeographicField(worldX, worldY, options = {}) {
@@ -456,6 +1127,7 @@ function createTerrainGenerationFrame({ index, centerX, centerY, width, height, 
     });
     const frameSkeleton = createBlueprintSkeleton({
         settlements: frameAnchors,
+        fields: frameFields,
         width: frameWidth,
         height: frameHeight,
         sampleScale: WORLD_SAMPLE_SCALE
@@ -470,6 +1142,7 @@ function createTerrainGenerationFrame({ index, centerX, centerY, width, height, 
     return {
         fields: frameFields,
         constraints: frameConstraints,
+        skeleton: frameSkeleton,
         width: frameWidth,
         height: frameHeight,
         minCol,
@@ -562,7 +1235,9 @@ function sampleField(index, x, y, seed) {
         culture: weightedVote(weighted, 'culture'),
         riverInfluence: clamp01(riverInfluence),
         riverPathInfluence: clamp01(riverPathInfluence),
+        riverId: nearestRiver?.id ?? null,
         routeInfluence: route ? clamp01(1 - route.distance / 1.35) : 0,
+        routeId: route?.id ?? null,
         nearestCell: weighted[0]?.cell?.id ?? 0,
         noise
     };
@@ -1031,40 +1706,19 @@ function getRegionalPalette(tileId, field, constraint = null) {
 }
 
 function createElevationRows(fields, tileIds, width, height, seed, constraintField, bakedCellIds = new Set()) {
-    const rows = Array.from({ length: height }, () => Array(width).fill(0));
-    for (let row = 0; row < height; row++) {
-        for (let col = 0; col < width; col++) {
-            const id = row * width + col;
-            const spec = GEOGRAPHIC_TILE_BY_ID.get(tileIds[id]);
-            if (spec?.tags.has('water')) continue;
-            // Steeper macro scaling (was /14): when the FMG height field allows it, terrain climbs
-            // to high multi-tier terraces so compact views gain verticality — e.g. the east side of
-            // a view sitting several walkable tiers above the west.
-            const macro = Math.max(0, Math.floor(((fields[id].height || 20) - 19) / 11));
-            const variance = constraintField?.cells?.[id]?.terrainVariance ?? 1;
-            const globalCol = Number.isFinite(fields[id].globalCol)
-                ? fields[id].globalCol
-                : Math.round(Number(fields[id].globalX || 0) / WORLD_SAMPLE_SCALE);
-            const globalRow = Number.isFinite(fields[id].globalRow)
-                ? fields[id].globalRow
-                : Math.round(Number(fields[id].globalY || 0) / WORLD_SAMPLE_SCALE);
-            const detail = valueNoise(globalCol, globalRow, 5.5, seed + 1709) * 1.25 * variance;
-            rows[row][col] = clampInteger(Math.round(macro + detail), 0, 6);
-        }
-    }
-    smoothTerraceClusters(rows, tileIds, width, height);
-    for (let pass = 0; pass < 4; pass++) {
-        for (let row = 0; row < height; row++) {
-            for (let col = 0; col < width; col++) {
-                if (isWaterSymbol(GEOGRAPHIC_TILE_BY_ID.get(tileIds[row * width + col])?.symbol)) continue;
-                const neighbors = CARDINALS
-                    .map(({ x, y }) => rows[row + y]?.[col + x])
-                    .filter(Number.isFinite);
-                const minimum = neighbors.length ? Math.min(...neighbors) : rows[row][col];
-                if (rows[row][col] > minimum + 1) rows[row][col] = minimum + 1;
-            }
-        }
-    }
+    // Elevation is collapsed on a world-anchored macro lattice instead of adding independent
+    // noise to every cell. Primary 5x5 modules create Minecraft-like plateaus and broad ramps;
+    // compact 3x3 modules are reserved for connector aprons where a semantic path crosses a tier.
+    const macroPlan = createTerrainMacroElevationPlan({
+        fields,
+        tileIds,
+        width,
+        height,
+        seed,
+        constraintField,
+        bakedCellIds
+    });
+    const rows = macroPlan.rows;
     // Baked settlement-core cells keep their baked elevation exactly (applied after smoothing so
     // live smoothing around the core cannot drift the welded city terrain).
     for (let row = 0; row < height; row++) {
@@ -1074,7 +1728,554 @@ function createElevationRows(fields, tileIds, width, height, seed, constraintFie
             if (baked && Number.isFinite(baked.elevation)) rows[row][col] = baked.elevation;
         }
     }
+    // FMG elevation tiers shape each macro block's relief profile, but are intentionally soft at
+    // cell level. Adjacent vector samples can jump several source tiers; stamping them literally
+    // creates unclimbable street cliffs. The JSON therefore constrains the 5x5 collapse without
+    // overriding the selected module's one-step edge contract.
+    const protectedElevationIds = new Set(bakedCellIds);
+    relaxElevationRamps(rows, tileIds, width, height, protectedElevationIds);
+    const protectedMacroElevationIds = new Set([
+        ...macroPlan.hardAuthoritativeCells,
+        ...protectedElevationIds
+    ]);
+    const repairedMacroSpikes = repairTerrainMacroSpikes(
+        rows,
+        tileIds,
+        width,
+        height,
+        protectedMacroElevationIds
+    );
+    const remainingGeneratedSpikes = findIsolatedElevationSpikes(rows).filter((cell) =>
+        !protectedMacroElevationIds.has(cell.row * width + cell.col));
+    Object.defineProperty(rows, 'macroDiagnostics', {
+        value: Object.freeze({
+            ...macroPlan.diagnostics,
+            repairedCells: macroPlan.diagnostics.repairedCells + repairedMacroSpikes,
+            isolatedElevationCells: remainingGeneratedSpikes.length
+        }),
+        enumerable: false
+    });
     return rows;
+}
+
+function createTerrainMacroElevationPlan({
+    fields,
+    tileIds,
+    width,
+    height,
+    seed,
+    constraintField,
+    bakedCellIds
+}) {
+    const rows = Array.from({ length: height }, () => Array(width).fill(0));
+    const globalCols = fields.map((field) => Number(field?.globalCol)).filter(Number.isFinite);
+    const globalRows = fields.map((field) => Number(field?.globalRow)).filter(Number.isFinite);
+    const minimumGlobalCol = globalCols.length ? Math.min(...globalCols) : 0;
+    const maximumGlobalCol = globalCols.length ? Math.max(...globalCols) : width - 1;
+    const minimumGlobalRow = globalRows.length ? Math.min(...globalRows) : 0;
+    const maximumGlobalRow = globalRows.length ? Math.max(...globalRows) : height - 1;
+    const firstMacroCol = Math.floor(minimumGlobalCol / TERRAIN_PRIMARY_MACRO_SIZE);
+    const lastMacroCol = Math.floor(maximumGlobalCol / TERRAIN_PRIMARY_MACRO_SIZE);
+    const firstMacroRow = Math.floor(minimumGlobalRow / TERRAIN_PRIMARY_MACRO_SIZE);
+    const lastMacroRow = Math.floor(maximumGlobalRow / TERRAIN_PRIMARY_MACRO_SIZE);
+    const macroWidth = lastMacroCol - firstMacroCol + 1;
+    const macroHeight = lastMacroRow - firstMacroRow + 1;
+    const blocks = [];
+
+    for (let macroRow = firstMacroRow; macroRow <= lastMacroRow; macroRow++) {
+        for (let macroCol = firstMacroCol; macroCol <= lastMacroCol; macroCol++) {
+            const block = describeTerrainMacroBlock({
+                macroCol,
+                macroRow,
+                minimumGlobalCol,
+                minimumGlobalRow,
+                fields,
+                tileIds,
+                width,
+                height,
+                constraintField
+            });
+            blocks.push(block);
+        }
+    }
+    stabilizeTerrainMacroBases(blocks);
+
+    const hardAuthoritativeCells = new Set();
+    for (let id = 0; id < width * height; id++) {
+        const spec = GEOGRAPHIC_TILE_BY_ID.get(tileIds[id]);
+        if (spec?.tags.has('water') || bakedCellIds.has(id)) {
+            hardAuthoritativeCells.add(id);
+        }
+    }
+
+    const moduleHistogram = {};
+    const familyHistogram = {};
+    let appliedCells = 0;
+    let protectedCells = 0;
+    let repairedCells = 0;
+    const assignments = [];
+    const macroCollapse = collapseTerrainMacroTileGrid({
+        seed: `${seed}:terrain-macro-grid`,
+        minimumElevation: 0,
+        maximumElevation: 6,
+        allowFallback: true,
+        nodes: blocks.map((block) => {
+            const baseElevationCandidates = block.insideWallRatio > 0 || block.baseElevation >= 3
+                ? [...new Set([-1, 0, 1].map((offset) =>
+                    clampInteger(block.baseElevation + offset, 0, 6)))]
+                : [0, 1, 2, 3, 4, 5, 6];
+            return {
+                macroCol: block.macroCol,
+                macroRow: block.macroRow,
+                role: 'primary',
+                baseElevation: block.baseElevation,
+                fixedBase: false,
+                // All legal bases stay in the domain. Weighting strongly prefers the FMG target,
+                // while the wider domain lets compatibility propagation construct a ramp across
+                // several 5x5 modules instead of falling back to a flat disconnected component.
+                baseElevationCandidates,
+                reliefProfile: block.reliefProfile,
+                allowedFamilies: block.allowedFamilies
+            };
+        })
+    });
+    for (const block of blocks) {
+        const resolvedAssignment = macroCollapse.assignment.get(`${block.macroCol},${block.macroRow}`);
+        const patch = resolvedAssignment?.patch || createDeterministicTerrainMacroPatch({
+            seed: `${seed}:terrain-macro-flat:${block.macroCol}:${block.macroRow}`,
+            reliefProfile: { ...block.reliefProfile, reliefScore: 0, targetTierSpan: 0 },
+            role: 'primary',
+            baseElevation: block.baseElevation,
+            minimumElevation: 0,
+            maximumElevation: 6,
+            allowedFamilies: ['uniform']
+        });
+        if (!patch) continue;
+        const result = applyTerrainMacroTileToElevationRows({
+            elevationRows: rows,
+            patch,
+            originCol: block.originCol,
+            originRow: block.originRow,
+            hardAuthoritativeCells,
+            repairIsolatedSpikes: false
+        });
+        appliedCells += result.appliedCells;
+        protectedCells += result.preservedCells;
+        repairedCells += result.repairedSpikes;
+        moduleHistogram[patch.tileId] = (moduleHistogram[patch.tileId] || 0) + 1;
+        familyHistogram[patch.family] = (familyHistogram[patch.family] || 0) + 1;
+        assignments.push({
+            macroCol: block.macroCol,
+            macroRow: block.macroRow,
+            tileId: patch.tileId,
+            family: patch.family,
+            baseElevation: patch.baseElevation,
+            reliefScore: round(block.reliefProfile.reliefScore, 4),
+            insideWall: block.insideWallRatio > 0
+        });
+    }
+
+    const transitions = applyTerrainMacroTransitions({
+        rows,
+        fields,
+        width,
+        height,
+        seed,
+        constraintField,
+        hardAuthoritativeCells
+    });
+    appliedCells += transitions.appliedCells;
+    protectedCells += transitions.protectedCells;
+    repairedCells += transitions.repairedCells;
+
+    const assignmentHash = macroCollapse.diagnostics.assignmentHash || hashWaveSeed(assignments
+        .map((entry) => `${entry.macroCol},${entry.macroRow}:${entry.tileId}@${entry.baseElevation}`)
+        .join('|'))
+        .toString(16)
+        .padStart(8, '0');
+    const assignedBaseElevations = assignments.map((entry) => entry.baseElevation);
+    const targetBaseElevations = blocks.map((block) => block.baseElevation);
+    const insideWallBaseElevations = assignments
+        .filter((entry) => entry.insideWall)
+        .map((entry) => entry.baseElevation);
+    return {
+        rows,
+        hardAuthoritativeCells,
+        diagnostics: {
+            libraryVersion: TERRAIN_MACRO_TILE_LIBRARY_VERSION,
+            primarySize: TERRAIN_PRIMARY_MACRO_SIZE,
+            transitionSize: TERRAIN_TRANSITION_MACRO_SIZE,
+            globalAnchor: true,
+            macroGridWidth: macroWidth,
+            macroGridHeight: macroHeight,
+            primaryModules: assignments.length,
+            transitionModules: transitions.count,
+            semanticTransitionModules: transitions.semanticCount,
+            seamTransitionModules: transitions.seamCount,
+            appliedCells,
+            protectedCells,
+            repairedCells,
+            assignmentHash,
+            solved: macroCollapse.solved,
+            incompatibleEdges: macroCollapse.diagnostics.incompatibleEdgeCount,
+            compatibilityChecks: macroCollapse.diagnostics.compatibilityChecks,
+            contradictions: macroCollapse.diagnostics.contradictions,
+            fallbacks: macroCollapse.diagnostics.fallbackCount,
+            fallbackAssignments: macroCollapse.diagnostics.fallbackAssignments,
+            baseElevationMinimum: assignedBaseElevations.length ? Math.min(...assignedBaseElevations) : 0,
+            baseElevationMaximum: assignedBaseElevations.length ? Math.max(...assignedBaseElevations) : 0,
+            targetBaseElevationMinimum: targetBaseElevations.length ? Math.min(...targetBaseElevations) : 0,
+            targetBaseElevationMaximum: targetBaseElevations.length ? Math.max(...targetBaseElevations) : 0,
+            insideWallBaseElevationMinimum: insideWallBaseElevations.length
+                ? Math.min(...insideWallBaseElevations)
+                : null,
+            insideWallBaseElevationMaximum: insideWallBaseElevations.length
+                ? Math.max(...insideWallBaseElevations)
+                : null,
+            moduleHistogram: Object.freeze(moduleHistogram),
+            familyHistogram: Object.freeze(familyHistogram)
+        }
+    };
+}
+
+function repairTerrainMacroSpikes(rows, tileIds, width, height, protectedIds) {
+    let repaired = 0;
+    for (let pass = 0; pass < 8; pass++) {
+        const spikes = findIsolatedElevationSpikes(rows).filter((cell) => {
+            const id = cell.row * width + cell.col;
+            return !protectedIds.has(id) && !GEOGRAPHIC_TILE_BY_ID.get(tileIds[id])?.tags.has('water');
+        });
+        if (!spikes.length) break;
+        for (const spike of spikes) {
+            const neighbors = CARDINALS
+                .map(({ x, y }) => Number(rows[spike.row + y]?.[spike.col + x]))
+                .filter(Number.isFinite);
+            if (neighbors.length < 2) continue;
+            rows[spike.row][spike.col] = spike.kind === 'peak'
+                ? Math.max(...neighbors)
+                : Math.min(...neighbors);
+            repaired++;
+        }
+    }
+    return repaired;
+}
+
+function describeTerrainMacroBlock({
+    macroCol,
+    macroRow,
+    minimumGlobalCol,
+    minimumGlobalRow,
+    fields,
+    tileIds,
+    width,
+    height,
+    constraintField
+}) {
+    const globalOriginCol = macroCol * TERRAIN_PRIMARY_MACRO_SIZE;
+    const globalOriginRow = macroRow * TERRAIN_PRIMARY_MACRO_SIZE;
+    const originCol = globalOriginCol - minimumGlobalCol;
+    const originRow = globalOriginRow - minimumGlobalRow;
+    const samples = [];
+    for (let localRow = 0; localRow < TERRAIN_PRIMARY_MACRO_SIZE; localRow++) {
+        for (let localCol = 0; localCol < TERRAIN_PRIMARY_MACRO_SIZE; localCol++) {
+            const col = originCol + localCol;
+            const row = originRow + localRow;
+            if (col < 0 || row < 0 || col >= width || row >= height) continue;
+            const id = row * width + col;
+            const field = fields[id] || {};
+            const constraint = constraintField?.cells?.[id] || {};
+            samples.push({
+                localCol,
+                localRow,
+                field,
+                constraint,
+                water: GEOGRAPHIC_TILE_BY_ID.get(tileIds[id])?.tags.has('water') === true
+            });
+        }
+    }
+    const landSamples = samples.filter((sample) => !sample.water);
+    const usefulSamples = landSamples.length ? landSamples : samples;
+    const fixedTiers = usefulSamples
+        .map((sample) => Number(sample.constraint.fixedElevation))
+        .filter(Number.isFinite);
+    const authoredBaseTiers = usefulSamples
+        .map((sample) => Number(sample.constraint.reliefBaseElevationTier))
+        .filter(Number.isFinite);
+    const sampledBaseTiers = usefulSamples.map((sample) =>
+        clampInteger(Math.floor(((Number(sample.field.height) || 20) - 14) / 10), 0, 6));
+    const baseSignals = [
+        medianNumber(sampledBaseTiers, 0),
+        authoredBaseTiers.length ? medianNumber(authoredBaseTiers, 0) : null,
+        fixedTiers.length ? medianNumber(fixedTiers, 0) : null
+    ].filter(Number.isFinite);
+    const targetBaseElevation = clampInteger(Math.max(...baseSignals, 0), 0, 6);
+    const reliefScores = usefulSamples
+        .map((sample) => Number(sample.constraint.reliefScore))
+        .filter(Number.isFinite);
+    const heights = usefulSamples.map((sample) => Number(sample.field.height) || 20);
+    const heightSpan = heights.length ? Math.max(...heights) - Math.min(...heights) : 0;
+    const reliefScore = clamp01(reliefScores.length
+        ? Math.max(...reliefScores)
+        : 0.12 + heightSpan / 34);
+    const authoredSpans = usefulSamples
+        .map((sample) => Number(sample.constraint.reliefTargetTierSpan))
+        .filter(Number.isFinite);
+    const targetTierSpan = clampInteger(
+        authoredSpans.length ? Math.max(...authoredSpans) : Math.round(reliefScore * 4),
+        0,
+        6
+    );
+    const profileSamples = usefulSamples.filter((sample) => sample.constraint.reliefGradientAxis);
+    const gradient = profileSamples.length
+        ? {
+            axis: profileSamples[0].constraint.reliefGradientAxis,
+            sign: Number(profileSamples[0].constraint.reliefGradientSign) < 0 ? -1 : 1
+        }
+        : deriveTerrainMacroGradient(usefulSamples);
+    const insideWallRatio = usefulSamples.length
+        ? usefulSamples.filter((sample) => sample.constraint.insideWall).length / usefulSamples.length
+        : 0;
+    const connectorRatio = usefulSamples.length
+        ? usefulSamples.filter((sample) => isMacroConnectorConstraint(sample.constraint)).length / usefulSamples.length
+        : 0;
+    const waterRatio = samples.length
+        ? samples.filter((sample) => sample.water || sample.constraint.hardWater).length / samples.length
+        : 0;
+    const allowedFamilies = insideWallRatio > 0 || connectorRatio >= 0.12
+        ? ['uniform']
+        : waterRatio >= 0.28
+            ? ['uniform', 'terraced', 'ramp']
+            : reliefScore >= 0.68
+                ? ['uniform', 'terraced', 'ramp', 'stair']
+                : ['uniform', 'terraced', 'ramp'];
+    return {
+        macroCol,
+        macroRow,
+        originCol,
+        originRow,
+        targetBaseElevation,
+        baseElevation: targetBaseElevation,
+        fixedBase: fixedTiers.length > 0,
+        insideWallRatio,
+        allowedFamilies,
+        reliefProfile: {
+            formulaVersion: FMG_BURG_RELIEF_FORMULA_VERSION,
+            reliefScore,
+            targetTierSpan,
+            baseElevationTier: targetBaseElevation,
+            gradientAxis: gradient.axis,
+            gradientSign: gradient.sign
+        }
+    };
+}
+
+function deriveTerrainMacroGradient(samples) {
+    const west = samples.filter((sample) => sample.localCol <= 1);
+    const east = samples.filter((sample) => sample.localCol >= 3);
+    const north = samples.filter((sample) => sample.localRow <= 1);
+    const south = samples.filter((sample) => sample.localRow >= 3);
+    const eastWestDelta = meanSampleHeight(east) - meanSampleHeight(west);
+    const northSouthDelta = meanSampleHeight(south) - meanSampleHeight(north);
+    return Math.abs(eastWestDelta) >= Math.abs(northSouthDelta)
+        ? { axis: 'east-west', sign: eastWestDelta < 0 ? -1 : 1 }
+        : { axis: 'north-south', sign: northSouthDelta < 0 ? -1 : 1 };
+}
+
+function meanSampleHeight(samples) {
+    if (!samples.length) return 0;
+    return samples.reduce((sum, sample) => sum + (Number(sample.field.height) || 20), 0) / samples.length;
+}
+
+function stabilizeTerrainMacroBases(blocks) {
+    // Use one synchronous, bounded neighborhood sample. Repeated frame-local relaxation let a
+    // viewport edge influence blocks many modules away and caused overlapping clients to disagree
+    // at 5x5/8x8 frame boundaries. Actual neighbor compatibility is now solved by the macro WFC.
+    const rawBaseByKey = new Map(blocks.map((block) => [
+        `${block.macroCol},${block.macroRow}`,
+        block.targetBaseElevation
+    ]));
+    const updates = new Map();
+    for (const block of blocks) {
+        const neighborhood = [
+            block.targetBaseElevation,
+            ...CARDINALS.map(({ x, y }) =>
+                rawBaseByKey.get(`${block.macroCol + x},${block.macroRow + y}`))
+                .filter(Number.isFinite)
+        ];
+        updates.set(block, clampInteger(medianNumber(neighborhood, block.targetBaseElevation), 0, 6));
+    }
+    for (const [block, value] of updates) {
+        block.baseElevation = value;
+        block.reliefProfile.baseElevationTier = block.baseElevation;
+    }
+}
+
+function applyTerrainMacroTransitions({
+    rows,
+    fields,
+    width,
+    height,
+    seed,
+    constraintField,
+    hardAuthoritativeCells
+}) {
+    const candidates = [];
+    const seen = new Set();
+    const addCandidate = (col, row, kind) => {
+        if (col <= 0 || row <= 0 || col >= width - 1 || row >= height - 1) return;
+        const field = fields[row * width + col];
+        const globalCol = Number.isFinite(field?.globalCol) ? field.globalCol : col;
+        const globalRow = Number.isFinite(field?.globalRow) ? field.globalRow : row;
+        const bucket = `${Math.floor(globalCol / TERRAIN_TRANSITION_MACRO_SIZE)},` +
+            `${Math.floor(globalRow / TERRAIN_TRANSITION_MACRO_SIZE)}`;
+        if (seen.has(bucket)) return;
+        seen.add(bucket);
+        candidates.push({ col, row, kind });
+    };
+    for (let row = 0; row < height; row++) {
+        for (let col = 0; col < width; col++) {
+            const id = row * width + col;
+            const constraint = constraintField?.cells?.[id];
+            if (isMacroConnectorConstraint(constraint)) addCandidate(col, row, 'semantic');
+            const globalCol = fields[id]?.globalCol;
+            const globalRow = fields[id]?.globalRow;
+            if (Number.isFinite(globalCol) && globalCol % TERRAIN_PRIMARY_MACRO_SIZE === 0 && col > 0 &&
+                Math.abs(rows[row][col] - rows[row][col - 1]) > 1) addCandidate(col, row, 'seam');
+            if (Number.isFinite(globalRow) && globalRow % TERRAIN_PRIMARY_MACRO_SIZE === 0 && row > 0 &&
+                Math.abs(rows[row][col] - rows[row - 1][col]) > 1) addCandidate(col, row, 'seam');
+        }
+    }
+
+    let appliedCells = 0;
+    let protectedCells = 0;
+    let repairedCells = 0;
+    let semanticCount = 0;
+    let seamCount = 0;
+    for (const candidate of candidates) {
+        const local = [];
+        for (let row = candidate.row - 1; row <= candidate.row + 1; row++) {
+            for (let col = candidate.col - 1; col <= candidate.col + 1; col++) {
+                if (Number.isFinite(rows[row]?.[col])) local.push({ col, row, elevation: rows[row][col] });
+            }
+        }
+        if (!local.length) continue;
+        const minimum = Math.min(...local.map((entry) => entry.elevation));
+        const maximum = Math.max(...local.map((entry) => entry.elevation));
+        if (maximum - minimum <= 1) continue;
+        const gradient = deriveElevationGradient(local, candidate.col, candidate.row);
+        const patch = createDeterministicTerrainMacroPatch({
+            seed: `${seed}:terrain-transition:${candidate.kind}:${fields[candidate.row * width + candidate.col]?.globalCol}:` +
+                `${fields[candidate.row * width + candidate.col]?.globalRow}`,
+            reliefProfile: {
+                formulaVersion: FMG_BURG_RELIEF_FORMULA_VERSION,
+                reliefScore: clamp01((maximum - minimum) / 3),
+                targetTierSpan: clampInteger(maximum - minimum, 0, 2),
+                baseElevationTier: minimum,
+                gradientAxis: gradient.axis,
+                gradientSign: gradient.sign
+            },
+            role: 'transition',
+            baseElevation: minimum,
+            minimumElevation: 0,
+            maximumElevation: 6,
+            allowedFamilies: maximum === minimum
+                ? ['uniform']
+                : ['terraced', 'ramp', 'stair', 'uniform']
+        });
+        if (!patch) continue;
+        const result = applyTerrainMacroTileToElevationRows({
+            elevationRows: rows,
+            patch,
+            originCol: candidate.col - 1,
+            originRow: candidate.row - 1,
+            hardAuthoritativeCells,
+            repairIsolatedSpikes: true
+        });
+        appliedCells += result.appliedCells;
+        protectedCells += result.preservedCells;
+        repairedCells += result.repairedSpikes;
+        if (candidate.kind === 'semantic') semanticCount++;
+        else seamCount++;
+    }
+    return {
+        count: semanticCount + seamCount,
+        semanticCount,
+        seamCount,
+        appliedCells,
+        protectedCells,
+        repairedCells
+    };
+}
+
+function deriveElevationGradient(samples, centerCol, centerRow) {
+    const west = samples.filter((sample) => sample.col < centerCol).map((sample) => sample.elevation);
+    const east = samples.filter((sample) => sample.col > centerCol).map((sample) => sample.elevation);
+    const north = samples.filter((sample) => sample.row < centerRow).map((sample) => sample.elevation);
+    const south = samples.filter((sample) => sample.row > centerRow).map((sample) => sample.elevation);
+    const eastWestDelta = medianNumber(east, 0) - medianNumber(west, 0);
+    const northSouthDelta = medianNumber(south, 0) - medianNumber(north, 0);
+    return Math.abs(eastWestDelta) >= Math.abs(northSouthDelta)
+        ? { axis: 'east-west', sign: eastWestDelta < 0 ? -1 : 1 }
+        : { axis: 'north-south', sign: northSouthDelta < 0 ? -1 : 1 };
+}
+
+function isMacroConnectorConstraint(constraint) {
+    if (!constraint) return false;
+    const kind = constraint.skeletonKind || constraint.kind;
+    return ['road', 'gate', 'bridge', 'ford', 'dock', 'castle-plot', 'waterfall'].includes(kind);
+}
+
+function medianNumber(values, fallback = 0) {
+    const numeric = values.map(Number).filter(Number.isFinite).sort((left, right) => left - right);
+    if (!numeric.length) return fallback;
+    const middle = Math.floor(numeric.length / 2);
+    return numeric.length % 2 === 0 ? (numeric[middle - 1] + numeric[middle]) / 2 : numeric[middle];
+}
+
+function relaxElevationRamps(rows, tileIds, width, height, protectedIds = new Set()) {
+    // Six tiers is the full elevation range, so twelve alternating passes are enough for any
+    // compatible fixed source ridge to propagate through its required ramp apron.
+    for (let pass = 0; pass < 12; pass++) {
+        let changes = 0;
+        const rowStart = pass % 2 === 0 ? 0 : height - 1;
+        const rowEnd = pass % 2 === 0 ? height : -1;
+        const rowStep = pass % 2 === 0 ? 1 : -1;
+        const colStart = pass % 2 === 0 ? 0 : width - 1;
+        const colEnd = pass % 2 === 0 ? width : -1;
+        const colStep = pass % 2 === 0 ? 1 : -1;
+        for (let row = rowStart; row !== rowEnd; row += rowStep) {
+            for (let col = colStart; col !== colEnd; col += colStep) {
+                const id = row * width + col;
+                const spec = GEOGRAPHIC_TILE_BY_ID.get(tileIds[id]);
+                if (spec?.tags.has('water')) continue;
+                for (const [dx, dy] of [[1, 0], [0, 1], [1, 1], [-1, 1]]) {
+                    const neighborCol = col + dx;
+                    const neighborRow = row + dy;
+                    if (neighborCol >= width || neighborRow >= height) continue;
+                    const neighborId = neighborRow * width + neighborCol;
+                    const neighborSpec = GEOGRAPHIC_TILE_BY_ID.get(tileIds[neighborId]);
+                    if (neighborSpec?.tags.has('water')) continue;
+                    const value = Number(rows[row]?.[col]) || 0;
+                    const neighborValue = Number(rows[neighborRow]?.[neighborCol]) || 0;
+                    if (Math.abs(value - neighborValue) <= 1) continue;
+                    const protectedValue = protectedIds.has(id);
+                    const protectedNeighbor = protectedIds.has(neighborId);
+                    if (protectedValue && protectedNeighbor) continue;
+                    if (protectedValue) {
+                        rows[neighborRow][neighborCol] = value + Math.sign(neighborValue - value);
+                    } else if (protectedNeighbor) {
+                        rows[row][col] = neighborValue + Math.sign(value - neighborValue);
+                    } else if (value > neighborValue) {
+                        rows[row][col] = neighborValue + 1;
+                    } else {
+                        rows[neighborRow][neighborCol] = value + 1;
+                    }
+                    changes++;
+                }
+            }
+        }
+        if (changes === 0) break;
+    }
 }
 
 // Lookup into the partial baked chunk registry by global sample-grid coordinates. Baked cores are
@@ -1118,16 +2319,666 @@ function overlayGeographicWaterAndRoutes(rows, paletteRows, elevationRows, field
             if (field.riverPathInfluence >= 0.35 && field.land >= 0.42) {
                 mutable[row][col] = field.riverPathInfluence > 0.72 ? '~' : 'B';
                 paletteRows[row][col] = 'coast';
-                elevationRows[row][col] = 0;
+                // Rivers inherit the macro terrain tier and only cut a shallow channel. Dropping
+                // every geographic river cell to sea level produced vertical trenches and broke
+                // bridges whenever the FMG path crossed an elevated module.
+                elevationRows[row][col] = deriveRiverChannelElevation(elevationRows, col, row);
             } else if (field.routeInfluence >= 0.63 && isLandSymbol(mutable[row][col])) {
                 mutable[row][col] = 'R';
                 paletteRows[row][col] = 'path';
-                elevationRows[row][col] = Math.min(elevationRows[row][col], 3);
+                // Roads follow the selected macro surface; 3x3 connector aprons and the road
+                // smoother handle tier changes without an arbitrary global height cap.
+                elevationRows[row][col] = clampInteger(elevationRows[row][col], 0, 6);
             }
         }
     }
+    repairFmgRiverOverlayContinuity({
+        mutable,
+        paletteRows,
+        elevationRows,
+        fields,
+        width,
+        height,
+        constraintField
+    });
     smoothRoadElevations(mutable, elevationRows);
     for (let row = 0; row < height; row++) rows[row] = mutable[row].join('');
+}
+
+function repairCroppedFmgRiverContinuity({
+    rows,
+    paletteRows,
+    elevationRows,
+    fields,
+    width,
+    height,
+    constraintField,
+    buildings = []
+}) {
+    const mutable = rows.map((row) => typeof row === 'string' ? row.split('') : [...row]);
+    const blockedCells = new Set();
+    const offsetX = Math.floor(width / 2);
+    const offsetY = Math.floor(height / 2);
+    for (const building of buildings || []) {
+        for (const cell of building.footprintCells || []) {
+            blockedCells.add(elevationCellKey(
+                Number(building.x) + offsetX + cell.x,
+                Number(building.y) + offsetY + cell.y
+            ));
+        }
+    }
+    repairFmgRiverOverlayContinuity({
+        mutable,
+        paletteRows,
+        elevationRows,
+        fields,
+        width,
+        height,
+        constraintField,
+        blockedCells
+    });
+    for (let row = 0; row < height; row++) rows[row] = mutable[row].join('');
+}
+
+function repairFmgRiverOverlayContinuity({
+    mutable,
+    paletteRows,
+    elevationRows,
+    fields,
+    width,
+    height,
+    constraintField,
+    blockedCells = new Set()
+}) {
+    const waterSymbols = new Set(['W', '~', 'B']);
+    const riverCellsById = new Map();
+    for (let row = 0; row < height; row++) {
+        for (let col = 0; col < width; col++) {
+            const field = fields[row * width + col];
+            if (!waterSymbols.has(mutable[row]?.[col]) || field?.riverId === null ||
+                field?.riverId === undefined || Number(field.riverPathInfluence) < 0.35) continue;
+            const riverId = String(field.riverId);
+            if (!riverCellsById.has(riverId)) riverCellsById.set(riverId, new Map());
+            riverCellsById.get(riverId).set(elevationCellKey(col, row), { col, row });
+        }
+    }
+
+    for (const [riverId, riverCells] of riverCellsById) {
+        let components = splitLogicalCellComponents(riverCells);
+        for (let repair = 0; repair < 8 && components.length > 1; repair++) {
+            const pair = findClosestLogicalComponentPair(components);
+            if (!pair || pair.distance > 12) break;
+            const touchesBoundary = [pair.leftComponentIndex, pair.rightComponentIndex].some((index) =>
+                components[index]?.some((cell) => cell.col <= 2 || cell.row <= 2 ||
+                    cell.col >= width - 3 || cell.row >= height - 3));
+            if (touchesBoundary) break;
+            const path = findRiverCarvePath({
+                start: pair.left,
+                end: pair.right,
+                riverId,
+                mutable,
+                fields,
+                width,
+                height,
+                constraintField,
+                blockedCells,
+                maximumDistance: pair.distance + 8
+            });
+            if (!path) break;
+            for (const cell of path) {
+                const id = cell.row * width + cell.col;
+                const constraint = constraintField?.cells?.[id];
+                if (['bridge', 'ford', 'dock', 'waterfall'].includes(
+                    constraint?.skeletonKind || constraint?.kind
+                )) continue;
+                const numericRiverId = Number(riverId);
+                fields[id].riverId = Number.isFinite(numericRiverId) ? numericRiverId : riverId;
+                fields[id].riverPathInfluence = Math.max(0.36, Number(fields[id].riverPathInfluence) || 0);
+                fields[id].riverInfluence = Math.max(
+                    fields[id].riverPathInfluence,
+                    Number(fields[id].riverInfluence) || 0
+                );
+                mutable[cell.row][cell.col] = Number(fields[id]?.riverPathInfluence) > 0.72 ? '~' : 'B';
+                paletteRows[cell.row][cell.col] = 'coast';
+                elevationRows[cell.row][cell.col] = deriveRiverChannelElevation(
+                    elevationRows,
+                    cell.col,
+                    cell.row
+                );
+                riverCells.set(elevationCellKey(cell.col, cell.row), { col: cell.col, row: cell.row });
+            }
+            components = splitLogicalCellComponents(riverCells);
+        }
+    }
+}
+
+function findClosestLogicalComponentPair(components) {
+    let closest = null;
+    for (let leftIndex = 0; leftIndex < components.length; leftIndex++) {
+        for (let rightIndex = leftIndex + 1; rightIndex < components.length; rightIndex++) {
+            for (const left of components[leftIndex]) {
+                for (const right of components[rightIndex]) {
+                    const distance = manhattanGridDistance(left, right);
+                    if (!closest || distance < closest.distance || (
+                        distance === closest.distance && (
+                            left.row < closest.left.row ||
+                            (left.row === closest.left.row && left.col < closest.left.col)
+                        )
+                    )) closest = {
+                        left,
+                        right,
+                        distance,
+                        leftComponentIndex: leftIndex,
+                        rightComponentIndex: rightIndex
+                    };
+                }
+            }
+        }
+    }
+    return closest;
+}
+
+function findRiverCarvePath({
+    start,
+    end,
+    riverId,
+    mutable,
+    fields,
+    width,
+    height,
+    constraintField,
+    blockedCells,
+    maximumDistance
+}) {
+    const queue = [start];
+    const startKey = elevationCellKey(start.col, start.row);
+    const endKey = elevationCellKey(end.col, end.row);
+    const previous = new Map([[startKey, null]]);
+    const distance = new Map([[startKey, 0]]);
+    for (let index = 0; index < queue.length; index++) {
+        const current = queue[index];
+        const currentKey = elevationCellKey(current.col, current.row);
+        if (currentKey === endKey) break;
+        const nextDistance = distance.get(currentKey) + 1;
+        if (nextDistance > maximumDistance) continue;
+        const candidates = CARDINALS
+            .map(({ x, y }) => ({ col: current.col + x, row: current.row + y }))
+            .filter((cell) => cell.col >= 0 && cell.row >= 0 && cell.col < width && cell.row < height)
+            .sort((left, right) => {
+                const leftField = fields[left.row * width + left.col];
+                const rightField = fields[right.row * width + right.col];
+                const leftAffinity = String(leftField?.riverId) === riverId ? 2 :
+                    Number(leftField?.riverPathInfluence) >= 0.18 ? 1 : 0;
+                const rightAffinity = String(rightField?.riverId) === riverId ? 2 :
+                    Number(rightField?.riverPathInfluence) >= 0.18 ? 1 : 0;
+                return rightAffinity - leftAffinity ||
+                    manhattanGridDistance(left, end) - manhattanGridDistance(right, end) ||
+                    left.row - right.row || left.col - right.col;
+            });
+        for (const next of candidates) {
+            const key = elevationCellKey(next.col, next.row);
+            if (previous.has(key) || blockedCells?.has(key)) continue;
+            const id = next.row * width + next.col;
+            const constraint = constraintField?.cells?.[id];
+            const kind = constraint?.skeletonKind || constraint?.kind;
+            if (['wall', 'castle-plot'].includes(kind) || mutable[next.row]?.[next.col] === 'T') continue;
+            previous.set(key, currentKey);
+            distance.set(key, nextDistance);
+            queue.push(next);
+        }
+    }
+    if (!previous.has(endKey)) return null;
+    const path = [];
+    let cursor = endKey;
+    while (cursor) {
+        const [col, row] = cursor.split(',').map(Number);
+        path.push({ col, row });
+        cursor = previous.get(cursor);
+    }
+    return path.reverse();
+}
+
+function deriveRiverChannelElevation(elevationRows, col, row) {
+    const current = clampInteger(elevationRows[row]?.[col], 0, 6);
+    const neighbors = CARDINALS
+        .map(({ x, y }) => Number(elevationRows[row + y]?.[col + x]))
+        .filter(Number.isFinite);
+    if (!neighbors.length) return current;
+    return clampInteger(Math.min(current, medianNumber(neighbors, current)), 0, 6);
+}
+
+function enforceRequestedVectorElevations(rows, elevationRows, skeleton, buildings = []) {
+    const protectedCells = new Set();
+    const sourceElevationCells = [...(skeleton?.cells?.values?.() || [])].filter((cell) =>
+        (cell.source === 'town-vector' || cell.elevationSource === 'town-vector') &&
+        Number.isFinite(Number(cell.elevationTier)) &&
+        elevationRows[cell.row]?.[cell.col] !== undefined);
+    // The source tier is a relief target, not a literal per-cell override. Use the already
+    // collapsed macro surface at vector cells when fitting foundations so a building inherits
+    // the playable street rather than resurrecting a cliff from adjacent raw FMG samples.
+    const sourceElevationByKey = new Map(sourceElevationCells.map((cell) => [
+        elevationCellKey(cell.col, cell.row),
+        clampInteger(elevationRows[cell.row]?.[cell.col], 0, 6)
+    ]));
+    const offsetX = Math.floor((rows[0]?.length || 0) / 2);
+    const offsetY = Math.floor(rows.length / 2);
+    for (const building of buildings || []) {
+        const footprintCells = (building.footprintCells || []).map((cell) => ({
+            col: Number(building.x) + offsetX + cell.x,
+            row: Number(building.y) + offsetY + cell.y
+        }));
+        const neighboringVectorTiers = [];
+        const overlappingVectorTiers = [];
+        const footprintKeys = new Set(footprintCells.map((cell) => elevationCellKey(cell.col, cell.row)));
+        for (const cell of footprintCells) {
+            const overlappingTier = sourceElevationByKey.get(elevationCellKey(cell.col, cell.row));
+            if (Number.isFinite(overlappingTier)) {
+                neighboringVectorTiers.push(overlappingTier);
+                overlappingVectorTiers.push(overlappingTier);
+            }
+            for (const { x, y } of CARDINALS) {
+                const key = elevationCellKey(cell.col + x, cell.row + y);
+                if (footprintKeys.has(key)) continue;
+                const tier = sourceElevationByKey.get(key);
+                if (Number.isFinite(tier)) neighboringVectorTiers.push(tier);
+            }
+        }
+        let baseElevation = clampInteger(building.baseElevation, 0, 6);
+        const uniqueOverlappingVectorTiers = [...new Set(overlappingVectorTiers)];
+        if (uniqueOverlappingVectorTiers.length === 1) {
+            baseElevation = uniqueOverlappingVectorTiers[0];
+            building.baseElevation = baseElevation;
+        } else if (neighboringVectorTiers.length) {
+            const legalMinimum = Math.max(0, ...neighboringVectorTiers.map((tier) => tier - 1));
+            const legalMaximum = Math.min(6, ...neighboringVectorTiers.map((tier) => tier + 1));
+            if (legalMinimum <= legalMaximum) {
+                const originalBaseElevation = baseElevation;
+                baseElevation = clampInteger(baseElevation, legalMinimum, legalMaximum);
+                building.baseElevation = baseElevation;
+                building.placementConstraints = {
+                    ...(building.placementConstraints || {}),
+                    foundationAdjustedToVectorStreet: baseElevation !== originalBaseElevation,
+                    neighboringVectorElevationMinimum: Math.min(...neighboringVectorTiers),
+                    neighboringVectorElevationMaximum: Math.max(...neighboringVectorTiers)
+                };
+            }
+        }
+        for (const { col, row } of footprintCells) {
+            if (elevationRows[row]?.[col] === undefined) continue;
+            // The selected base tier is a real terrace foundation, not merely render metadata.
+            // Re-leveling the accepted footprint here prevents a later overlapping settlement or
+            // ramp pass from leaving a building straddling otherwise walkable one-tier changes.
+            elevationRows[row][col] = baseElevation;
+            protectedCells.add(elevationCellKey(col, row));
+        }
+        stabilizeBuildingDoorLanding({
+            building,
+            baseElevation,
+            footprintKeys,
+            rows,
+            elevationRows,
+            offsetX,
+            offsetY,
+            sourceElevationByKey,
+            protectedCells
+        });
+    }
+    if (protectedCells.size) {
+        // Foundations and their 3x3 door landings are the only hard values here. FMG vectors have
+        // already influenced the macro profile and remain free to settle onto a walkable ramp.
+        relaxSymbolElevationRamps(rows, elevationRows, protectedCells);
+    }
+}
+
+function stabilizeBuildingDoorLanding({
+    building,
+    baseElevation,
+    footprintKeys,
+    rows,
+    elevationRows,
+    offsetX,
+    offsetY,
+    sourceElevationByKey,
+    protectedCells
+}) {
+    const approach = resolveBuildingApproachCell(building, offsetX, offsetY);
+    if (!approach || elevationRows[approach.row]?.[approach.col] === undefined) return;
+    const approachKey = elevationCellKey(approach.col, approach.row);
+    const approachSymbol = rows[approach.row]?.[approach.col];
+    if (!approachSymbol || approachSymbol === 'T' || isWaterSymbol(approachSymbol) ||
+        footprintKeys.has(approachKey)) return;
+    const fixedApproachTier = sourceElevationByKey.get(approachKey);
+    if (Number.isFinite(fixedApproachTier)) {
+        elevationRows[approach.row][approach.col] = fixedApproachTier;
+    } else {
+        // The cell immediately outside the door is a dedicated 3x3 transition-module landing.
+        // Its center shares the foundation tier; apron cells may differ by one for stairs/ramps.
+        elevationRows[approach.row][approach.col] = baseElevation;
+    }
+    protectedCells.add(approachKey);
+    let apronCells = 0;
+    for (let row = approach.row - 1; row <= approach.row + 1; row++) {
+        for (let col = approach.col - 1; col <= approach.col + 1; col++) {
+            const key = elevationCellKey(col, row);
+            const symbol = rows[row]?.[col];
+            if (!symbol || symbol === 'T' || isWaterSymbol(symbol) || footprintKeys.has(key) ||
+                protectedCells.has(key)) continue;
+            if (sourceElevationByKey.has(key)) continue;
+            elevationRows[row][col] = clampInteger(elevationRows[row][col], baseElevation - 1, baseElevation + 1);
+            protectedCells.add(key);
+            apronCells++;
+        }
+    }
+    const finalApproachElevation = Number(elevationRows[approach.row][approach.col]);
+    building.doorBaseElevation = baseElevation;
+    building.placementConstraints = {
+        ...(building.placementConstraints || {}),
+        macroDoorLanding: true,
+        macroDoorLandingSize: `${TERRAIN_TRANSITION_MACRO_SIZE}x${TERRAIN_TRANSITION_MACRO_SIZE}`,
+        macroDoorLandingCells: apronCells,
+        exteriorApproachElevation: finalApproachElevation,
+        exteriorApproachElevationDelta: Math.abs(finalApproachElevation - baseElevation)
+    };
+}
+
+function resolveBuildingApproachCell(building, offsetX, offsetY) {
+    const [gridCol, gridRow] = building.entrance?.approachGrid || [];
+    if (Number.isFinite(gridCol) && Number.isFinite(gridRow)) {
+        return { col: Number(gridCol), row: Number(gridRow) };
+    }
+    const local = building.exteriorApproach || (
+        Number.isFinite(building.entrance?.x) && Number.isFinite(building.entrance?.y)
+            ? building.entrance
+            : null
+    );
+    if (local && Number.isFinite(local.x) && Number.isFinite(local.y)) {
+        return { col: Number(local.x) + offsetX, row: Number(local.y) + offsetY };
+    }
+    if (!building.door?.edge) return null;
+    const rect = {
+        col: Number(building.x) + offsetX,
+        row: Number(building.y) + offsetY,
+        width: Number(building.width),
+        height: Number(building.height)
+    };
+    return getRectDoorApproach(rect, building.door.edge);
+}
+
+function connectWorldRoadNetwork({ rows, paletteRows, buildings, width, height }) {
+    const roadSymbols = new Set(['R', ':', ';', '=']);
+    const blocked = new Set();
+    const offsetX = Math.floor(width / 2);
+    const offsetY = Math.floor(height / 2);
+    for (const building of buildings || []) {
+        for (const cell of building.footprintCells || []) {
+            blocked.add(elevationCellKey(
+                Number(building.x) + offsetX + cell.x,
+                Number(building.y) + offsetY + cell.y
+            ));
+        }
+    }
+    const mutable = rows.map((row) => typeof row === 'string' ? row.split('') : [...row]);
+    const components = collectRoadSymbolComponents(mutable, roadSymbols, width, height);
+    if (components.length < 2) return Object.freeze({ connectedComponents: 0, carvedCells: 0 });
+    const main = components[0];
+    const mainKeys = new Set(main.map((cell) => elevationCellKey(cell.col, cell.row)));
+    const approachKeys = new Set((buildings || [])
+        .map((building) => resolveBuildingApproachCell(building, offsetX, offsetY))
+        .filter(Boolean)
+        .map((cell) => elevationCellKey(cell.col, cell.row)));
+    let connectedComponents = 0;
+    let carvedCells = 0;
+
+    for (const component of components.slice(1)) {
+        const touchesViewportEdge = component.some((cell) =>
+            cell.col <= 2 || cell.row <= 2 || cell.col >= width - 3 || cell.row >= height - 3);
+        const servesDoor = component.some((cell) => approachKeys.has(elevationCellKey(cell.col, cell.row)));
+        if (touchesViewportEdge && !servesDoor) continue;
+        const path = findRoadCarvePath({
+            mutable,
+            starts: component,
+            goalKeys: mainKeys,
+            blocked,
+            width,
+            height,
+            maximumDistance: width + height
+        });
+        if (!path) continue;
+        for (const cell of path) {
+            const key = elevationCellKey(cell.col, cell.row);
+            if (!roadSymbols.has(mutable[cell.row]?.[cell.col])) {
+                mutable[cell.row][cell.col] = 'R';
+                if (paletteRows[cell.row]?.[cell.col] !== undefined) paletteRows[cell.row][cell.col] = 'path';
+                carvedCells++;
+            }
+            mainKeys.add(key);
+        }
+        for (const cell of component) mainKeys.add(elevationCellKey(cell.col, cell.row));
+        connectedComponents++;
+    }
+    for (let row = 0; row < height; row++) rows[row] = mutable[row].join('');
+    return Object.freeze({ connectedComponents, carvedCells });
+}
+
+function collectRoadSymbolComponents(rows, roadSymbols, width, height) {
+    const remaining = new Set();
+    for (let row = 0; row < height; row++) {
+        for (let col = 0; col < width; col++) {
+            if (roadSymbols.has(rows[row]?.[col])) remaining.add(elevationCellKey(col, row));
+        }
+    }
+    const components = [];
+    while (remaining.size) {
+        const startKey = [...remaining].sort(compareElevationCellKeys)[0];
+        const [startCol, startRow] = startKey.split(',').map(Number);
+        const queue = [{ col: startCol, row: startRow }];
+        const component = [];
+        remaining.delete(startKey);
+        for (let index = 0; index < queue.length; index++) {
+            const current = queue[index];
+            component.push(current);
+            for (const { x, y } of CARDINALS) {
+                const neighbor = { col: current.col + x, row: current.row + y };
+                const key = elevationCellKey(neighbor.col, neighbor.row);
+                if (!remaining.has(key)) continue;
+                remaining.delete(key);
+                queue.push(neighbor);
+            }
+        }
+        components.push(component.sort((left, right) => left.row - right.row || left.col - right.col));
+    }
+    return components.sort((left, right) => right.length - left.length ||
+        left[0].row - right[0].row || left[0].col - right[0].col);
+}
+
+function findRoadCarvePath({ mutable, starts, goalKeys, blocked, width, height, maximumDistance }) {
+    const queue = [];
+    const previous = new Map();
+    const distance = new Map();
+    for (const start of starts) {
+        const key = elevationCellKey(start.col, start.row);
+        queue.push(start);
+        previous.set(key, null);
+        distance.set(key, 0);
+    }
+    let goalKey = null;
+    for (let index = 0; index < queue.length; index++) {
+        const current = queue[index];
+        const currentKey = elevationCellKey(current.col, current.row);
+        if (goalKeys.has(currentKey)) {
+            goalKey = currentKey;
+            break;
+        }
+        const nextDistance = distance.get(currentKey) + 1;
+        if (nextDistance > maximumDistance) continue;
+        for (const { x, y } of CARDINALS) {
+            const next = { col: current.col + x, row: current.row + y };
+            if (next.col < 0 || next.row < 0 || next.col >= width || next.row >= height) continue;
+            const key = elevationCellKey(next.col, next.row);
+            if (previous.has(key) || blocked.has(key)) continue;
+            const symbol = mutable[next.row]?.[next.col];
+            if (!symbol || symbol === 'T' || isWaterSymbol(symbol)) continue;
+            previous.set(key, currentKey);
+            distance.set(key, nextDistance);
+            queue.push(next);
+        }
+    }
+    if (!goalKey) return null;
+    const path = [];
+    let cursor = goalKey;
+    while (cursor) {
+        const [col, row] = cursor.split(',').map(Number);
+        path.push({ col, row });
+        cursor = previous.get(cursor);
+    }
+    return path.reverse();
+}
+
+function compareElevationCellKeys(left, right) {
+    const [leftCol, leftRow] = left.split(',').map(Number);
+    const [rightCol, rightRow] = right.split(',').map(Number);
+    return leftRow - rightRow || leftCol - rightCol;
+}
+
+function stabilizeWorldInfrastructureElevations({
+    rows,
+    elevationRows,
+    macroTerrainElevationRows,
+    fields,
+    skeleton,
+    buildings,
+    width,
+    height
+}) {
+    const offsetX = Math.floor(width / 2);
+    const offsetY = Math.floor(height / 2);
+    const roadSymbols = new Set(['R', ':', ';', '=']);
+    const footprintKeys = new Set();
+    const footprintCellsByBuilding = new Map();
+    for (const building of buildings || []) {
+        const cells = [];
+        for (const cell of building.footprintCells || []) {
+            const footprintCell = {
+                col: Number(building.x) + offsetX + cell.x,
+                row: Number(building.y) + offsetY + cell.y
+            };
+            cells.push(footprintCell);
+            footprintKeys.add(elevationCellKey(
+                footprintCell.col,
+                footprintCell.row
+            ));
+        }
+        footprintCellsByBuilding.set(building, cells);
+    }
+
+    // Every road, plaza street, gate lane, and bridge deck samples the same pre-overlay macro
+    // surface. Raw FMG tiers still determine that surface at block scale, but cannot create a
+    // literal one-cell cliff along a path.
+    for (let row = 0; row < height; row++) {
+        for (let col = 0; col < width; col++) {
+            if (!roadSymbols.has(rows[row]?.[col]) || footprintKeys.has(elevationCellKey(col, row))) continue;
+            elevationRows[row][col] = clampInteger(macroTerrainElevationRows[row]?.[col], 0, 6);
+        }
+    }
+
+    smoothRoadElevations(rows, elevationRows);
+
+    const protectedCells = new Set();
+    for (let row = 0; row < height; row++) {
+        for (let col = 0; col < width; col++) {
+            if (roadSymbols.has(rows[row]?.[col])) protectedCells.add(elevationCellKey(col, row));
+        }
+    }
+
+    // A door landing chooses the building foundation tier, never the other way around. That
+    // keeps a door attached to its street even when a baked footprint overlaps a different raw
+    // vector tier, and guarantees the complete footprint remains level.
+    for (const building of buildings || []) {
+        const footprintCells = footprintCellsByBuilding.get(building) || [];
+        if (!footprintCells.length) continue;
+        const approach = resolveBuildingApproachCell(building, offsetX, offsetY);
+        const approachElevation = approach && elevationRows[approach.row]?.[approach.col] !== undefined
+            ? clampInteger(elevationRows[approach.row][approach.col], 0, 6)
+            : null;
+        const footprintElevations = footprintCells
+            .map((cell) => Number(elevationRows[cell.row]?.[cell.col]))
+            .filter(Number.isFinite);
+        const baseElevation = Number.isFinite(approachElevation)
+            ? approachElevation
+            : clampInteger(medianNumber(footprintElevations, building.baseElevation), 0, 6);
+        building.baseElevation = baseElevation;
+        building.doorBaseElevation = baseElevation;
+        for (const cell of footprintCells) {
+            if (elevationRows[cell.row]?.[cell.col] === undefined) continue;
+            elevationRows[cell.row][cell.col] = baseElevation;
+            protectedCells.add(elevationCellKey(cell.col, cell.row));
+        }
+        stabilizeBuildingDoorLanding({
+            building,
+            baseElevation,
+            footprintKeys: new Set(footprintCells.map((cell) => elevationCellKey(cell.col, cell.row))),
+            rows,
+            elevationRows,
+            offsetX,
+            offsetY,
+            sourceElevationByKey: new Map(),
+            protectedCells
+        });
+        building.placementConstraints = {
+            ...(building.placementConstraints || {}),
+            foundationAdjustedToMacroRoad: true,
+            exteriorApproachElevation: approachElevation,
+            exteriorApproachElevationDelta: Number.isFinite(approachElevation)
+                ? Math.abs(approachElevation - baseElevation)
+                : null
+        };
+    }
+
+    relaxSymbolElevationRamps(rows, elevationRows, protectedCells);
+    smoothRoadElevations(rows, elevationRows, protectedCells);
+}
+
+function repairFinalWorldElevationSpikes({ rows, elevationRows, buildings, width, height }) {
+    const protectedFootprints = new Set();
+    const offsetX = Math.floor(width / 2);
+    const offsetY = Math.floor(height / 2);
+    for (const building of buildings || []) {
+        for (const cell of building.footprintCells || []) {
+            protectedFootprints.add(elevationCellKey(
+                Number(building.x) + offsetX + cell.x,
+                Number(building.y) + offsetY + cell.y
+            ));
+        }
+    }
+    let repairedCells = 0;
+    const repairedBySymbol = {};
+    for (let pass = 0; pass < 8; pass++) {
+        const spikes = findIsolatedElevationSpikes(elevationRows).filter((cell) =>
+            !protectedFootprints.has(elevationCellKey(cell.col, cell.row)));
+        if (!spikes.length) break;
+        let changed = 0;
+        for (const spike of spikes) {
+            const neighbors = CARDINALS
+                .map(({ x, y }) => Number(elevationRows[spike.row + y]?.[spike.col + x]))
+                .filter(Number.isFinite);
+            if (neighbors.length < 2) continue;
+            const replacement = spike.kind === 'peak'
+                ? Math.max(...neighbors)
+                : Math.min(...neighbors);
+            if (replacement === elevationRows[spike.row][spike.col]) continue;
+            const symbol = rows[spike.row]?.[spike.col] || '?';
+            elevationRows[spike.row][spike.col] = clampInteger(replacement, 0, 6);
+            repairedBySymbol[symbol] = (repairedBySymbol[symbol] || 0) + 1;
+            repairedCells++;
+            changed++;
+        }
+        if (!changed) break;
+    }
+    smoothRoadElevations(rows, elevationRows, protectedFootprints);
+    return Object.freeze({
+        repairedCells,
+        repairedBySymbol: Object.freeze(repairedBySymbol)
+    });
 }
 
 function synthesizeSettlements({
@@ -1179,6 +3030,15 @@ function synthesizeSettlements({
         const settlement = {
             ...entry,
             radius,
+            reliefProfile: skeleton?.reliefByBurgId?.get?.(Number(entry.burg?.id)) ||
+                constraintField?.reliefByBurgId?.get?.(Number(entry.burg?.id)) || null,
+            architectureThemeId: normalizeBurgThemeId(
+                entry.architectureThemeId ??
+                entry.themeId ??
+                entry.burg?.themeId ??
+                entry.blueprint?.identity?.architectureThemeId,
+                null
+            ),
             walled: entry.walled === true,
             wallBounds: entry.wallBounds,
             wallRings: entry.wallRings || [],
@@ -1194,6 +3054,7 @@ function synthesizeSettlements({
             paletteRows,
             elevationRows,
             settlement,
+            occupied,
             constraintField,
             skeleton,
             width,
@@ -1216,6 +3077,7 @@ function synthesizeSettlements({
             districtRows,
             settlement,
             occupied,
+            skeleton,
             width,
             height,
             fixedSeed: `${ACTIVE_WORLD.seed}:fixed-landmarks:${settlement.burg.id}`
@@ -1282,6 +3144,7 @@ function synthesizeSettlements({
             elevationRows,
             constraintField,
             settlement,
+            occupied: bakedPlan.occupied,
             offsetX,
             offsetY
         });
@@ -1304,6 +3167,7 @@ function synthesizeSettlements({
             enterable: true
         }));
         const localBuildings = [...bakedBuildings, ...generatedBuildings];
+        applySettlementArchitectureThemeToBuildings(localBuildings, settlement, seed);
         applySettlementClimateToBuildings(localBuildings, settlement);
         for (const building of localBuildings) {
             reserveBuilding(occupied, building, offsetX, offsetY, 1);
@@ -1329,7 +3193,14 @@ function synthesizeSettlements({
             urbanAreaCells: envelope.urbanCells,
             constrainedInteriorCells: envelope.constrainedInteriorCells,
             buildingFootprintCells: footprintCells,
-            moduleHistogram: contextual.diagnostics.moduleHistogram || {}
+            moduleHistogram: contextual.diagnostics.moduleHistogram || {},
+            reliefFormulaVersion: settlement.reliefProfile?.formulaVersion ?? FMG_BURG_RELIEF_FORMULA_VERSION,
+            reliefScore: settlement.reliefProfile?.reliefScore ?? 0,
+            reliefClass: settlement.reliefProfile?.reliefClass ?? 'none',
+            targetElevationSpan: settlement.reliefProfile?.targetTierSpan ?? 1,
+            buildingBaseElevationTiers: [...new Set(localBuildings
+                .map((building) => Number(building.baseElevation))
+                .filter(Number.isFinite))].sort((left, right) => left - right)
         };
         settlements.push(settlement);
         aggregate.sites += sites.length;
@@ -1382,13 +3253,72 @@ function applySettlementClimateToBuildings(buildings, settlement) {
     for (const building of buildings) {
         building.climate = { latitude, snowline };
         building.roofTreatment = cold ? 'snow-capped' : tropical ? 'sun-bleached' : 'temperate';
-        if (cold && building.blueprintId !== 'castle-keep' && ['clay', 'market', 'thatch'].includes(building.roofStyle)) {
+        if (!building.architectureThemeId && cold && building.blueprintId !== 'castle-keep' && ['clay', 'market', 'thatch'].includes(building.roofStyle)) {
             building.roofStyle = hashWaveSeed(`${building.id}:cold-roof`) % 2 ? 'slate' : 'copper';
         }
     }
 }
 
-function stampSettlementEnvelope({ mutable, paletteRows, elevationRows, settlement, constraintField, skeleton, width, height }) {
+function applySettlementArchitectureThemeToBuildings(buildings, settlement, seed) {
+    const architectureThemeId = normalizeBurgThemeId(
+        settlement.architectureThemeId ??
+        settlement.burg?.themeId ??
+        settlement.blueprint?.identity?.architectureThemeId,
+        null
+    );
+    if (!architectureThemeId) return;
+    const theme = getBurgTheme(architectureThemeId);
+    if (!theme) return;
+    settlement.architectureThemeId = architectureThemeId;
+    settlement.themeLabel = theme.label;
+    settlement.streetPaletteId = theme.streetPaletteId;
+    settlement.wallTextureId = theme.wallTextureId;
+    for (const building of buildings) {
+        const resolved = resolveBurgThemeBuildingStyle(architectureThemeId, {
+            district: building.district,
+            seed: `${seed}:burg-theme:${settlement.burg.id}:${building.id}`,
+            baseStyle: building.style,
+            baseRoofStyle: building.roofStyle,
+            baseArchitectureStyle: building.architectureStyle
+        });
+        building.burgId = Number(settlement.burg.id);
+        building.architectureThemeId = resolved.architectureThemeId;
+        building.themeLabel = resolved.themeLabel;
+        building.style = resolved.style;
+        building.architectureStyle = resolved.facadeKit;
+        building.roofStyle = resolved.roofStyle;
+        building.roofGeometry = resolved.roofGeometry;
+        building.facadeKit = resolved.facadeKit;
+        building.castleKit = resolved.castleKit;
+        building.streetPaletteId = resolved.streetPaletteId;
+        building.wallTextureId = resolved.wallTextureId;
+        building.themePalette = cloneArchitectureThemePalette(resolved.themePalette);
+        building.districtPalette = {
+            ...(building.districtPalette || {}),
+            accent: parseHexColor(resolved.themePalette.accentColor),
+            roofs: [...resolved.themePalette.roofColors]
+        };
+    }
+}
+
+function cloneArchitectureThemePalette(themePalette) {
+    return {
+        ...themePalette,
+        roofColors: [...(themePalette?.roofColors || [])]
+    };
+}
+
+function stampSettlementEnvelope({
+    mutable,
+    paletteRows,
+    elevationRows,
+    settlement,
+    occupied = new Set(),
+    constraintField,
+    skeleton,
+    width,
+    height
+}) {
     const bounds = settlement.wallBounds;
     const elevations = [];
     let urbanCells = 0;
@@ -1407,42 +3337,104 @@ function stampSettlementEnvelope({ mutable, paletteRows, elevationRows, settleme
         for (let col = bounds.minCol + 1; col < bounds.maxCol; col++) {
             if (bounds.insideCellKeys instanceof Set && !isInsideWallBounds(col, row, bounds)) continue;
             const constraint = constraintField?.cells?.[row * width + col];
+            const foreignFixed = skeleton?.cells?.get?.(row * width + col);
             // The numeric FMG envelope remains authoritative even inside a settlement. Only
             // non-hard marsh/shore noise may be stabilized into urban ground.
             if ((constraint?.hardWater && !constraint?.blueprintFixed) ||
                 (!constraint?.blueprintFixed && (mutable[row]?.[col] === 'W' || mutable[row]?.[col] === 'I'))) continue;
+            // A previous overlapping settlement may already own this exact building pad. Terrain
+            // synthesis is sequential, so its later neighbor must not re-terrace the occupied
+            // footprint after the building's legal base elevation was chosen.
+            if (occupied.has(`${col},${row}`)) continue;
+            if (foreignFixed && Number(foreignFixed.townId) !== Number(settlement.burg.id)) {
+                stampForeignSettlementConstraint({
+                    mutable,
+                    paletteRows,
+                    elevationRows,
+                    fixed: foreignFixed,
+                    plateau
+                });
+                continue;
+            }
             urbanCells++;
             const localCol = col - settlement.col;
             const localRow = row - settlement.row;
             mutable[row][col] = (localCol + localRow) % 11 === 0 ? ',' : '.';
             const currentElevation = Number(elevationRows[row]?.[col]) || 0;
-            elevationRows[row][col] = Math.max(plateau - 1, Math.min(plateau + 1, currentElevation));
+            const fixedElevation = constraint?.fixedElevation;
+            elevationRows[row][col] = Number.isFinite(fixedElevation)
+                ? clampInteger(fixedElevation, 0, 6)
+                : deriveSettlementTerraceElevation({
+                    col,
+                    row,
+                    currentElevation,
+                    plateau,
+                    settlement
+                });
         }
     }
 
     const center = { col: settlement.col, row: settlement.row };
     const gates = settlement.wallRings?.[0]?.gates || [];
+    // Every visible FMG vector tier is immutable, including a neighboring burg whose envelope
+    // overlaps this one. Protecting only the current town allowed a later settlement pass to
+    // smooth an earlier town's authored road elevations.
+    const protectedRoadElevations = new Set([
+        ...occupied,
+        ...[...(skeleton?.cells?.values?.() || [])]
+            .filter((cell) => (cell.source === 'town-vector' || cell.elevationSource === 'town-vector') &&
+                Number.isFinite(Number(cell.elevationTier)))
+            .map((cell) => elevationCellKey(cell.col, cell.row))
+    ]);
     let wallCells = 0;
     for (const fixed of skeleton?.cells?.values?.() || []) {
         if (Number(fixed.townId) !== Number(settlement.burg.id)) continue;
         if (!mutable[fixed.row]?.[fixed.col]) continue;
+        const fixedElevation = Number.isFinite(Number(fixed.elevationTier))
+            ? clampInteger(fixed.elevationTier, 0, 6)
+            : null;
+        if (fixedElevation !== null &&
+            (fixed.source === 'town-vector' || fixed.elevationSource === 'town-vector')) {
+            protectedRoadElevations.add(elevationCellKey(fixed.col, fixed.row));
+        }
         if (fixed.kind === 'wall') {
             mutable[fixed.row][fixed.col] = 'T';
             paletteRows[fixed.row][fixed.col] = 'path';
-            elevationRows[fixed.row][fixed.col] = plateau;
+            elevationRows[fixed.row][fixed.col] = fixedElevation ??
+                deriveSettlementTerraceElevation({
+                    col: fixed.col,
+                    row: fixed.row,
+                    currentElevation: elevationRows[fixed.row][fixed.col],
+                    plateau,
+                    settlement
+                });
             wallCells++;
         } else if (fixed.kind === 'gate' || fixed.kind === 'road') {
             mutable[fixed.row][fixed.col] = fixed.kind === 'gate' ? ';' : 'R';
             paletteRows[fixed.row][fixed.col] = 'path';
-            elevationRows[fixed.row][fixed.col] = plateau;
+            elevationRows[fixed.row][fixed.col] = fixedElevation ??
+                deriveSettlementTerraceElevation({
+                    col: fixed.col,
+                    row: fixed.row,
+                    currentElevation: elevationRows[fixed.row][fixed.col],
+                    plateau,
+                    settlement
+                });
         } else if (fixed.kind === 'castle-plot') {
             mutable[fixed.row][fixed.col] = '.';
             paletteRows[fixed.row][fixed.col] = 'path';
-            elevationRows[fixed.row][fixed.col] = plateau;
+            elevationRows[fixed.row][fixed.col] = fixedElevation ??
+                deriveSettlementTerraceElevation({
+                    col: fixed.col,
+                    row: fixed.row,
+                    currentElevation: elevationRows[fixed.row][fixed.col],
+                    plateau,
+                    settlement
+                });
         } else if (fixed.kind === 'dock') {
             mutable[fixed.row][fixed.col] = 'R';
             paletteRows[fixed.row][fixed.col] = 'path';
-            elevationRows[fixed.row][fixed.col] = Math.max(0, plateau - 1);
+            elevationRows[fixed.row][fixed.col] = fixedElevation ?? Math.max(0, plateau - 1);
         } else if (fixed.kind === 'bridge' || fixed.kind === 'ford') {
             mutable[fixed.row][fixed.col] = fixed.kind === 'ford' ? '~' : 'R';
             paletteRows[fixed.row][fixed.col] = 'path';
@@ -1468,13 +3460,18 @@ function stampSettlementEnvelope({ mutable, paletteRows, elevationRows, settleme
             for (let col = center.col - 1; col <= center.col + 1; col++) {
                 const constraint = constraintField?.cells?.[row * width + col];
                 if (!mutable[row]?.[col] || (constraint?.hardWater && !constraint?.blueprintFixed)) continue;
+                if (Number.isFinite(constraint?.fixedElevation)) {
+                    elevationRows[row][col] = clampInteger(constraint.fixedElevation, 0, 6);
+                    continue;
+                }
                 mutable[row][col] = ';';
                 paletteRows[row][col] = 'path';
                 elevationRows[row][col] = plateau;
             }
         }
     }
-    smoothRoadElevations(mutable, elevationRows);
+    smoothRoadElevations(mutable, elevationRows, protectedRoadElevations);
+    relaxSymbolElevationRamps(mutable, elevationRows, protectedRoadElevations);
     let developableUrbanCells = 0;
     for (let row = bounds.minRow + 1; row < bounds.maxRow; row++) {
         for (let col = bounds.minCol + 1; col < bounds.maxCol; col++) {
@@ -1490,6 +3487,60 @@ function stampSettlementEnvelope({ mutable, paletteRows, elevationRows, settleme
         urbanCells: Math.max(1, developableUrbanCells),
         constrainedInteriorCells: urbanCells
     };
+}
+
+function stampForeignSettlementConstraint({ mutable, paletteRows, elevationRows, fixed, plateau }) {
+    const fixedElevation = Number.isFinite(Number(fixed.elevationTier))
+        ? clampInteger(fixed.elevationTier, 0, 6)
+        : null;
+    if (fixed.kind === 'wall') {
+        mutable[fixed.row][fixed.col] = 'T';
+        paletteRows[fixed.row][fixed.col] = 'path';
+    } else if (fixed.kind === 'gate') {
+        mutable[fixed.row][fixed.col] = ';';
+        paletteRows[fixed.row][fixed.col] = 'path';
+    } else if (fixed.kind === 'road' || fixed.kind === 'dock' || fixed.kind === 'bridge') {
+        mutable[fixed.row][fixed.col] = 'R';
+        paletteRows[fixed.row][fixed.col] = 'path';
+    } else if (fixed.kind === 'castle-plot') {
+        // Keep the foreign burg's reserved landmark plot out of this settlement's parcel wave.
+        mutable[fixed.row][fixed.col] = ';';
+        paletteRows[fixed.row][fixed.col] = 'path';
+    } else if (fixed.kind === 'ford' || fixed.kind === 'waterfall') {
+        mutable[fixed.row][fixed.col] = '~';
+        paletteRows[fixed.row][fixed.col] = 'coast';
+    } else if (fixed.kind === 'plunge-pool') {
+        mutable[fixed.row][fixed.col] = 'B';
+        paletteRows[fixed.row][fixed.col] = 'coast';
+    }
+    elevationRows[fixed.row][fixed.col] = fixedElevation ?? clampInteger(plateau, 0, 6);
+}
+
+function deriveSettlementTerraceElevation({ col, row, currentElevation, plateau, settlement }) {
+    const profile = settlement?.reliefProfile;
+    if (!profile) {
+        return clampInteger(Math.max(plateau - 1, Math.min(plateau + 1, Number(currentElevation) || 0)), 0, 6);
+    }
+    const targetSpan = clampInteger(profile.targetTierSpan ?? 1, 1, 6);
+    const centerTier = clampInteger(profile.baseElevationTier ?? plateau, 0, 6);
+    let minimumTier = centerTier - Math.floor(targetSpan / 2);
+    let maximumTier = minimumTier + targetSpan;
+    if (minimumTier < 0) {
+        maximumTier -= minimumTier;
+        minimumTier = 0;
+    }
+    if (maximumTier > 6) {
+        minimumTier -= maximumTier - 6;
+        maximumTier = 6;
+    }
+    minimumTier = clampInteger(minimumTier, 0, 6);
+    maximumTier = clampInteger(maximumTier, minimumTier, 6);
+
+    // The macro WFC already chose a coherent 5x5 terrace. Settlement stamping may clamp that
+    // choice to the FMG relief envelope, but must not replace it with a second per-cell gradient.
+    // Keeping the incoming tier intact is what lets buildings, streets, and door landings share
+    // one logical block surface.
+    return clampInteger(currentElevation, minimumTier, maximumTier);
 }
 
 function createSettlementDistrictRows({ mutable, settlement, width, height }) {
@@ -1536,19 +3587,26 @@ function createWardBakedBuildingPlan({
     districtRows,
     settlement,
     occupied,
+    skeleton,
     width,
     height,
     fixedSeed
 }) {
     const buildings = [];
+    const globalOriginCol = Math.round(Number(settlement.burg?.x ?? settlement.blueprint?.x) / WORLD_SAMPLE_SCALE) -
+        Number(settlement.col);
+    const globalOriginRow = Math.round(Number(settlement.burg?.y ?? settlement.blueprint?.y) / WORLD_SAMPLE_SCALE) -
+        Number(settlement.row);
     const inheritedOccupiedCells = new Set(occupied instanceof Set ? occupied : []);
     let occupiedCells = new Set(inheritedOccupiedCells);
     let compactAdjacencyFallbacks = 0;
+    const replaceableRoadCells = collectReplaceableFormulaRoadCells(skeleton, settlement);
     const vectorPlan = createTownVectorBuildingPlan({
         mutable,
         elevationRows,
         settlement,
         occupied: occupiedCells,
+        skeleton,
         width,
         height,
         fixedSeed
@@ -1570,9 +3628,12 @@ function createWardBakedBuildingPlan({
                         width,
                         height,
                         elevationRows,
-                        seed: `${fixedSeed}:castle:${center.col}:${center.row}`,
+                        seed: `${fixedSeed}:castle:${center.col + globalOriginCol}:${center.row + globalOriginRow}`,
                         townId: settlement.burg.name,
-                        district: 'castle'
+                        district: 'castle',
+                        architectureThemeId: settlement.architectureThemeId,
+                        reliefProfile: settlement.reliefProfile,
+                        maxElevationSpan: 1
                     }));
                 } catch {
                     // A clipped or steep candidate may fail while another burg-constrained
@@ -1624,8 +3685,14 @@ function createWardBakedBuildingPlan({
             area: { cells: areaCells },
             districts: [ward.district],
             occupied: occupiedCells,
+            replaceableRoadCells,
             seed: `${fixedSeed}:ward:${ward.ring}:${ward.district}`,
             townId: settlement.burg.name,
+            architectureThemeId: settlement.architectureThemeId,
+            reliefProfile: settlement.reliefProfile,
+            globalOriginCol,
+            globalOriginRow,
+            maxElevationSpan: 1,
             minBuildings: 1,
             maxBuildings: 1,
             buffer: 0,
@@ -1650,7 +3717,9 @@ function createWardBakedBuildingPlan({
         const fallbackCells = [];
         for (let row = settlement.wallBounds.minRow + 1; row < settlement.wallBounds.maxRow; row++) {
             for (let col = settlement.wallBounds.minCol + 1; col < settlement.wallBounds.maxCol; col++) {
-                if (!isBuildableSymbol(mutable[row]?.[col])) continue;
+                if (!isBuildableSymbol(mutable[row]?.[col]) && !(
+                    mutable[row]?.[col] === 'R' && replaceableRoadCells.has(`${col},${row}`)
+                )) continue;
                 fallbackCells.push({ col, row, district: districtRows[row]?.[col] || 'residential' });
             }
         }
@@ -1662,8 +3731,14 @@ function createWardBakedBuildingPlan({
             districtRows,
             area: { cells: fallbackCells },
             occupied: occupiedCells,
+            replaceableRoadCells,
             seed: `${fixedSeed}:compact-fallback`,
             townId: settlement.burg.name,
+            architectureThemeId: settlement.architectureThemeId,
+            reliefProfile: settlement.reliefProfile,
+            globalOriginCol,
+            globalOriginRow,
+            maxElevationSpan: 1,
             minBuildings: remaining,
             maxBuildings: remaining,
             buffer: 0,
@@ -1696,7 +3771,9 @@ function createWardBakedBuildingPlan({
         const fallbackCells = [];
         for (let row = settlement.wallBounds.minRow + 1; row < settlement.wallBounds.maxRow; row++) {
             for (let col = settlement.wallBounds.minCol + 1; col < settlement.wallBounds.maxCol; col++) {
-                if (!isBuildableSymbol(mutable[row]?.[col])) continue;
+                if (!isBuildableSymbol(mutable[row]?.[col]) && !(
+                    mutable[row]?.[col] === 'R' && replaceableRoadCells.has(`${col},${row}`)
+                )) continue;
                 fallbackCells.push({ col, row, district: districtRows[row]?.[col] || 'residential' });
             }
         }
@@ -1708,8 +3785,14 @@ function createWardBakedBuildingPlan({
             districtRows,
             area: { cells: fallbackCells },
             occupied: compactOccupied,
+            replaceableRoadCells,
             seed: `${fixedSeed}:compact-adjacent-fallback`,
             townId: settlement.burg.name,
+            architectureThemeId: settlement.architectureThemeId,
+            reliefProfile: settlement.reliefProfile,
+            globalOriginCol,
+            globalOriginRow,
+            maxElevationSpan: 1,
             minBuildings: remaining,
             maxBuildings: remaining,
             buffer: 0,
@@ -1749,11 +3832,26 @@ function createWardBakedBuildingPlan({
     };
 }
 
+function collectReplaceableFormulaRoadCells(skeleton, settlement) {
+    const cells = new Set();
+    for (const fixed of skeleton?.cells?.values?.() || []) {
+        if (Number(fixed.townId) !== Number(settlement.burg.id) || fixed.kind !== 'road') continue;
+        // FMG vectors and the reusable street-map WFC are earlier authored layers. Only the old
+        // formula lattice may yield a cell when wall confinement otherwise cannot fit a 2x3
+        // cabin. The exterior landing remains reserved, so replacing a redundant lane never
+        // disconnects the building from the surviving network.
+        if (fixed.source === 'town-vector' || fixed.source === 'baked-street-wfc') continue;
+        cells.add(`${fixed.col},${fixed.row}`);
+    }
+    return cells;
+}
+
 function createTownVectorBuildingPlan({
     mutable,
     elevationRows,
     settlement,
     occupied,
+    skeleton,
     width,
     height,
     fixedSeed
@@ -1766,6 +3864,12 @@ function createTownVectorBuildingPlan({
     const offsetY = Math.floor(height / 2);
     const occupiedCells = new Set(occupied || []);
     const buildings = [];
+    const sourceElevationByKey = new Map(
+        [...(skeleton?.cells?.values?.() || [])]
+            .filter((cell) => (cell.source === 'town-vector' || cell.elevationSource === 'town-vector') &&
+                Number.isFinite(Number(cell.elevationTier)))
+            .map((cell) => [elevationCellKey(cell.col, cell.row), clampInteger(cell.elevationTier, 0, 6)])
+    );
     let rejected = 0;
     const rejectionReasons = {};
     const reject = (reason) => {
@@ -1802,17 +3906,62 @@ function createTownVectorBuildingPlan({
             reject('footprint-blocked');
             continue;
         }
-        const elevations = worldCells.map((cell) => Number(elevationRows[cell.row]?.[cell.col]) || 0);
-        const elevationSpan = Math.max(...elevations) - Math.min(...elevations);
-        if (elevationSpan > 2) {
-            reject('elevation-span');
-            continue;
-        }
         const entrance = chooseTownVectorEntrance(source, rect, mutable, occupiedCells);
         if (!entrance) {
             reject('entrance-blocked');
             continue;
         }
+        const sampledElevations = worldCells.map((cell) => Number(elevationRows[cell.row]?.[cell.col]) || 0);
+        const approachElevation = Number(elevationRows[entrance.approach.row]?.[entrance.approach.col]);
+        const overlappingVectorTiers = [...new Set(worldCells
+            .map((cell) => sourceElevationByKey.get(elevationCellKey(cell.col, cell.row)))
+            .filter(Number.isFinite))];
+        const footprintKeys = new Set(worldCells.map((cell) => elevationCellKey(cell.col, cell.row)));
+        const neighboringVectorTiers = [...new Set(worldCells.flatMap((cell) => CARDINALS
+            .map(({ x, y }) => ({ col: cell.col + x, row: cell.row + y }))
+            .filter((neighbor) => !footprintKeys.has(elevationCellKey(neighbor.col, neighbor.row)))
+            .map((neighbor) => sourceElevationByKey.get(elevationCellKey(neighbor.col, neighbor.row)))
+            .filter(Number.isFinite)))];
+        if (overlappingVectorTiers.length > 1) {
+            reject('vector-elevation-conflict');
+            continue;
+        }
+        if (overlappingVectorTiers.length === 1 && neighboringVectorTiers.some((tier) =>
+            Math.abs(tier - overlappingVectorTiers[0]) > 1)) {
+            reject('vector-elevation-conflict');
+            continue;
+        }
+        let foundationElevation = overlappingVectorTiers.length
+            ? overlappingVectorTiers[0]
+            : clampInteger(medianNumber(sampledElevations, 0), 0, 6);
+        if (!overlappingVectorTiers.length && neighboringVectorTiers.length) {
+            const legalMinimum = Math.max(0, ...neighboringVectorTiers.map((tier) => tier - 1));
+            const legalMaximum = Math.min(6, ...neighboringVectorTiers.map((tier) => tier + 1));
+            if (legalMinimum > legalMaximum) {
+                reject('vector-elevation-conflict');
+                continue;
+            }
+            foundationElevation = clampInteger(foundationElevation, legalMinimum, legalMaximum);
+        }
+        if (overlappingVectorTiers.length && Number.isFinite(approachElevation) &&
+            Math.abs(approachElevation - foundationElevation) > 1) {
+            reject('door-elevation-conflict');
+            continue;
+        }
+        if (!overlappingVectorTiers.length && Number.isFinite(approachElevation)) {
+            foundationElevation = clampInteger(
+                foundationElevation,
+                Math.max(0, approachElevation - 1),
+                Math.min(6, approachElevation + 1)
+            );
+        }
+        // FMG building vectors choose the parcel geometry; the macro generator supplies a single
+        // level foundation plate beneath it. This is an intentional hard building module, not a
+        // reason to discard an authored footprint merely because it crosses two 5x5 terraces.
+        for (const cell of worldCells) elevationRows[cell.row][cell.col] = foundationElevation;
+        const elevations = worldCells.map(() => foundationElevation);
+        const elevationSafety = analyzeBuildingFootprintElevation(worldCells, elevationRows);
+        const elevationSpan = elevationSafety.span;
         const type = getTownVectorBuildingType(
             source.type,
             settlement,
@@ -1902,6 +4051,11 @@ function createTownVectorBuildingPlan({
                 placementConstraints: {
                     source: 'fmg-burg-vector',
                     elevationSpan,
+                    maxAdjacentElevationDelta: elevationSafety.maxAdjacentDelta,
+                    reliefFormulaVersion: settlement.reliefProfile?.formulaVersion ?? FMG_BURG_RELIEF_FORMULA_VERSION,
+                    reliefScore: settlement.reliefProfile?.reliefScore ?? 0,
+                    reliefClass: settlement.reliefProfile?.reliefClass ?? 'none',
+                    targetTierSpan: settlement.reliefProfile?.targetTierSpan ?? 1,
                     wallConfinement: projected.insideCellKeys.has(
                         `${rect.col + Math.floor(rect.width / 2)},${rect.row + Math.floor(rect.height / 2)}`
                     )
@@ -2212,6 +4366,7 @@ function applyContextualTerrainAssignments({
     elevationRows,
     constraintField,
     settlement,
+    occupied = new Set(),
     offsetX,
     offsetY
 }) {
@@ -2239,7 +4394,9 @@ function applyContextualTerrainAssignments({
                     paletteRows[row][col] = paletteRows[row][col] || 'forest';
                 } else if (moduleId === 'terrain-relief') {
                     mutable[row][col] = 'H';
-                    elevationRows[row][col] = Math.min(5, (Number(elevationRows[row][col]) || 0) + 1);
+                    // Visual relief can change the surface tile, but elevation belongs to the
+                    // selected 5x5/3x3 macro module. A one-off +1 here created hanging parcels.
+                    elevationRows[row][col] = clampInteger(elevationRows[row][col], 0, 6);
                 } else if (moduleId === 'terrain-water') {
                     mutable[row][col] = '~';
                     paletteRows[row][col] = 'coast';
@@ -2251,13 +4408,31 @@ function applyContextualTerrainAssignments({
             }
         }
     }
-    smoothRoadElevations(mutable, elevationRows);
+    const protectedElevations = new Set([
+        ...collectProtectedElevationKeys(constraintField),
+        ...(occupied instanceof Set ? occupied : [])
+    ]);
+    for (const site of sites) {
+        const module = moduleById.get(assignment.get(site.id));
+        if (module?.kind !== 'building') continue;
+        for (let localY = 0; localY < site.height; localY++) {
+            for (let localX = 0; localX < site.width; localX++) {
+                protectedElevations.add(elevationCellKey(
+                    site.x + offsetX + localX,
+                    site.y + offsetY + localY
+                ));
+            }
+        }
+    }
+    smoothRoadElevations(mutable, elevationRows, protectedElevations);
+    relaxSymbolElevationRamps(mutable, elevationRows, protectedElevations);
 }
 
-function getLegalParcelDoorEdges({ rect, mutable, occupied, constraintField, width, seed }) {
+function getLegalParcelDoorEdges({ rect, mutable, elevationRows, occupied, constraintField, width, seed }) {
     const edges = ['north', 'east', 'south', 'west']
         .map((edge) => {
             const approach = getRectDoorApproach(rect, edge);
+            const threshold = getRectDoorThreshold(rect, edge);
             const symbol = mutable[approach.row]?.[approach.col];
             const constraint = constraintField?.cells?.[approach.row * width + approach.col];
             if (!symbol || constraint?.hardWater || symbol === 'T' || isWaterSymbol(symbol)) return null;
@@ -2265,10 +4440,15 @@ function getLegalParcelDoorEdges({ rect, mutable, occupied, constraintField, wid
             if (!['G', 'F', 'H', 'S', 'P', 'R', '.', ':', ';', ','].includes(symbol)) return null;
             const roadDistance = nearestSymbolDistance(mutable, approach.col, approach.row, new Set(['R', ';']), 4);
             if (roadDistance > 5) return null;
+            const approachElevation = Number(elevationRows?.[approach.row]?.[approach.col]);
+            const thresholdElevation = Number(elevationRows?.[threshold.row]?.[threshold.col]);
+            if (Number.isFinite(approachElevation) && Number.isFinite(thresholdElevation) &&
+                Math.abs(approachElevation - thresholdElevation) > 1) return null;
             return {
                 edge,
                 score: (['R', ';'].includes(symbol) ? 6 : 0)
                     + Math.max(0, 4 - roadDistance)
+                    + (Number.isFinite(approachElevation) && approachElevation === thresholdElevation ? 1.5 : 0)
                     + keyedUnit(`${seed}:${edge}`) * 0.2
             };
         })
@@ -2282,6 +4462,13 @@ function getRectDoorApproach(rect, edge) {
     if (edge === 'east') return { col: rect.col + rect.width, row: rect.row + Math.floor(rect.height / 2) };
     if (edge === 'west') return { col: rect.col - 1, row: rect.row + Math.floor(rect.height / 2) };
     return { col: rect.col + Math.floor(rect.width / 2), row: rect.row + rect.height };
+}
+
+function getRectDoorThreshold(rect, edge) {
+    if (edge === 'north') return { col: rect.col + Math.floor(rect.width / 2), row: rect.row };
+    if (edge === 'east') return { col: rect.col + rect.width - 1, row: rect.row + Math.floor(rect.height / 2) };
+    if (edge === 'west') return { col: rect.col, row: rect.row + Math.floor(rect.height / 2) };
+    return { col: rect.col + Math.floor(rect.width / 2), row: rect.row + rect.height - 1 };
 }
 
 function createContextualParcelSites({
@@ -2329,6 +4516,7 @@ function createContextualParcelSites({
                 const allowedDoorEdges = getLegalParcelDoorEdges({
                     rect,
                     mutable,
+                    elevationRows,
                     occupied,
                     constraintField,
                     width,
@@ -2376,6 +4564,7 @@ function createContextualParcelSites({
         const allowedDoorEdges = getLegalParcelDoorEdges({
             rect: candidate.rect,
             mutable,
+            elevationRows,
             occupied: reserved,
             constraintField,
             width,
@@ -2466,6 +4655,11 @@ function finalizeContextualBuilding({ building, settlement, indexInTown, elevati
                 ? 'hall'
                 : 'common';
     const lot = { col: building.x + offsetX, row: building.y + offsetY };
+    const worldFootprintCells = (building.footprintCells || []).map((cell) => ({
+        col: lot.col + cell.x,
+        row: lot.row + cell.y
+    }));
+    const elevationSafety = analyzeBuildingFootprintElevation(worldFootprintCells, elevationRows);
     const stairs = stories > 1
         ? [{ x: Math.max(1, building.width - 2), y: Math.max(1, building.height - 2), direction: 'north' }]
         : [];
@@ -2487,6 +4681,15 @@ function finalizeContextualBuilding({ building, settlement, indexInTown, elevati
         enterable: true,
         sourceType: 'contextual-building-wfc',
         facadeVariant: hash % 17,
+        placementConstraints: {
+            ...(building.placementConstraints || {}),
+            elevationSpan: elevationSafety.span,
+            maxAdjacentElevationDelta: elevationSafety.maxAdjacentDelta,
+            reliefFormulaVersion: settlement.reliefProfile?.formulaVersion ?? FMG_BURG_RELIEF_FORMULA_VERSION,
+            reliefScore: settlement.reliefProfile?.reliefScore ?? 0,
+            reliefClass: settlement.reliefProfile?.reliefClass ?? 'none',
+            targetTierSpan: settlement.reliefProfile?.targetTierSpan ?? 1
+        },
         interior: {
             ...interior,
             minimumOpenSpan: [Math.min(interior.width, interior.height), Math.max(interior.width, interior.height)],
@@ -2865,20 +5068,182 @@ function dominantFootprintElevation(lot, cells, elevationRows) {
     return maxCountKey(counts, 0);
 }
 
-function smoothRoadElevations(mutable, elevationRows) {
-    for (let pass = 0; pass < 3; pass++) {
-        for (let row = 0; row < mutable.length; row++) {
-            for (let col = 0; col < (mutable[row]?.length || 0); col++) {
-                if (!['R', ';'].includes(mutable[row][col])) continue;
-                const roadNeighbors = CARDINALS
-                    .map(({ x, y }) => ['R', ';'].includes(mutable[row + y]?.[col + x]) ? elevationRows[row + y]?.[col + x] : null)
-                    .filter(Number.isFinite);
-                if (!roadNeighbors.length) continue;
-                const minimum = Math.min(...roadNeighbors);
-                if (elevationRows[row][col] > minimum + 1) elevationRows[row][col] = minimum + 1;
+function smoothRoadElevations(mutable, elevationRows, protectedCells = new Set()) {
+    const height = mutable.length;
+    const width = mutable[0]?.length || 0;
+    const roadSymbols = new Set(['R', ':', ';', '=']);
+    for (let pass = 0; pass < 12; pass++) {
+        let changes = 0;
+        for (let row = 0; row < height; row++) {
+            for (let col = 0; col < width; col++) {
+                if (!roadSymbols.has(mutable[row]?.[col])) continue;
+                for (const [dx, dy] of [[1, 0], [0, 1], [1, 1], [-1, 1]]) {
+                    const neighborCol = col + dx;
+                    const neighborRow = row + dy;
+                    if (!roadSymbols.has(mutable[neighborRow]?.[neighborCol])) continue;
+                    const value = Number(elevationRows[row]?.[col]) || 0;
+                    const neighborValue = Number(elevationRows[neighborRow]?.[neighborCol]) || 0;
+                    if (Math.abs(value - neighborValue) <= 1) continue;
+                    const currentProtected = protectedCells.has(elevationCellKey(col, row));
+                    const neighborProtected = protectedCells.has(elevationCellKey(neighborCol, neighborRow));
+                    if (currentProtected && neighborProtected) continue;
+                    if (currentProtected) {
+                        elevationRows[neighborRow][neighborCol] = clampInteger(
+                            value + Math.sign(neighborValue - value),
+                            0,
+                            6
+                        );
+                    } else if (neighborProtected) {
+                        elevationRows[row][col] = clampInteger(
+                            neighborValue + Math.sign(value - neighborValue),
+                            0,
+                            6
+                        );
+                    } else if (value > neighborValue) {
+                        elevationRows[row][col] = neighborValue + 1;
+                    } else {
+                        elevationRows[neighborRow][neighborCol] = value + 1;
+                    }
+                    changes++;
+                }
+            }
+        }
+        if (changes === 0) break;
+    }
+}
+
+function relaxSymbolElevationRamps(mutable, elevationRows, protectedCells = new Set()) {
+    const height = mutable.length;
+    const width = mutable[0]?.length || 0;
+    const sourceDistanceRows = createProtectedElevationDistanceRows(mutable, protectedCells);
+    const protectedNeighborRanges = createProtectedNeighborElevationRanges(
+        mutable,
+        elevationRows,
+        protectedCells
+    );
+    const setRampElevation = (col, row, value) => {
+        const range = protectedNeighborRanges[row]?.[col] || { minimum: 0, maximum: 6 };
+        const minimum = range.minimum <= range.maximum
+            ? range.minimum
+            : Math.round((range.minimum + range.maximum) / 2);
+        const maximum = range.minimum <= range.maximum ? range.maximum : minimum;
+        elevationRows[row][col] = clampInteger(value, minimum, maximum);
+    };
+    for (let pass = 0; pass < 12; pass++) {
+        let changes = 0;
+        const reverse = pass % 2 === 1;
+        const rowStart = reverse ? height - 1 : 0;
+        const rowEnd = reverse ? -1 : height;
+        const rowStep = reverse ? -1 : 1;
+        const colStart = reverse ? width - 1 : 0;
+        const colEnd = reverse ? -1 : width;
+        const colStep = reverse ? -1 : 1;
+        for (let row = rowStart; row !== rowEnd; row += rowStep) {
+            for (let col = colStart; col !== colEnd; col += colStep) {
+                if (isWaterSymbol(mutable[row]?.[col])) continue;
+                for (const [dx, dy] of [[1, 0], [0, 1]]) {
+                    const neighborCol = col + dx;
+                    const neighborRow = row + dy;
+                    const neighborSymbol = mutable[neighborRow]?.[neighborCol];
+                    if (!neighborSymbol || isWaterSymbol(neighborSymbol)) continue;
+                    const value = Number(elevationRows[row]?.[col]) || 0;
+                    const neighborValue = Number(elevationRows[neighborRow]?.[neighborCol]) || 0;
+                    if (Math.abs(value - neighborValue) <= 1) continue;
+                    const currentProtected = protectedCells.has(elevationCellKey(col, row));
+                    const neighborProtected = protectedCells.has(elevationCellKey(neighborCol, neighborRow));
+                    if (currentProtected && neighborProtected) continue;
+                    if (currentProtected) {
+                        setRampElevation(
+                            neighborCol,
+                            neighborRow,
+                            value + Math.sign(neighborValue - value)
+                        );
+                    } else if (neighborProtected) {
+                        setRampElevation(col, row, neighborValue + Math.sign(value - neighborValue));
+                    } else if (sourceDistanceRows[row][col] < sourceDistanceRows[neighborRow][neighborCol]) {
+                        setRampElevation(
+                            neighborCol,
+                            neighborRow,
+                            value + Math.sign(neighborValue - value)
+                        );
+                    } else if (sourceDistanceRows[neighborRow][neighborCol] < sourceDistanceRows[row][col]) {
+                        setRampElevation(col, row, neighborValue + Math.sign(value - neighborValue));
+                    } else if (value > neighborValue) {
+                        setRampElevation(col, row, neighborValue + 1);
+                    } else {
+                        setRampElevation(neighborCol, neighborRow, value + 1);
+                    }
+                    changes++;
+                }
+            }
+        }
+        if (changes === 0) break;
+    }
+}
+
+function createProtectedNeighborElevationRanges(mutable, elevationRows, protectedCells) {
+    const height = mutable.length;
+    const width = mutable[0]?.length || 0;
+    const ranges = Array.from({ length: height }, () => Array.from({ length: width }, () => ({
+        minimum: 0,
+        maximum: 6
+    })));
+    for (let row = 0; row < height; row++) {
+        for (let col = 0; col < width; col++) {
+            if (!protectedCells.has(elevationCellKey(col, row))) continue;
+            const sourceTier = clampInteger(elevationRows[row]?.[col], 0, 6);
+            for (const { x, y } of CARDINALS) {
+                const neighborCol = col + x;
+                const neighborRow = row + y;
+                if (!mutable[neighborRow]?.[neighborCol] || isWaterSymbol(mutable[neighborRow][neighborCol])) continue;
+                if (protectedCells.has(elevationCellKey(neighborCol, neighborRow))) continue;
+                const range = ranges[neighborRow][neighborCol];
+                range.minimum = Math.max(range.minimum, sourceTier - 1);
+                range.maximum = Math.min(range.maximum, sourceTier + 1);
             }
         }
     }
+    return ranges;
+}
+
+function createProtectedElevationDistanceRows(mutable, protectedCells) {
+    const height = mutable.length;
+    const width = mutable[0]?.length || 0;
+    const distances = Array.from({ length: height }, () => Array(width).fill(Infinity));
+    const queue = [];
+    for (let row = 0; row < height; row++) {
+        for (let col = 0; col < width; col++) {
+            if (!protectedCells.has(elevationCellKey(col, row)) || isWaterSymbol(mutable[row]?.[col])) continue;
+            distances[row][col] = 0;
+            queue.push({ col, row });
+        }
+    }
+    for (let index = 0; index < queue.length; index++) {
+        const current = queue[index];
+        const nextDistance = distances[current.row][current.col] + 1;
+        for (const { x, y } of CARDINALS) {
+            const col = current.col + x;
+            const row = current.row + y;
+            if (!mutable[row]?.[col] || isWaterSymbol(mutable[row][col])) continue;
+            if (distances[row][col] <= nextDistance) continue;
+            distances[row][col] = nextDistance;
+            queue.push({ col, row });
+        }
+    }
+    return distances;
+}
+
+function collectProtectedElevationKeys(constraintField) {
+    const protectedCells = new Set();
+    for (const cell of constraintField?.cells || []) {
+        if (!Number.isFinite(cell?.fixedElevation) || cell.fixedElevationSource !== 'town-vector') continue;
+        protectedCells.add(elevationCellKey(cell.col, cell.row));
+    }
+    return protectedCells;
+}
+
+function elevationCellKey(col, row) {
+    return `${col},${row}`;
 }
 
 function nearestSymbolDistance(rows, centerCol, centerRow, symbols, radius) {

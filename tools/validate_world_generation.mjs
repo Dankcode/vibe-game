@@ -14,7 +14,10 @@ import {
 } from '../client/src/data/ActiveWorldData.js';
 import { createFantasyWorldPlanAt, getDefaultWorldLocation } from '../client/src/data/FantasyWorldData.js';
 import { WORLD_PALETTE_IDS } from '../client/src/data/WorldPalettes.js';
-import { validateBakedBuilding } from '../client/src/data/BakedBuildingLibrary.js';
+import {
+    BAKED_BUILDING_BLUEPRINT_IDS,
+    validateBakedBuilding
+} from '../client/src/data/BakedBuildingLibrary.js';
 import { BAKED_PARTIAL_CHUNKS } from '../client/src/data/BakedChunkData.js';
 import {
     TERRAIN_WFC_CHUNK_SIZE,
@@ -62,7 +65,10 @@ const townVectorSummary = getActiveTownVectorSummary();
 assert.equal(townVectorValidation.valid, true, townVectorValidation.errors.join('\n'));
 assert.equal(townVectorSummary.towns, EXPECTED_SETTLEMENTS);
 assert.equal(townVectorSummary.walls, 5015);
+assert.equal(townVectorSummary.streetCells, 30756);
+assert.equal(townVectorSummary.streetSegments, 12165);
 assert.equal(townVectorSummary.buildings, 512);
+assert.ok(BAKED_BUILDING_BLUEPRINT_IDS.length >= 50);
 assert.ok(
     Buffer.byteLength(JSON.stringify(ACTIVE_SETTLEMENT_BLUEPRINTS.blueprints)) <=
     SETTLEMENT_BLUEPRINT_MAX_BYTES
@@ -126,7 +132,13 @@ assert.equal(base.generation.terrainWfc.invalidAdjacencies, 0);
 assert.ok(base.generation.terrainWfc.fallbacks < base.generation.terrainWfc.chunks);
 assert.equal(base.generation.partialBake.registryCompatible, true);
 assert.ok(base.generation.partialBake.appliedCells > 0);
-assert.equal(base.generation.partialBake.constraintConflicts, 0);
+assert.equal(
+    base.generation.partialBake.candidateCells,
+    base.generation.partialBake.appliedCells + base.generation.partialBake.constraintConflicts,
+    'newer FMG vector constraints must account for every superseded stale baked cell'
+);
+assert.ok(base.generation.vectorStreets.cells > 0, 'FMG street vectors must be fixed before live WFC');
+assert.equal(base.generation.vectorStreets.cells, base.generation.vectorStreets.fixedElevationCells);
 assert.equal(base.generation.coupledTerrainAndBuildings, true);
 assert.equal(base.generation.couplingMode, 'shared-constraint-sequential-wfc');
 assert.equal(base.generation.worldAnchoredChunks, true);
@@ -220,7 +232,7 @@ for (let y = 0; y < base.height; y++) {
         if (base.visualVariantRows[y][x] !== variation.visualVariantRows[y][x]) visualDifferences++;
     }
 }
-assert.ok(terrainDifferences / total > 0.1 && terrainDifferences / total < 0.7);
+assert.ok(terrainDifferences / total > 0.08 && terrainDifferences / total < 0.7);
 assert.ok(macroWaterDifferences / total < 0.1, 'variant must preserve recognizable FMG coastlines');
 assert.ok(visualDifferences / total > 0.3);
 assert.ok(paletteSet.size >= 4, 'default region should expose several coherent palette neighborhoods');

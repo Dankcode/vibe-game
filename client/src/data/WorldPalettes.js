@@ -1,3 +1,9 @@
+import {
+    BURG_THEME_IDS,
+    getBurgTheme,
+    normalizeBurgThemeId
+} from './BurgThemeCatalog.js';
+
 /**
  * World-level colour families used by procedural terrain.
  *
@@ -27,7 +33,7 @@ const palette = (id, label, variants) => Object.freeze({
  * coherent variants (0..5), giving WFC biomes their own identity while still
  * allowing neighboring tiles to share materials.
  */
-export const WORLD_PALETTES = Object.freeze({
+const BASE_WORLD_PALETTES = Object.freeze({
     meadow: palette('meadow', 'Sunlit Meadow', [
         variant(0x69dc55, 0x76503a, 0xc9f064, 0xf2ffa0),
         variant(0x7fe25a, 0x7f5438, 0xacef56, 0xf7ff9b),
@@ -126,7 +132,67 @@ export const WORLD_PALETTES = Object.freeze({
     ])
 });
 
+/**
+ * Architecture palettes are generated from the five manifest-authoritative burg
+ * themes. Each palette remains six variants wide, so a large town can vary its
+ * paving and masonry without creating coordinate-specific materials.
+ */
+export const BURG_THEME_STREET_PALETTES = Object.freeze(Object.fromEntries(
+    BURG_THEME_IDS.map((themeId) => {
+        const theme = getBurgTheme(themeId);
+        return [theme.streetPaletteId, createBurgThemeStreetPalette(theme)];
+    })
+));
+
+export const BURG_THEME_STREET_PALETTE_IDS = Object.freeze(
+    BURG_THEME_IDS.map((themeId) => getBurgTheme(themeId).streetPaletteId)
+);
+
+export const WORLD_PALETTES = Object.freeze({
+    ...BASE_WORLD_PALETTES,
+    ...BURG_THEME_STREET_PALETTES
+});
+
 export const WORLD_PALETTE_IDS = Object.freeze(Object.keys(WORLD_PALETTES));
+
+export function getBurgThemeStreetPaletteId(themeId, fallback = null) {
+    const normalizedThemeId = normalizeBurgThemeId(themeId, null);
+    return normalizedThemeId
+        ? getBurgTheme(normalizedThemeId).streetPaletteId
+        : fallback;
+}
+
+function createBurgThemeStreetPalette(theme) {
+    const wall = colorNumber(theme.themePalette.wallColor);
+    const trim = colorNumber(theme.themePalette.trimColor);
+    const accent = colorNumber(theme.themePalette.accentColor);
+    const roofs = theme.themePalette.roofColors.map((color) => colorNumber(color));
+    const roof = (index) => roofs[index % roofs.length];
+    const light = 0xffffff;
+
+    return palette(theme.streetPaletteId, `${theme.label} Streets`, [
+        variant(mixColor(wall, accent, 0.08), mixColor(trim, wall, 0.24), accent, mixColor(wall, light, 0.36)),
+        variant(mixColor(wall, roof(0), 0.13), mixColor(trim, roof(0), 0.16), roof(0), mixColor(wall, light, 0.28)),
+        variant(mixColor(wall, trim, 0.10), mixColor(trim, wall, 0.14), mixColor(accent, roof(1), 0.24), mixColor(wall, light, 0.43)),
+        variant(mixColor(wall, accent, 0.17), mixColor(trim, accent, 0.12), roof(1), mixColor(accent, light, 0.42)),
+        variant(mixColor(wall, roof(2), 0.16), mixColor(trim, roof(2), 0.19), mixColor(accent, roof(2), 0.22), mixColor(wall, light, 0.32)),
+        variant(mixColor(wall, trim, 0.18), mixColor(trim, wall, 0.30), accent, mixColor(wall, light, 0.48))
+    ]);
+}
+
+function colorNumber(value) {
+    if (Number.isFinite(value)) return Math.max(0, Math.min(0xffffff, Math.trunc(value)));
+    const parsed = Number.parseInt(String(value || '').replace(/^#/, ''), 16);
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function mixColor(from, to, amount) {
+    const ratio = Math.max(0, Math.min(1, Number(amount) || 0));
+    const channel = (shift) => Math.round(
+        ((from >> shift) & 0xff) * (1 - ratio) + ((to >> shift) & 0xff) * ratio
+    );
+    return (channel(16) << 16) | (channel(8) << 8) | channel(0);
+}
 
 const PALETTE_ALIASES = Object.freeze({
     grass: 'meadow',

@@ -6,6 +6,7 @@ import {
     normalizeWorldVisualVariant
 } from '../data/TileRegistry.js';
 import { BUILDING_PARTS } from '../data/TileLibrary.js';
+import { normalizeBurgThemeId } from '../data/BurgThemeCatalog.js';
 
 export const TILE_HEIGHT = 0.96;
 export const TILE_TOP_OFFSET = TILE_HEIGHT / 2;
@@ -31,6 +32,7 @@ export class Tile {
             attributes.paletteId ?? attributes.biomePaletteId ?? attributes.worldPalette ?? null,
             null
         );
+        this.architectureThemeId = normalizeBurgThemeId(attributes.architectureThemeId, null);
         this.visualSeed = Tile.normalizeVisualSeed(
             attributes.visualSeed ?? attributes.variantSeed ?? attributes.seed ?? 0
         );
@@ -143,7 +145,8 @@ export class Tile {
             // A ford may sit inside any world palette, including coast, crystal, or tundra.
             // Its physical bed remains neutral sand instead of inheriting and recoloring the
             // surrounding water palette.
-            paletteId: null
+            paletteId: null,
+            architectureThemeId: null
         };
     }
 
@@ -154,6 +157,7 @@ export class Tile {
             elevation: this.elevation,
             seed: this.visualSeed,
             paletteId: this.paletteId,
+            architectureThemeId: this.architectureThemeId,
             visualVariant: this.visualVariant
         };
     }
@@ -344,9 +348,11 @@ export class Tile {
             0x51f15e
         );
         const index = hash % palettes.length;
-        if (!Tile.windowGlassMaterials.has(index)) {
+        const architectureThemeId = normalizeBurgThemeId(visualContext.architectureThemeId, null);
+        const cacheKey = `${architectureThemeId || 'unowned'}:${index}`;
+        if (!Tile.windowGlassMaterials.has(cacheKey)) {
             const palette = palettes[index];
-            Tile.windowGlassMaterials.set(index, new THREE.MeshStandardMaterial({
+            Tile.windowGlassMaterials.set(cacheKey, new THREE.MeshStandardMaterial({
                 color: palette.color,
                 emissive: palette.emissive,
                 emissiveIntensity: 0.3,
@@ -357,7 +363,7 @@ export class Tile {
                 depthWrite: false
             }));
         }
-        return Tile.windowGlassMaterials.get(index);
+        return Tile.windowGlassMaterials.get(cacheKey);
     }
 
     static getStairwellMaterial() {
@@ -443,7 +449,8 @@ export class Tile {
         const definition = getTileDefinition(
             element,
             textureValue,
-            isOrdinaryTerrain ? visualContext?.paletteId : null
+            isOrdinaryTerrain ? visualContext?.paletteId : null,
+            visualContext?.architectureThemeId
         );
         const visual = Tile.resolveVisualProfile(definition, {
             ...(visualContext || {}),
@@ -456,16 +463,7 @@ export class Tile {
                     ? visual.topographicZone * 0.006
                     : 0)
         );
-        const key = [
-            element,
-            textureValue,
-            effect,
-            visual.paletteId,
-            visual.visualVariant,
-            visual.paletteIndex,
-            visual.motif,
-            elevationTone
-        ].join(':');
+        const key = Tile.createMaterialCacheKey(element, textureValue, effect, visual, elevationTone);
         if (!Tile.materialCache.has(key)) {
             const topTexture = Tile.createTexture(visual, effect, elevationTone);
             const sideTexture = Tile.createSideTexture(visual, elevationTone);
@@ -516,6 +514,21 @@ export class Tile {
         return hash >>> 0;
     }
 
+    static createMaterialCacheKey(element, textureValue, effect, visual = {}, elevationTone = 0) {
+        const architectureThemeId = normalizeBurgThemeId(visual.architectureThemeId, null);
+        return [
+            element,
+            textureValue,
+            effect,
+            architectureThemeId || 'unowned',
+            visual.paletteId,
+            visual.visualVariant,
+            visual.paletteIndex,
+            visual.motif,
+            elevationTone
+        ].join(':');
+    }
+
     static normalizeVisualVariant(value) {
         return normalizeWorldVisualVariant(value, null);
     }
@@ -562,10 +575,15 @@ export class Tile {
         // keeps generated materials bounded and replayable across sessions.
         const motif = visualVariant;
         const paletteId = definition.paletteId || definition.visualPalette || 'default';
+        const architectureThemeId = normalizeBurgThemeId(
+            definition.architectureThemeId ?? context?.architectureThemeId,
+            null
+        );
         return {
             ...definition,
             ...variants[paletteIndex],
             paletteId,
+            architectureThemeId,
             visualVariant,
             paletteIndex,
             motif,

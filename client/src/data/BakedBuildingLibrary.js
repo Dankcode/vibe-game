@@ -4,6 +4,11 @@ import {
     createStairFlight,
     validateStaircaseRouting
 } from './StructuralMatrixRules.js';
+import { BAKED_BUILDING_CATALOG_SPECS } from './BakedBuildingCatalog.js';
+import {
+    normalizeBurgThemeId,
+    resolveBurgThemeBuildingStyle
+} from './BurgThemeCatalog.js';
 
 // Fixed landmark silhouettes placed by deterministic constraints. These are deliberately code
 // authored rather than imported town payloads: FMG-derived area, district, terrain and inhibitor
@@ -30,7 +35,7 @@ const DISTRICT_STYLE = Object.freeze({
     harbor: Object.freeze({ accent: 0x2fa7c4, roofs: Object.freeze(['copper', 'slate', 'clay']), activity: 'dock' })
 });
 
-const RAW_BLUEPRINTS = [
+const LEGACY_BLUEPRINTS = [
     blueprint({
         id: 'castle-keep',
         name: 'Crownward Keep',
@@ -161,6 +166,16 @@ const RAW_BLUEPRINTS = [
     })
 ];
 
+const LEGACY_BLUEPRINT_IDS = new Set(LEGACY_BLUEPRINTS.map((entry) => entry.id));
+const RAW_BLUEPRINTS = Object.freeze([
+    ...LEGACY_BLUEPRINTS,
+    ...BAKED_BUILDING_CATALOG_SPECS
+        .filter((spec) => !LEGACY_BLUEPRINT_IDS.has(spec.id))
+        .map(blueprint)
+]);
+const MAX_BLUEPRINT_SHORTLIST = 16;
+const DEFAULT_RELIEF_FORMULA_VERSION = 'fmg-burg-relief-v1';
+
 export const BAKED_BUILDING_BLUEPRINTS = Object.freeze(Object.fromEntries(
     RAW_BLUEPRINTS.map((entry) => [entry.id, entry])
 ));
@@ -194,6 +209,7 @@ export function createBakedBuildingPlan({
     area = null,
     districts = null,
     occupied = [],
+    replaceableRoadCells = [],
     seed = 'baked-buildings',
     townId = 'town',
     minBuildings = 2,
@@ -202,7 +218,12 @@ export function createBakedBuildingPlan({
     maxInhibitor = 0.68,
     requireMinimum = false,
     compactFirst = false,
-    relaxRoadAffinity = false
+    relaxRoadAffinity = false,
+    architectureThemeId = null,
+    reliefProfile = null,
+    maxElevationSpan = 1,
+    globalOriginCol = 0,
+    globalOriginRow = 0
 } = {}) {
     const height = rows.length;
     const width = rows[0]?.length || 0;
@@ -228,26 +249,41 @@ export function createBakedBuildingPlan({
         districtRows,
         region,
         districtSet,
+        replaceableRoadCells: normalizeCellKeySet(replaceableRoadCells),
         width,
         height,
         maxInhibitor: safeMaxInhibitor,
         relaxRoadAffinity: relaxRoadAffinity === true,
+        architectureThemeId: normalizeBurgThemeId(architectureThemeId, null),
+        reliefProfile: normalizeBuildingReliefProfile(reliefProfile),
+        maxElevationSpan: clampInteger(maxElevationSpan, 0, 2),
+        elevationRejections: { illegalCliff: 0, elevationSpan: 0 },
         seed: String(seed),
         townId: String(townId),
         offsetX: Math.floor(width / 2),
-        offsetY: Math.floor(height / 2)
+        offsetY: Math.floor(height / 2),
+        globalOriginCol: Math.round(Number(globalOriginCol) || 0),
+        globalOriginRow: Math.round(Number(globalOriginRow) || 0)
     };
 
-    const blueprintOrder = RAW_BLUEPRINTS
+    const rankedBlueprints = RAW_BLUEPRINTS
         .filter((entry) => blueprintMatchesDistrictContext(entry, districtSet))
         .map((entry) => ({
             blueprint: entry,
             score: entry.priority
                 + contextTerrainPriority(entry, context)
-                + seededUnit(`${seed}:blueprint:${entry.id}`) * 0.35
+                // Burg seed has enough influence to keep equal-purpose districts from selecting
+                // the same facade family in every town. Fixed keeps and coast/highland affinity
+                // still dominate because their explicit priority bonuses are larger.
+                + seededUnit(`${seed}:blueprint:${entry.id}`) * 2.8
                 - (compactFirst ? entry.width * entry.height * 0.32 : 0)
         }))
         .sort((a, b) => b.score - a.score || a.blueprint.id.localeCompare(b.blueprint.id));
+    const blueprintOrder = createBlueprintShortlist(rankedBlueprints, {
+        compactFirst,
+        districts: districtSet,
+        preferCabin: region.cells.size <= 24
+    });
 
     const buildings = [];
     const rejected = {};
@@ -268,11 +304,20 @@ export function createBakedBuildingPlan({
     // area/inhibitor/occupancy rules remain hard constraints; only district affinity is relaxed.
     if (buildings.length < requestedMin) {
         const used = new Set(buildings.map((building) => building.blueprintId));
-        const fallbackBlueprints = RAW_BLUEPRINTS
+        const fallbackBlueprints = createBlueprintShortlist(RAW_BLUEPRINTS
             .filter((candidate) => candidate.terrain !== 'coast' && candidate.id !== 'castle-keep')
+            .map((blueprint) => ({
+                blueprint,
+                score: blueprint.priority + seededUnit(`${seed}:fallback:${blueprint.id}`) * 2.8 -
+                    (compactFirst ? blueprint.width * blueprint.height * 0.32 : 0)
+            }))
             .sort((left, right) => compactFirst
-                ? left.width * left.height - right.width * right.height || right.priority - left.priority
-                : 0);
+                ? left.blueprint.width * left.blueprint.height - right.blueprint.width * right.blueprint.height ||
+                    right.score - left.score
+                : right.score - left.score || left.blueprint.id.localeCompare(right.blueprint.id)), {
+            compactFirst,
+            districts: new Set()
+        }).map((entry) => entry.blueprint);
         for (const entry of fallbackBlueprints) {
             if (buildings.length >= Math.min(requestedMin, requestedMax)) break;
             if (used.has(entry.id)) continue;
@@ -309,8 +354,24 @@ export function createBakedBuildingPlan({
             blueprintIds: buildings.map((building) => building.blueprintId),
             reservedApproachCells: buildings.map((building) => building.entrance.approachGrid.join(',')),
             rejected,
+            catalogSize: RAW_BLUEPRINTS.length,
+            shortlistSize: blueprintOrder.length,
             areaCells: region.cells.size,
             maxInhibitor: safeMaxInhibitor,
+            architectureThemeId: context.architectureThemeId,
+            reliefFormulaVersion: context.reliefProfile.formulaVersion,
+            reliefScore: context.reliefProfile.reliefScore,
+            reliefClass: context.reliefProfile.reliefClass,
+            targetTierSpan: context.reliefProfile.targetTierSpan,
+            maxElevationSpan: context.maxElevationSpan,
+            illegalCliffCandidates: context.elevationRejections.illegalCliff,
+            elevationSpanCandidates: context.elevationRejections.elevationSpan,
+            buildingBaseElevationMinimum: buildings.length
+                ? Math.min(...buildings.map((building) => building.baseElevation))
+                : null,
+            buildingBaseElevationMaximum: buildings.length
+                ? Math.max(...buildings.map((building) => building.baseElevation))
+                : null,
             strategy: compactFirst ? 'compact-first' : 'landmark-first'
         }
     };
@@ -337,6 +398,9 @@ export function createFixedBakedBuilding({
     seed = 'fixed-baked-building',
     townId = 'town',
     district = 'castle',
+    architectureThemeId = null,
+    reliefProfile = null,
+    maxElevationSpan = 1,
     index = 0
 } = {}) {
     const entry = BAKED_BUILDING_BLUEPRINTS[blueprintId];
@@ -357,6 +421,17 @@ export function createFixedBakedBuilding({
     }
     const elevations = shape.footprintCells.map((cell) =>
         Number(elevationRows[row + cell.y]?.[col + cell.x]) || 0);
+    const elevationSafety = analyzeFootprintElevation(
+        shape.footprintCells.map((cell) => ({ col: col + cell.x, row: row + cell.y })),
+        elevationRows
+    );
+    const safeMaximumSpan = clampInteger(maxElevationSpan, 0, 2);
+    if (elevationSafety.maxAdjacentDelta > 1 || elevationSafety.span > safeMaximumSpan) {
+        throw new Error(
+            `Fixed baked blueprint ${entry.id} crosses an illegal elevation cliff ` +
+            `(span ${elevationSafety.span}, edge ${elevationSafety.maxAdjacentDelta}).`
+        );
+    }
     const baseElevation = mode(elevations);
     const candidate = {
         col,
@@ -368,7 +443,8 @@ export function createFixedBakedBuilding({
         baseElevation,
         inhibitor: 0,
         approachInhibitor: 0,
-        elevationSpan: elevations.length ? Math.max(...elevations) - Math.min(...elevations) : 0,
+        elevationSpan: elevationSafety.span,
+        maxAdjacentElevationDelta: elevationSafety.maxAdjacentDelta,
         waterDistance: Infinity,
         roadDistance: 0
     };
@@ -376,8 +452,12 @@ export function createFixedBakedBuilding({
         seed: String(seed),
         townId: String(townId),
         districtSet: new Set([district]),
+        architectureThemeId: normalizeBurgThemeId(architectureThemeId, null),
+        reliefProfile: normalizeBuildingReliefProfile(reliefProfile),
         offsetX: Math.floor(safeWidth / 2),
-        offsetY: Math.floor(safeHeight / 2)
+        offsetY: Math.floor(safeHeight / 2),
+        globalOriginCol: 0,
+        globalOriginRow: 0
     };
     const building = materializeBuilding(entry, candidate, context, index);
     return {
@@ -435,6 +515,10 @@ export function validateBakedBuilding(building) {
     return { valid: errors.length === 0, errors, enterableSpace };
 }
 
+export function analyzeBuildingFootprintElevation(worldCells = [], elevationRows = []) {
+    return analyzeFootprintElevation(worldCells, elevationRows);
+}
+
 function collectStructuralStairCells(building) {
     const cells = [];
     for (const cell of building?.stairCells || []) {
@@ -453,10 +537,13 @@ function collectStructuralStairCells(building) {
 
 function blueprint(spec) {
     const parsed = parseLayout(spec.layout);
+    const catalogFloorPlans = BAKED_BUILDING_CATALOG_SPECS.find((candidate) => candidate.id === spec.id)?.floorPlans;
+    const floorPlans = normalizeFloorPlans(spec.floorPlans || catalogFloorPlans, spec.stories, spec.roomType);
     const entry = Object.freeze({
         ...spec,
         layout: Object.freeze([...spec.layout]),
         districts: Object.freeze([...spec.districts]),
+        floorPlans,
         width: parsed.width,
         height: parsed.height,
         footprintCells: Object.freeze(parsed.footprintCells.map(Object.freeze)),
@@ -512,15 +599,28 @@ function createCandidates(entry, context, occupiedCells, buffer) {
 function evaluateCandidate(entry, shape, col, row, context, occupiedCells, buffer) {
     const worldCells = shape.footprintCells.map((cell) => ({ col: col + cell.x, row: row + cell.y }));
     if (worldCells.some((cell) => !context.region.cells.has(gridKey(cell.col, cell.row)))) return null;
-    if (worldCells.some((cell) => !BUILDABLE_SYMBOLS.has(context.rows[cell.row]?.[cell.col]))) return null;
+    if (worldCells.some((cell) => {
+        const symbol = context.rows[cell.row]?.[cell.col];
+        return !BUILDABLE_SYMBOLS.has(symbol) && !(
+            symbol === 'R' && context.replaceableRoadCells.has(gridKey(cell.col, cell.row))
+        );
+    })) return null;
     if (worldCells.some((cell) => neighborhoodOccupied(cell.col, cell.row, occupiedCells, buffer))) return null;
 
     const inhibitors = worldCells.map((cell) => clamp(Number(context.inhibitorRows[cell.row]?.[cell.col]) || 0, 0, 1));
     if (inhibitors.some((value) => value > context.maxInhibitor)) return null;
     const inhibitor = average(inhibitors);
     const elevations = worldCells.map((cell) => Number(context.elevationRows[cell.row]?.[cell.col]) || 0);
-    const elevationSpan = Math.max(...elevations) - Math.min(...elevations);
-    if (elevationSpan > 2) return null;
+    const elevationSafety = analyzeFootprintElevation(worldCells, context.elevationRows);
+    const elevationSpan = elevationSafety.span;
+    if (elevationSafety.maxAdjacentDelta > 1) {
+        context.elevationRejections.illegalCliff++;
+        return null;
+    }
+    if (elevationSpan > context.maxElevationSpan) {
+        context.elevationRejections.elevationSpan++;
+        return null;
+    }
 
     const doorDirection = CARDINALS[shape.door.edge];
     const approach = {
@@ -547,17 +647,30 @@ function evaluateCandidate(entry, shape, col, row, context, occupiedCells, buffe
         Math.max(1, Math.hypot(context.region.bounds.width, context.region.bounds.height) / 2), 0, 1);
     const elevation = mode(elevations);
     const elevationBias = entry.terrain === 'highland' ? elevation * 0.16 : -elevationSpan * 0.5;
+    const reliefScore = context.reliefProfile.reliefScore;
+    const terraceScore = reliefScore * (
+        elevation * 0.12 - elevationSpan * 0.9 +
+        Math.max(0, 2 - Math.abs(elevation - context.reliefProfile.baseElevationTier)) * 0.18
+    );
     const terrainScore = entry.terrain === 'coast' ? Math.max(0, entry.waterRange - waterDistance) * 0.72 : 0;
     const roadScore = Number.isFinite(roadDistance) ? Math.max(0, 7 - roadDistance) * 0.22 : 0;
     const doorFacingScore = ROAD_SYMBOLS.has(context.rows[approach.row]?.[approach.col]) ? 1.2 : 0;
     const districtScore = district && entry.districts.includes(district) ? 1.5 : 0;
-    const jitter = seededUnit(`${context.seed}:${entry.id}:${col}:${row}:${shape.rotation}`) * 0.48;
-    const score = terrainScore + roadScore + doorFacingScore + districtScore + centrality * 0.9 + elevationBias -
+    const globalCol = col + context.globalOriginCol;
+    const globalRow = row + context.globalOriginRow;
+    const jitter = seededUnit(`${context.seed}:${entry.id}:${globalCol}:${globalRow}:${shape.rotation}`) * 0.48;
+    const score = terrainScore + roadScore + doorFacingScore + districtScore + centrality * 0.9 + elevationBias + terraceScore -
         inhibitor * 4 - approachInhibitor * 2 + jitter;
 
     return {
         col, row, rotation: shape.rotation, shape, score, approach, district,
-        baseElevation: elevation, inhibitor, approachInhibitor, elevationSpan, waterDistance, roadDistance
+        baseElevation: elevation,
+        inhibitor,
+        approachInhibitor,
+        elevationSpan,
+        maxAdjacentElevationDelta: elevationSafety.maxAdjacentDelta,
+        waterDistance,
+        roadDistance
     };
 }
 
@@ -567,8 +680,22 @@ function materializeBuilding(entry, candidate, context, index) {
         ? candidate.district
         : entry.districts.find((value) => context.districtSet.has(value)) || entry.districts[0];
     const palette = DISTRICT_STYLE[district] || DISTRICT_STYLE.residential;
-    const idHash = hashWaveSeed(`${context.seed}:${context.townId}:${entry.id}:${candidate.col}:${candidate.row}`);
+    const globalCol = candidate.col + context.globalOriginCol;
+    const globalRow = candidate.row + context.globalOriginRow;
+    const idHash = hashWaveSeed(`${context.seed}:${context.townId}:${entry.id}:${globalCol}:${globalRow}`);
     const id = `baked-${context.townId}-${entry.id}-${idHash.toString(16).slice(0, 7)}`;
+    const themedStyle = context.architectureThemeId
+        ? resolveBurgThemeBuildingStyle(context.architectureThemeId, {
+            district,
+            seed: `${context.seed}:${entry.id}:${idHash}`,
+            baseStyle: entry.style,
+            baseRoofStyle: entry.roofStyle,
+            baseArchitectureStyle: entry.architectureStyle
+        })
+        : null;
+    const themePalette = themedStyle?.themePalette
+        ? cloneThemePalette(themedStyle.themePalette)
+        : null;
     const stairSystem = createStructuralStairSystem(shape, entry.stories);
     if (!stairSystem) {
         throw new Error(`Baked blueprint ${entry.id} cannot fit a valid structural stair system.`);
@@ -589,7 +716,7 @@ function materializeBuilding(entry, candidate, context, index) {
         height: shape.height,
         footprintCells: shape.footprintCells.map((cell) => ({ ...cell })),
         stories: entry.stories,
-        style: entry.style,
+        style: themedStyle?.style || entry.style,
         doorStyle: ['painted', 'oak', 'iron'][idHash % 3],
         door: { ...shape.door },
         stairs: stairSystem.stairs,
@@ -604,11 +731,25 @@ function materializeBuilding(entry, candidate, context, index) {
         facadeVariant: idHash % 17,
         rotation: candidate.rotation,
         district,
-        districtPalette: { ...palette, roofs: [...palette.roofs] },
+        districtPalette: {
+            ...palette,
+            accent: Number.isFinite(Number(themePalette?.accentColor))
+                ? Number(themePalette.accentColor)
+                : palette.accent,
+            roofs: themedStyle?.roofStyle ? [themedStyle.roofStyle] : [...palette.roofs]
+        },
         activity: palette.activity,
         archetype: entry.archetype,
-        architectureStyle: entry.architectureStyle,
-        roofStyle: entry.roofStyle,
+        architectureStyle: themedStyle?.architectureStyle || entry.architectureStyle,
+        roofStyle: themedStyle?.roofStyle || entry.roofStyle,
+        ...(themedStyle ? {
+            architectureThemeId: themedStyle.architectureThemeId,
+            themeLabel: themedStyle.themeLabel,
+            roofGeometry: themedStyle.roofGeometry,
+            facadeKit: themedStyle.facadeKit,
+            castleKit: themedStyle.castleKit,
+            themePalette
+        } : {}),
         entrance: {
             grid: [shape.door.x, shape.door.y],
             edge: shape.door.edge,
@@ -621,22 +762,137 @@ function materializeBuilding(entry, candidate, context, index) {
             openCells: shape.interiorCells.filter((cell) => !stairKeys.has(cellKey(cell))).map((cell) => ({ ...cell })),
             floorHeightVoxels: 2
         },
-        floors: Array.from({ length: entry.stories }, (_, level) => ({
-            level,
-            rooms: [{
-                type: entry.roomType,
-                gridRect: { x: interiorRect.x, y: interiorRect.y, width: interiorRect.width, height: interiorRect.height },
-                doors: level === 0 ? [{ grid: [shape.door.x, shape.door.y] }] : []
-            }]
-        })),
+        floors: createInteriorFloors(entry, interiorRect, shape.door, stairSystem),
         placementConstraints: {
             inhibitor: candidate.inhibitor,
             approachInhibitor: candidate.approachInhibitor,
             elevationSpan: candidate.elevationSpan,
+            maxAdjacentElevationDelta: candidate.maxAdjacentElevationDelta ?? 0,
+            reliefFormulaVersion: context.reliefProfile?.formulaVersion ?? DEFAULT_RELIEF_FORMULA_VERSION,
+            reliefScore: context.reliefProfile?.reliefScore ?? 0,
+            reliefClass: context.reliefProfile?.reliefClass ?? 'none',
+            targetTierSpan: context.reliefProfile?.targetTierSpan ?? 0,
             waterDistance: candidate.waterDistance,
             roadDistance: candidate.roadDistance
         }
     };
+}
+
+function cloneThemePalette(value) {
+    return Object.fromEntries(Object.entries(value || {}).map(([key, entry]) => [
+        key,
+        Array.isArray(entry) ? [...entry] : entry
+    ]));
+}
+
+function createBlueprintShortlist(ranked, {
+    compactFirst = false,
+    districts = new Set(),
+    preferCabin = false
+} = {}) {
+    const selected = ranked.slice(0, MAX_BLUEPRINT_SHORTLIST);
+    const selectedIds = new Set(selected.map((entry) => entry.blueprint.id));
+    const essentialIds = [
+        'cabin',
+        ...(districts.has('castle') ? ['castle-keep'] : []),
+        ...(districts.has('harbor') ? ['lighthouse'] : []),
+        ...(districts.has('garden') ? ['chapel'] : [])
+    ];
+    for (const id of essentialIds) {
+        if (selectedIds.has(id)) continue;
+        const entry = ranked.find((candidate) => candidate.blueprint.id === id);
+        if (!entry) continue;
+        selected.push(entry);
+        selectedIds.add(id);
+    }
+    const priorityIds = [
+        ...(districts.has('castle') ? ['castle-keep'] : []),
+        ...(districts.has('harbor') ? ['lighthouse'] : []),
+        ...(districts.has('garden') ? ['chapel'] : []),
+        ...(preferCabin ? ['cabin'] : [])
+    ];
+    const priority = priorityIds
+        .map((id) => selected.find((entry) => entry.blueprint.id === id))
+        .filter(Boolean);
+    if (priority.length) {
+        const prioritySet = new Set(priority.map((entry) => entry.blueprint.id));
+        selected.splice(0, selected.length, ...priority, ...selected.filter((entry) =>
+            !prioritySet.has(entry.blueprint.id)));
+    }
+    if (compactFirst) {
+        selected.sort((left, right) =>
+            left.blueprint.width * left.blueprint.height - right.blueprint.width * right.blueprint.height ||
+            right.score - left.score || left.blueprint.id.localeCompare(right.blueprint.id));
+    }
+    return selected;
+}
+
+function normalizeFloorPlans(value, stories, roomType = 'common') {
+    const count = Math.max(1, Math.floor(Number(stories) || 1));
+    const supplied = Array.isArray(value) ? value : [];
+    const plans = Array.from({ length: count }, (_, level) => {
+        const source = supplied[level] || supplied.at(-1) || [roomType];
+        const roomTypes = (Array.isArray(source) ? source : [source])
+            .map(String)
+            .filter(Boolean);
+        return Object.freeze(roomTypes.length ? roomTypes : [String(roomType || 'common')]);
+    });
+    return Object.freeze(plans);
+}
+
+function createInteriorFloors(entry, interiorRect, door, stairSystem) {
+    return Array.from({ length: entry.stories }, (_, level) => {
+        const requestedTypes = entry.floorPlans?.[level] || [entry.roomType];
+        const maximumRooms = Math.max(1, Math.max(interiorRect.width, interiorRect.height));
+        const roomTypes = requestedTypes.slice(0, maximumRooms);
+        const roomRects = splitInteriorRect(interiorRect, roomTypes.length);
+        const rooms = roomRects.map((gridRect, index) => {
+            const doors = [];
+            if (level === 0 && index === 0) doors.push({ grid: [door.x, door.y], kind: 'exterior' });
+            if (index > 0) doors.push({ grid: sharedRoomDoor(roomRects[index - 1], gridRect), kind: 'interior' });
+            return {
+                id: `floor-${level}-room-${index}`,
+                type: roomTypes[index] || entry.roomType,
+                gridRect,
+                doors
+            };
+        });
+        return {
+            level,
+            rooms,
+            verticalConnections: (stairSystem.stairs || [])
+                .filter((stair) => Number(stair.level) === level || Number(stair.level) === level - 1)
+                .map((stair) => ({
+                    level: stair.level,
+                    grid: [stair.x, stair.y],
+                    direction: stair.direction
+                }))
+        };
+    });
+}
+
+function splitInteriorRect(rect, requestedCount) {
+    const horizontal = rect.width >= rect.height;
+    const span = horizontal ? rect.width : rect.height;
+    const count = clampInteger(requestedCount, 1, Math.max(1, span));
+    const base = Math.floor(span / count);
+    let remainder = span % count;
+    let offset = 0;
+    return Array.from({ length: count }, () => {
+        const extent = base + (remainder-- > 0 ? 1 : 0);
+        const room = horizontal
+            ? { x: rect.x + offset, y: rect.y, width: extent, height: rect.height }
+            : { x: rect.x, y: rect.y + offset, width: rect.width, height: extent };
+        offset += extent;
+        return room;
+    });
+}
+
+function sharedRoomDoor(previous, current) {
+    if (previous.x + previous.width === current.x) {
+        return [current.x, current.y + Math.floor(current.height / 2)];
+    }
+    return [current.x + Math.floor(current.width / 2), current.y];
 }
 
 function rotateBlueprint(entry, turns) {
@@ -716,6 +972,68 @@ function normalizeOccupied(occupied, width, height) {
         for (const cell of footprint) set.add(gridKey(originCol + cell.x, originRow + cell.y));
     }
     return set;
+}
+
+function normalizeCellKeySet(values) {
+    const source = values instanceof Set ? [...values] : Array.isArray(values) ? values : [];
+    const cells = new Set();
+    for (const value of source) {
+        if (typeof value === 'string') {
+            cells.add(value);
+            continue;
+        }
+        const col = Math.floor(Number(value?.col ?? value?.x));
+        const row = Math.floor(Number(value?.row ?? value?.y));
+        if (Number.isFinite(col) && Number.isFinite(row)) cells.add(gridKey(col, row));
+    }
+    return cells;
+}
+
+function normalizeBuildingReliefProfile(value) {
+    if (!value || typeof value !== 'object') {
+        return Object.freeze({
+            formulaVersion: DEFAULT_RELIEF_FORMULA_VERSION,
+            reliefScore: 0,
+            reliefClass: 'none',
+            targetTierSpan: 0,
+            baseElevationTier: 0
+        });
+    }
+    const reliefScore = clamp(Number(value.reliefScore), 0, 1);
+    return Object.freeze({
+        formulaVersion: String(value.formulaVersion || DEFAULT_RELIEF_FORMULA_VERSION),
+        reliefScore,
+        reliefClass: String(value.reliefClass || (reliefScore >= 0.68 ? 'high' : reliefScore >= 0.38 ? 'moderate' : 'low')),
+        targetTierSpan: clampInteger(value.targetTierSpan ?? Math.round(1 + reliefScore * 5), 1, 6),
+        baseElevationTier: clampInteger(value.baseElevationTier ?? 0, 0, 6)
+    });
+}
+
+function analyzeFootprintElevation(worldCells, elevationRows) {
+    if (!Array.isArray(worldCells) || !worldCells.length) {
+        return { minimum: 0, maximum: 0, span: 0, maxAdjacentDelta: 0 };
+    }
+    const elevations = new Map();
+    for (const cell of worldCells) {
+        const col = Math.floor(Number(cell?.col));
+        const row = Math.floor(Number(cell?.row));
+        if (!Number.isFinite(col) || !Number.isFinite(row)) continue;
+        elevations.set(gridKey(col, row), Number(elevationRows[row]?.[col]) || 0);
+    }
+    const values = [...elevations.values()];
+    if (!values.length) return { minimum: 0, maximum: 0, span: 0, maxAdjacentDelta: 0 };
+    let maxAdjacentDelta = 0;
+    for (const [key, value] of elevations) {
+        const { col, row } = parseGridKey(key);
+        for (const [dx, dy] of [[1, 0], [0, 1]]) {
+            const neighbor = elevations.get(gridKey(col + dx, row + dy));
+            if (!Number.isFinite(neighbor)) continue;
+            maxAdjacentDelta = Math.max(maxAdjacentDelta, Math.abs(value - neighbor));
+        }
+    }
+    const minimum = Math.min(...values);
+    const maximum = Math.max(...values);
+    return { minimum, maximum, span: maximum - minimum, maxAdjacentDelta };
 }
 
 function resolveCandidateDistrict(center, context) {
@@ -1008,6 +1326,13 @@ function emptyPlan(reason, minimum = 0, maximum = 0) {
             blueprintIds: [],
             rejected: {},
             areaCells: 0,
+            reliefFormulaVersion: DEFAULT_RELIEF_FORMULA_VERSION,
+            reliefScore: 0,
+            reliefClass: 'none',
+            targetTierSpan: 0,
+            maxElevationSpan: 1,
+            illegalCliffCandidates: 0,
+            elevationSpanCandidates: 0,
             reason
         }
     };

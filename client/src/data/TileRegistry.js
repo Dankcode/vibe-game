@@ -1,20 +1,27 @@
 import {
+    BURG_THEME_STREET_PALETTE_IDS,
+    BURG_THEME_STREET_PALETTES,
     DEFAULT_WORLD_PALETTE_ID,
     VISUAL_VARIANT_COUNT,
     WORLD_PALETTE_IDS,
     WORLD_PALETTES,
+    getBurgThemeStreetPaletteId,
     getWorldPalette,
     getWorldPaletteVariants,
     normalizeWorldPaletteId,
     normalizeWorldVisualVariant,
     resolveWorldPaletteVariant
 } from './WorldPalettes.js';
+import { getBurgTheme, normalizeBurgThemeId } from './BurgThemeCatalog.js';
 
 export {
+    BURG_THEME_STREET_PALETTE_IDS,
+    BURG_THEME_STREET_PALETTES,
     DEFAULT_WORLD_PALETTE_ID,
     VISUAL_VARIANT_COUNT,
     WORLD_PALETTE_IDS,
     WORLD_PALETTES,
+    getBurgThemeStreetPaletteId,
     getWorldPalette,
     getWorldPaletteVariants,
     normalizeWorldPaletteId,
@@ -533,24 +540,55 @@ const VARIANT_OVERRIDES = {
     }
 };
 
-export function getTileDefinition(element, textureValue = 0, paletteId = null) {
+const ARCHITECTURE_GEO_TEXTURES = new Set([2, 6, 7]);
+const ARCHITECTURE_STRUCTURE_TEXTURES = new Set([0, 1, 3, 4, 13, 14]);
+
+export function isArchitectureThemeSurface(element, textureValue = 0) {
+    const normalizedTexture = Number.isFinite(Number(textureValue))
+        ? Math.max(0, Math.floor(Number(textureValue)))
+        : 0;
+    if (element === ELEMENTS.GEO) return ARCHITECTURE_GEO_TEXTURES.has(normalizedTexture);
+    if (element === ELEMENTS.STRUCTURE) return ARCHITECTURE_STRUCTURE_TEXTURES.has(normalizedTexture);
+    return false;
+}
+
+export function resolveArchitectureThemePalette(element, textureValue = 0, architectureThemeId = null) {
+    const normalizedThemeId = normalizeBurgThemeId(architectureThemeId, null);
+    if (!normalizedThemeId || !isArchitectureThemeSurface(element, textureValue)) return null;
+    const theme = getBurgTheme(normalizedThemeId);
+    return theme ? {
+        architectureThemeId: normalizedThemeId,
+        paletteId: theme.streetPaletteId,
+        theme
+    } : null;
+}
+
+export function getTileDefinition(element, textureValue = 0, paletteId = null, architectureThemeId = null) {
     const base = TILE_DEFINITIONS[element] || TILE_DEFINITIONS[ELEMENTS.VOID];
     const override = VARIANT_OVERRIDES[`${element}:${textureValue}`] || {};
     const definition = { ...base, ...override };
+    const normalizedArchitectureThemeId = normalizeBurgThemeId(architectureThemeId, null);
+    const architecturePalette = resolveArchitectureThemePalette(
+        element,
+        textureValue,
+        normalizedArchitectureThemeId
+    );
     const worldPaletteId = normalizeWorldPaletteId(paletteId, null);
-    const usesWorldPalette = Boolean(worldPaletteId) && ![
+    const usesWorldPalette = !architecturePalette && Boolean(worldPaletteId) && ![
         ELEMENTS.VOID,
         ELEMENTS.STRUCTURE
     ].includes(element);
-    const resolvedPaletteId = usesWorldPalette
+    const resolvedPaletteId = architecturePalette?.paletteId || (usesWorldPalette
         ? worldPaletteId
-        : definition.visualPalette;
+        : definition.visualPalette);
     return {
         ...definition,
         paletteId: resolvedPaletteId,
+        architectureThemeId: normalizedArchitectureThemeId,
+        architecturePaletteId: architecturePalette?.paletteId || null,
         worldPaletteId: usesWorldPalette ? worldPaletteId : null,
-        visualVariants: usesWorldPalette
-            ? getWorldPaletteVariants(worldPaletteId)
+        visualVariants: architecturePalette || usesWorldPalette
+            ? getWorldPaletteVariants(resolvedPaletteId)
             : TILE_VISUAL_PALETTES[definition.visualPalette] || TILE_VISUAL_PALETTES.stoneWall
     };
 }
