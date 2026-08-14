@@ -13,6 +13,11 @@ import {
     validateBurgThemeCatalog,
     validateManifestBurgThemes
 } from './BurgThemeCatalog.js';
+import {
+    ACTIVE_BURG_COUNT,
+    ACTIVE_BURG_IDS,
+    resolveActiveBurgIds
+} from './ActiveBurgSelection.js';
 
 const MANIFEST_URL = new URL('../../../map-data-package/manifest.json', import.meta.url);
 const manifest = JSON.parse(await readFile(MANIFEST_URL, 'utf8'));
@@ -65,6 +70,25 @@ test('source manifest explicitly assigns one valid theme to all 60 burgs', () =>
     assert.equal(resolveManifestBurgTheme(manifest, 45), 'egyptian');
     assert.equal(resolveManifestBurgTheme(manifest, 57), 'egyptian');
 });
+
+test('active world selects exactly ten theme-balanced burgs from the FMG archive', () => {
+    const activeBurgIds = resolveActiveBurgIds(manifest);
+    assert.equal(activeBurgIds.length, ACTIVE_BURG_COUNT);
+    assert.deepEqual(activeBurgIds, ACTIVE_BURG_IDS);
+    const histogram = Object.fromEntries(BURG_THEME_IDS.map((themeId) => [themeId, 0]));
+    for (const burgId of activeBurgIds) histogram[validationTheme(manifest, burgId)]++;
+    assert.deepEqual(histogram, {
+        asian: 2,
+        'middle-eastern': 2,
+        'northern-european': 2,
+        'southern-european': 2,
+        egyptian: 2
+    });
+});
+
+function validationTheme(sourceManifest, burgId) {
+    return resolveManifestBurgTheme(sourceManifest, burgId);
+}
 
 test('manifest validation rejects missing, unknown, and non-canonical assignments', () => {
     const missing = {

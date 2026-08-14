@@ -1343,7 +1343,7 @@ function normalizeReliefProfile(profile) {
     const gradientAxis = axis === 'north-south' || axis === 'y' ? 'north-south' : 'east-west';
     return Object.freeze({
         normalized: true,
-        formulaVersion: String(profile?.formulaVersion || 'fmg-burg-relief-v1'),
+        formulaVersion: String(profile?.formulaVersion || 'fmg-burg-relief-v2'),
         reliefScore,
         targetTierSpan,
         baseElevationTier: clampNumber(finiteInteger(profile?.baseElevationTier, 0), 0, 6),

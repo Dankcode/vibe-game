@@ -6,7 +6,7 @@ WFC remains the primary generator for terrain and buildings, but the global FMG 
 
 ## Implementation record (2026-07-23)
 
-- `tools/compile_world_blueprints.mjs` and `SettlementBlueprint.js` compile and validate 60 blueprints from the refreshed global FMG payload: 30 one-seat clusters, 30 unwalled fiefs, 160 waterfall directives, 0 unexplained fields, and a 172 KB payload within the explicit 192 KB budget.
+- `tools/compile_world_blueprints.mjs` and `SettlementBlueprint.js` retain the refreshed global FMG payload as a 60-burg source archive, then compile only the 10 curated IDs in `manifest.active_burg_ids` into runtime blueprints. The active set is balanced across the five themes (2 burgs per theme) and contains 6 seats plus 4 unwalled fiefs; the other 50 burgs remain source-only.
 - `WorldConstraintField.js` projects the selected related cluster and stamps a variant-stable skeleton. It no longer invents or relocates settlement envelopes at runtime; every view contains at most one seat wall system, and fiefs remain open villages connected by compiled roads.
 - `GeographicWFCGenerator.js` runs fixed skeleton → terrain collapse → per-ward building waves. Capital seats retain three aligned rings, their compiled voxel heights, and an enterable 9×9 keep; castle, civic, market, harbor, artisan, residential, and garden priors influence density and archetypes.
 - `ContextualBuildingWFC.js` consumes ward/district priors, while `BakedBuildingLibrary.js` supplies formulaic code-native landmarks, a valid minimum cabin, and fixed-area building placement. All generated and baked interiors preserve a free 2×3/3×2 space.
@@ -293,7 +293,7 @@ Multi-walled cities fall out of the ring list: capital = 3 concentric rings with
 Every R7 row compiles into a blueprint field (B1): flags→districtDirectives, routes.kind→roads, rivers→water, culture.type/state.form→wfcPriors + naming, provinces→map panel regions, notes→lore hooks table keyed by burg for signage. The parser logs a **coverage report**: every FMG field either consumed, or explicitly listed as ignored-with-reason — so "are we using all the data?" is answerable from the import log, not from reading code.
 
 ## B6 — Acceptance
-1. Parser: `replace:world-map` emits 60 blueprints; coverage report shows 0 unexplained FMG fields; blueprints total ≤ 192 KB; runtime has zero imports of source-package JSON (lint rule).
+1. Parser: `replace:world-map` emits exactly the 10 blueprints selected by `manifest.active_burg_ids` (2 per theme; 6 seats and 4 fiefs); the 60-burg FMG corpus remains an archive, coverage reports 0 unexplained FMG fields, the active blueprint payload stays within budget, and runtime has zero imports of source-package JSON (lint rule).
 2. Hierarchy: every cluster has exactly one seat; 0 walled fiefs; every fief has a compiled road reaching a seat gate; seats with capital/citadel have a castle in the innermost ring.
 3. Multi-wall: capital renders 3 rings with aligned grand gates; ring interiors satisfy their ward priors (castle ward ≥1 keep, market ward ≥1 plaza, harbor ward docks touch water).
 4. Walls-first: re-running with a different variant seed changes ward interiors but never ring/gate/castle/road/waterfall skeleton cells (fixed-node hash stable).

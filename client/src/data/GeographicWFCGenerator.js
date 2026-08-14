@@ -101,6 +101,13 @@ const CARDINALS = Object.freeze([
     Object.freeze({ x: 0, y: 1, name: 'south' }),
     Object.freeze({ x: 0, y: -1, name: 'north' })
 ]);
+const WORLD_ROAD_SYMBOLS = new Set(['R', ':', ';', '=', '1', '2', '3', '4']);
+const STAIR_SYMBOL_BY_DIRECTION = Object.freeze({
+    north: '1',
+    south: '2',
+    west: '3',
+    east: '4'
+});
 
 let geographyIndex = null;
 
@@ -261,6 +268,14 @@ export function createGeographicWorldPlan({
         constraintField: constraints,
         skeleton: fixedSkeleton
     });
+    const buildingInfrastructureAnchors = prepareBuildingInfrastructureAnchors({
+        rows,
+        paletteRows,
+        buildings: settlement.buildings,
+        fields,
+        width: safeWidth,
+        height: safeHeight
+    });
     enforceRequestedVectorElevations(rows, elevationRows, fixedSkeleton, settlement.buildings);
     repairCroppedFmgRiverContinuity({
         rows,
@@ -276,6 +291,7 @@ export function createGeographicWorldPlan({
         rows,
         paletteRows,
         buildings: settlement.buildings,
+        fields,
         width: safeWidth,
         height: safeHeight
     });
@@ -296,7 +312,13 @@ export function createGeographicWorldPlan({
         width: safeWidth,
         height: safeHeight
     });
-    const finalElevationSpikes = findIsolatedElevationSpikes(elevationRows);
+    const finalBuildingFootprints = collectBuildingFootprintKeys(
+        settlement.buildings,
+        safeWidth,
+        safeHeight
+    );
+    const finalElevationSpikes = findIsolatedElevationSpikes(elevationRows).filter((cell) =>
+        !finalBuildingFootprints.has(elevationCellKey(cell.col, cell.row)));
     const terrainMacroDiagnostics = Object.freeze({
         ...initialTerrainMacroDiagnostics,
         finalRepairedCells: finalElevationRepair.repairedCells,
@@ -465,10 +487,19 @@ export function createGeographicWorldPlan({
             buildingWfc: settlement.diagnostics,
             constraintField: constraints.diagnostics,
             elevation: elevationDiagnostics,
+            buildingInfrastructureAnchors,
             roadNetworkRepair,
             settlements: settlement.settlements.length,
             coupledTerrainAndBuildings: true,
             couplingMode: 'shared-constraint-sequential-wfc',
+            placementOrder: Object.freeze([
+                'fmg-water',
+                'fmg-roads-and-gates',
+                'fmg-building-plots',
+                'terrain-wfc-fill',
+                'building-wfc-materialization',
+                'road-network-completion'
+            ]),
             worldAnchoredChunks: true,
             worldAnchoredMacroTiles: true,
             minimumInterior: '2x3',
@@ -486,6 +517,11 @@ export function createGeographicWorldPlan({
                 streetMapModules: Object.freeze({
                     ...(fixedSkeleton.diagnostics.streetMapModules || {})
                 }),
+                utilityCells: fixedSkeleton.diagnostics.streetMapUtilityCells || 0,
+                utilityModules: Object.freeze({
+                    ...(fixedSkeleton.diagnostics.streetMapUtilityModules || {})
+                }),
+                utilityDecorations: decorations.filter((decoration) => decoration.moduleUtility === true).length,
                 steppedStreetCells: fixedSkeleton.diagnostics.streetMapSteppedCells || 0,
                 generatedElevationRange: fixedSkeleton.diagnostics.streetMapElevationRange || 0,
                 reliefFormulaVersion: FMG_BURG_RELIEF_FORMULA_VERSION
@@ -552,7 +588,7 @@ function createWorldElevationDiagnostics({
     });
     const illegalBuildingCliffs = buildingElevationSafety.filter((safety) =>
         safety.maxAdjacentDelta > 1 || safety.span > 1);
-    const roadElevationSafety = analyzeRoadElevationSafety(rows, elevationRows);
+    const roadElevationSafety = analyzeRoadElevationSafety(rows, elevationRows, buildings);
     return Object.freeze({
         formulaVersion: FMG_BURG_RELIEF_FORMULA_VERSION,
         terrainTierMinimum: tiers.length ? Math.min(...tiers) : 0,
@@ -590,17 +626,24 @@ function createWorldElevationDiagnostics({
     });
 }
 
-function analyzeRoadElevationSafety(rows, elevationRows) {
-    const roadSymbols = new Set(['R', ':', ';', '=']);
+function analyzeRoadElevationSafety(rows, elevationRows, buildings = []) {
+    const roadSymbols = WORLD_ROAD_SYMBOLS;
+    const footprintKeys = collectBuildingFootprintKeys(
+        buildings,
+        rows[0]?.length || 0,
+        rows.length
+    );
     let illegalEdges = 0;
     let maximumDelta = 0;
     for (let row = 0; row < rows.length; row++) {
         for (let col = 0; col < (rows[row]?.length || 0); col++) {
-            if (!roadSymbols.has(rows[row]?.[col])) continue;
+            if (!roadSymbols.has(rows[row]?.[col]) ||
+                footprintKeys.has(elevationCellKey(col, row))) continue;
             for (const [dx, dy] of [[1, 0], [0, 1], [1, 1], [-1, 1]]) {
                 const neighborCol = col + dx;
                 const neighborRow = row + dy;
-                if (!roadSymbols.has(rows[neighborRow]?.[neighborCol])) continue;
+                if (!roadSymbols.has(rows[neighborRow]?.[neighborCol]) ||
+                    footprintKeys.has(elevationCellKey(neighborCol, neighborRow))) continue;
                 const delta = Math.abs(
                     Number(elevationRows[row]?.[col]) - Number(elevationRows[neighborRow]?.[neighborCol])
                 );
@@ -667,6 +710,59 @@ function createWorldLogicalConnectivity({
                     break;
                 }
             }
+            const riverComponentByKey = new Map();
+            components.forEach((component, componentIndex) => {
+                for (const cell of component) {
+                    riverComponentByKey.set(elevationCellKey(cell.col, cell.row), componentIndex);
+                }
+            });
+            const generatedBridgeDeckCells = new Map();
+            for (let row = 0; row < height; row++) {
+                for (let col = 0; col < width; col++) {
+                    const id = row * width + col;
+                    if (!WORLD_ROAD_SYMBOLS.has(rows[row]?.[col]) ||
+                        String(fields[id]?.riverId) !== sourceId ||
+                        Number(fields[id]?.riverPathInfluence) < 0.35) continue;
+                    generatedBridgeDeckCells.set(elevationCellKey(col, row), { col, row });
+                }
+            }
+            for (const [deckIndex, deck] of splitLogicalCellComponents(generatedBridgeDeckCells).entries()) {
+                const deckKeys = new Set(deck.map((cell) => elevationCellKey(cell.col, cell.row)));
+                const attachments = [];
+                for (const deckCell of deck) {
+                    for (const { x, y } of CARDINALS) {
+                        const water = { col: deckCell.col + x, row: deckCell.row + y };
+                        const waterKey = elevationCellKey(water.col, water.row);
+                        if (!cells.has(waterKey) || !riverComponentByKey.has(waterKey)) continue;
+                        attachments.push({
+                            water,
+                            deckCell,
+                            componentIndex: riverComponentByKey.get(waterKey)
+                        });
+                    }
+                }
+                let pair = null;
+                for (let leftIndex = 0; leftIndex < attachments.length && !pair; leftIndex++) {
+                    for (let rightIndex = leftIndex + 1; rightIndex < attachments.length; rightIndex++) {
+                        if (attachments[leftIndex].componentIndex === attachments[rightIndex].componentIndex) continue;
+                        pair = [attachments[leftIndex], attachments[rightIndex]];
+                        break;
+                    }
+                }
+                if (!pair) continue;
+                const deckPath = findCardinalPathWithinKeys(
+                    pair[0].deckCell,
+                    pair[1].deckCell,
+                    deckKeys
+                );
+                if (!deckPath) continue;
+                connectors.push({
+                    id: `fmg-river-${sourceId}-generated-bridge-${deckIndex}`,
+                    kind: 'bridge-underpass',
+                    allowNonWater: true,
+                    cells: [pair[0].water, ...deckPath, pair[1].water]
+                });
+            }
             const boundaryComponentIndex = components.findIndex((component) =>
                 component.some((cell) => cell.col <= 2 || cell.row <= 2 ||
                     cell.col >= width - 3 || cell.row >= height - 3));
@@ -691,6 +787,66 @@ function createWorldLogicalConnectivity({
                         ]
                     });
                 }
+            }
+            // Finish the declared FMG river graph after visible bridges and boundary continuations
+            // are known. A remaining split of one source river means its short middle section is
+            // hidden beneath a wall/building or outside the sampled LOD; encode that continuation
+            // explicitly instead of pretending the two pieces are unrelated rivers.
+            const componentParents = components.map((_, index) => index);
+            const findComponentRoot = (index) => {
+                let root = index;
+                while (componentParents[root] !== root) root = componentParents[root];
+                while (componentParents[index] !== index) {
+                    const next = componentParents[index];
+                    componentParents[index] = root;
+                    index = next;
+                }
+                return root;
+            };
+            const unionComponents = (left, right) => {
+                const leftRoot = findComponentRoot(left);
+                const rightRoot = findComponentRoot(right);
+                if (leftRoot !== rightRoot) componentParents[rightRoot] = leftRoot;
+            };
+            for (const connector of connectors) {
+                const first = connector.cells?.[0];
+                const last = connector.cells?.at?.(-1);
+                const firstIndex = first
+                    ? riverComponentByKey.get(elevationCellKey(first.col, first.row))
+                    : null;
+                const lastIndex = last
+                    ? riverComponentByKey.get(elevationCellKey(last.col, last.row))
+                    : null;
+                if (Number.isInteger(firstIndex) && Number.isInteger(lastIndex)) {
+                    unionComponents(firstIndex, lastIndex);
+                }
+            }
+            let inferredContinuationIndex = 0;
+            while (new Set(components.map((_, index) => findComponentRoot(index))).size > 1) {
+                let closest = null;
+                for (let leftIndex = 0; leftIndex < components.length; leftIndex++) {
+                    for (let rightIndex = leftIndex + 1; rightIndex < components.length; rightIndex++) {
+                        if (findComponentRoot(leftIndex) === findComponentRoot(rightIndex)) continue;
+                        const pair = findClosestLogicalComponentPair([
+                            components[leftIndex],
+                            components[rightIndex]
+                        ]);
+                        if (!pair || (closest && pair.distance >= closest.pair.distance)) continue;
+                        closest = { leftIndex, rightIndex, pair };
+                    }
+                }
+                if (!closest) break;
+                connectors.push({
+                    id: `fmg-river-${sourceId}-inferred-continuation-${inferredContinuationIndex++}`,
+                    kind: 'urban-culvert-or-lod-continuation',
+                    virtual: true,
+                    allowNonWater: true,
+                    cells: [
+                        { col: closest.pair.left.col, row: closest.pair.left.row },
+                        { col: closest.pair.right.col, row: closest.pair.right.row }
+                    ]
+                });
+                unionComponents(closest.leftIndex, closest.rightIndex);
             }
             return {
                 id: `fmg-river-${sourceId}`,
@@ -759,7 +915,7 @@ function deriveBuildingGateRequiredPaths({ buildings, gates, settlements, width,
 
 function deriveElevationMovementConnectors({ rows, elevationRows, width, height }) {
     const connectors = [];
-    const stairSymbols = new Set([':', ';']);
+    const stairSymbols = new Set([':', ';', '1', '2', '3', '4']);
     for (let row = 0; row < height; row++) {
         for (let col = 0; col < width; col++) {
             if (!stairSymbols.has(rows[row]?.[col])) continue;
@@ -897,6 +1053,34 @@ function splitLogicalCellComponents(cells) {
     }
     return components.sort((left, right) =>
         left[0].row - right[0].row || left[0].col - right[0].col);
+}
+
+function findCardinalPathWithinKeys(start, end, allowedKeys) {
+    const startKey = elevationCellKey(start.col, start.row);
+    const endKey = elevationCellKey(end.col, end.row);
+    const queue = [start];
+    const previous = new Map([[startKey, null]]);
+    for (let index = 0; index < queue.length; index++) {
+        const current = queue[index];
+        const currentKey = elevationCellKey(current.col, current.row);
+        if (currentKey === endKey) break;
+        for (const { x, y } of CARDINALS) {
+            const next = { col: current.col + x, row: current.row + y };
+            const nextKey = elevationCellKey(next.col, next.row);
+            if (!allowedKeys.has(nextKey) || previous.has(nextKey)) continue;
+            previous.set(nextKey, currentKey);
+            queue.push(next);
+        }
+    }
+    if (!previous.has(endKey)) return null;
+    const path = [];
+    let cursor = endKey;
+    while (cursor) {
+        const [col, row] = cursor.split(',').map(Number);
+        path.push({ col, row });
+        cursor = previous.get(cursor);
+    }
+    return path.reverse();
 }
 
 function createLogicalGate(cell, settlement, index) {
@@ -1814,31 +1998,54 @@ function createTerrainMacroElevationPlan({
     let protectedCells = 0;
     let repairedCells = 0;
     const assignments = [];
-    const macroCollapse = collapseTerrainMacroTileGrid({
-        seed: `${seed}:terrain-macro-grid`,
-        minimumElevation: 0,
-        maximumElevation: 6,
-        allowFallback: true,
-        nodes: blocks.map((block) => {
-            const baseElevationCandidates = block.insideWallRatio > 0 || block.baseElevation >= 3
-                ? [...new Set([-1, 0, 1].map((offset) =>
-                    clampInteger(block.baseElevation + offset, 0, 6)))]
-                : [0, 1, 2, 3, 4, 5, 6];
-            return {
+    const createMacroNodes = (expandBaseDomain = false) => blocks.map((block) => {
+        const baseElevationRadius = block.insideWallRatio > 0
+            ? 1
+            : block.reliefProfile.reliefScore >= 0.45
+                ? 2
+                : 1;
+        const baseElevationCandidates = expandBaseDomain || !Number.isFinite(baseElevationRadius)
+            ? [0, 1, 2, 3, 4, 5, 6]
+            : [...new Set(Array.from(
+                { length: baseElevationRadius * 2 + 1 },
+                (_, index) => clampInteger(
+                    block.baseElevation + index - baseElevationRadius,
+                    0,
+                    6
+                )
+            ))];
+        return {
                 macroCol: block.macroCol,
                 macroRow: block.macroRow,
                 role: 'primary',
                 baseElevation: block.baseElevation,
                 fixedBase: false,
-                // All legal bases stay in the domain. Weighting strongly prefers the FMG target,
-                // while the wider domain lets compatibility propagation construct a ramp across
-                // several 5x5 modules instead of falling back to a flat disconnected component.
                 baseElevationCandidates,
                 reliefProfile: block.reliefProfile,
                 allowedFamilies: block.allowedFamilies
-            };
-        })
+        };
     });
+    let expandedBaseDomain = false;
+    let macroCollapse = collapseTerrainMacroTileGrid({
+        seed: `${seed}:terrain-macro-grid`,
+        minimumElevation: 0,
+        maximumElevation: 6,
+        allowFallback: false,
+        nodes: createMacroNodes(false)
+    });
+    if (!macroCollapse.solved) {
+        // Rare dense burgs can have no compatible edge state inside the preferred ±1/±2 FMG
+        // range. Retry with all legal bases before invoking any uniform emergency fallback. The
+        // target-distance weights still inhibit drift, while preserving a solved macro graph.
+        expandedBaseDomain = true;
+        macroCollapse = collapseTerrainMacroTileGrid({
+            seed: `${seed}:terrain-macro-grid:expanded-base-domain`,
+            minimumElevation: 0,
+            maximumElevation: 6,
+            allowFallback: true,
+            nodes: createMacroNodes(true)
+        });
+    }
     for (const block of blocks) {
         const resolvedAssignment = macroCollapse.assignment.get(`${block.macroCol},${block.macroRow}`);
         const patch = resolvedAssignment?.patch || createDeterministicTerrainMacroPatch({
@@ -1916,6 +2123,7 @@ function createTerrainMacroElevationPlan({
             protectedCells,
             repairedCells,
             assignmentHash,
+            expandedBaseDomain,
             solved: macroCollapse.solved,
             incompatibleEdges: macroCollapse.diagnostics.incompatibleEdgeCount,
             compatibilityChecks: macroCollapse.diagnostics.compatibilityChecks,
@@ -2042,7 +2250,13 @@ function describeTerrainMacroBlock({
         ? samples.filter((sample) => sample.water || sample.constraint.hardWater).length / samples.length
         : 0;
     const allowedFamilies = insideWallRatio > 0 || connectorRatio >= 0.12
-        ? ['uniform']
+        // Roads and buildings are flattened locally after the macro collapse; forcing every
+        // touched 5x5 block to `uniform` propagated one elevation across whole towns and erased
+        // the FMG slope. Terraced/ramp modules retain broad block-scale relief while the later
+        // infrastructure pass still guarantees level foundations and traversable routes.
+        ? reliefScore >= 0.45
+            ? ['uniform', 'terraced', 'ramp']
+            : ['uniform', 'terraced']
         : waterRatio >= 0.28
             ? ['uniform', 'terraced', 'ramp']
             : reliefScore >= 0.68
@@ -2248,7 +2462,7 @@ function relaxElevationRamps(rows, tileIds, width, height, protectedIds = new Se
                 const id = row * width + col;
                 const spec = GEOGRAPHIC_TILE_BY_ID.get(tileIds[id]);
                 if (spec?.tags.has('water')) continue;
-                for (const [dx, dy] of [[1, 0], [0, 1], [1, 1], [-1, 1]]) {
+                for (const [dx, dy] of [[1, 0], [0, 1]]) {
                     const neighborCol = col + dx;
                     const neighborRow = row + dy;
                     if (neighborCol >= width || neighborRow >= height) continue;
@@ -2407,7 +2621,10 @@ function repairFmgRiverOverlayContinuity({
         let components = splitLogicalCellComponents(riverCells);
         for (let repair = 0; repair < 8 && components.length > 1; repair++) {
             const pair = findClosestLogicalComponentPair(components);
-            if (!pair || pair.distance > 12) break;
+            // Compact FMG sampling can leave two legitimate pieces of the same source river more
+            // than one 5x5 module apart after roads/buildings are reserved. Reconnect within a
+            // bounded four-module span; farther boundary fragments remain virtual/offscreen.
+            if (!pair || pair.distance > 20) break;
             const touchesBoundary = [pair.leftComponentIndex, pair.rightComponentIndex].some((index) =>
                 components[index]?.some((cell) => cell.col <= 2 || cell.row <= 2 ||
                     cell.col >= width - 3 || cell.row >= height - 3));
@@ -2422,13 +2639,13 @@ function repairFmgRiverOverlayContinuity({
                 height,
                 constraintField,
                 blockedCells,
-                maximumDistance: pair.distance + 8
+                maximumDistance: pair.distance + 12
             });
             if (!path) break;
             for (const cell of path) {
                 const id = cell.row * width + cell.col;
                 const constraint = constraintField?.cells?.[id];
-                if (['bridge', 'ford', 'dock', 'waterfall'].includes(
+                if (['road', 'gate', 'bridge', 'ford', 'dock', 'waterfall'].includes(
                     constraint?.skeletonKind || constraint?.kind
                 )) continue;
                 const numericRiverId = Number(riverId);
@@ -2704,8 +2921,113 @@ function resolveBuildingApproachCell(building, offsetX, offsetY) {
     return getRectDoorApproach(rect, building.door.edge);
 }
 
-function connectWorldRoadNetwork({ rows, paletteRows, buildings, width, height }) {
-    const roadSymbols = new Set(['R', ':', ';', '=']);
+function prepareBuildingInfrastructureAnchors({ rows, paletteRows, buildings, fields = [], width, height }) {
+    const mutable = rows.map((row) => typeof row === 'string' ? row.split('') : [...row]);
+    const roadSymbols = WORLD_ROAD_SYMBOLS;
+    const offsetX = Math.floor(width / 2);
+    const offsetY = Math.floor(height / 2);
+    let footprintCells = 0;
+    let buriedRoadCellsCleared = 0;
+    let waterConflicts = 0;
+    let doorRoadLandings = 0;
+    let existingDoorRoadLandings = 0;
+    let bridgeDoorLandings = 0;
+    let blockedDoorLandings = 0;
+
+    for (const building of buildings || []) {
+        for (const cell of getBuildingFootprintCells(building)) {
+            const col = Number(building.x) + offsetX + cell.x;
+            const row = Number(building.y) + offsetY + cell.y;
+            const symbol = mutable[row]?.[col];
+            if (symbol === undefined) continue;
+            footprintCells++;
+            if (roadSymbols.has(symbol)) {
+                // A road under a roof is neither visible nor traversable. Remove it before the
+                // network completion pass so the solver must route around the occupied parcel.
+                mutable[row][col] = '.';
+                buriedRoadCellsCleared++;
+            } else if (isWaterSymbol(symbol)) {
+                waterConflicts++;
+            }
+        }
+    }
+
+    for (const building of buildings || []) {
+        const approach = resolveBuildingApproachCell(building, offsetX, offsetY);
+        if (!approach || approach.col < 0 || approach.row < 0 ||
+            approach.col >= width || approach.row >= height) {
+            blockedDoorLandings++;
+            continue;
+        }
+        const symbol = mutable[approach.row]?.[approach.col];
+        if (roadSymbols.has(symbol)) {
+            existingDoorRoadLandings++;
+            continue;
+        }
+        const id = approach.row * width + approach.col;
+        const canUseBridgeLanding = ['~', 'B'].includes(symbol) &&
+            fields[id]?.riverId !== null && fields[id]?.riverId !== undefined;
+        if (canUseBridgeLanding) {
+            mutable[approach.row][approach.col] = '=';
+            if (paletteRows[approach.row]?.[approach.col] !== undefined) {
+                paletteRows[approach.row][approach.col] = 'path';
+            }
+            bridgeDoorLandings++;
+            continue;
+        }
+        if (!symbol || symbol === 'T' || isWaterSymbol(symbol)) {
+            blockedDoorLandings++;
+            continue;
+        }
+        mutable[approach.row][approach.col] = 'R';
+        if (paletteRows[approach.row]?.[approach.col] !== undefined) {
+            paletteRows[approach.row][approach.col] = 'path';
+        }
+        doorRoadLandings++;
+    }
+
+    for (let row = 0; row < height; row++) rows[row] = mutable[row].join('');
+    return Object.freeze({
+        footprintCells,
+        buriedRoadCellsCleared,
+        waterConflicts,
+        doorRoadLandings,
+        existingDoorRoadLandings,
+        bridgeDoorLandings,
+        blockedDoorLandings,
+        reservedBeforeTerrainWfc: true
+    });
+}
+
+function collectBuildingFootprintKeys(buildings, width, height) {
+    const keys = new Set();
+    const offsetX = Math.floor(width / 2);
+    const offsetY = Math.floor(height / 2);
+    for (const building of buildings || []) {
+        for (const cell of getBuildingFootprintCells(building)) {
+            const col = Number(building.x) + offsetX + cell.x;
+            const row = Number(building.y) + offsetY + cell.y;
+            if (col < 0 || row < 0 || col >= width || row >= height) continue;
+            keys.add(elevationCellKey(col, row));
+        }
+    }
+    return keys;
+}
+
+function getBuildingFootprintCells(building) {
+    if (Array.isArray(building?.footprintCells) && building.footprintCells.length) {
+        return building.footprintCells;
+    }
+    const width = Math.max(0, Math.floor(Number(building?.width) || 0));
+    const height = Math.max(0, Math.floor(Number(building?.height) || 0));
+    return Array.from({ length: width * height }, (_, index) => ({
+        x: index % width,
+        y: Math.floor(index / width)
+    }));
+}
+
+function connectWorldRoadNetwork({ rows, paletteRows, buildings, fields = [], width, height }) {
+    const roadSymbols = WORLD_ROAD_SYMBOLS;
     const blocked = new Set();
     const offsetX = Math.floor(width / 2);
     const offsetY = Math.floor(height / 2);
@@ -2728,13 +3050,15 @@ function connectWorldRoadNetwork({ rows, paletteRows, buildings, width, height }
         .map((cell) => elevationCellKey(cell.col, cell.row)));
     let connectedComponents = 0;
     let carvedCells = 0;
+    let bridgeDeckCells = 0;
+    let clearedOrphanCells = 0;
 
     for (const component of components.slice(1)) {
         const touchesViewportEdge = component.some((cell) =>
             cell.col <= 2 || cell.row <= 2 || cell.col >= width - 3 || cell.row >= height - 3);
         const servesDoor = component.some((cell) => approachKeys.has(elevationCellKey(cell.col, cell.row)));
         if (touchesViewportEdge && !servesDoor) continue;
-        const path = findRoadCarvePath({
+        let path = findRoadCarvePath({
             mutable,
             starts: component,
             goalKeys: mainKeys,
@@ -2743,13 +3067,41 @@ function connectWorldRoadNetwork({ rows, paletteRows, buildings, width, height }
             height,
             maximumDistance: width + height
         });
-        if (!path) continue;
+        if (!path) {
+            path = findBridgeRoadCarvePath({
+                mutable,
+                starts: component,
+                goalKeys: mainKeys,
+                blocked,
+                fields,
+                width,
+                height,
+                maximumDistance: width + height,
+                maximumRiverCells: 3
+            });
+        }
+        if (!path) {
+            // A tiny internal road island has no navigational or visual utility. Remove it rather
+            // than leaving a prefab stair/landing fragment stranded between water and buildings.
+            if (!touchesViewportEdge && !servesDoor && component.length <= 8) {
+                for (const cell of component) {
+                    mutable[cell.row][cell.col] = '.';
+                    clearedOrphanCells++;
+                }
+            }
+            continue;
+        }
         for (const cell of path) {
             const key = elevationCellKey(cell.col, cell.row);
             if (!roadSymbols.has(mutable[cell.row]?.[cell.col])) {
-                mutable[cell.row][cell.col] = 'R';
+                const id = cell.row * width + cell.col;
+                const crossesFmgRiver = ['~', 'B'].includes(mutable[cell.row]?.[cell.col]) &&
+                    fields[id]?.riverId !== null && fields[id]?.riverId !== undefined &&
+                    Number(fields[id]?.riverPathInfluence) >= 0.35;
+                mutable[cell.row][cell.col] = crossesFmgRiver ? '=' : 'R';
                 if (paletteRows[cell.row]?.[cell.col] !== undefined) paletteRows[cell.row][cell.col] = 'path';
                 carvedCells++;
+                if (crossesFmgRiver) bridgeDeckCells++;
             }
             mainKeys.add(key);
         }
@@ -2757,7 +3109,7 @@ function connectWorldRoadNetwork({ rows, paletteRows, buildings, width, height }
         connectedComponents++;
     }
     for (let row = 0; row < height; row++) rows[row] = mutable[row].join('');
-    return Object.freeze({ connectedComponents, carvedCells });
+    return Object.freeze({ connectedComponents, carvedCells, bridgeDeckCells, clearedOrphanCells });
 }
 
 function collectRoadSymbolComponents(rows, roadSymbols, width, height) {
@@ -2834,6 +3186,73 @@ function findRoadCarvePath({ mutable, starts, goalKeys, blocked, width, height, 
     return path.reverse();
 }
 
+function findBridgeRoadCarvePath({
+    mutable,
+    starts,
+    goalKeys,
+    blocked,
+    fields,
+    width,
+    height,
+    maximumDistance,
+    maximumRiverCells
+}) {
+    const queue = [];
+    const previous = new Map();
+    const stateByKey = new Map();
+    for (const start of starts) {
+        const state = { col: start.col, row: start.row, distance: 0, riverCells: 0 };
+        const stateKey = `${elevationCellKey(start.col, start.row)}|0`;
+        queue.push(stateKey);
+        stateByKey.set(stateKey, state);
+        previous.set(stateKey, null);
+    }
+    let goalStateKey = null;
+    for (let index = 0; index < queue.length; index++) {
+        const stateKey = queue[index];
+        const current = stateByKey.get(stateKey);
+        const currentCellKey = elevationCellKey(current.col, current.row);
+        if (goalKeys.has(currentCellKey)) {
+            goalStateKey = stateKey;
+            break;
+        }
+        if (current.distance >= maximumDistance) continue;
+        for (const { x, y } of CARDINALS) {
+            const col = current.col + x;
+            const row = current.row + y;
+            const cellKey = elevationCellKey(col, row);
+            if (col < 0 || row < 0 || col >= width || row >= height || blocked.has(cellKey)) continue;
+            const symbol = mutable[row]?.[col];
+            if (!symbol || symbol === 'T' || ['W', 'I'].includes(symbol)) continue;
+            const id = row * width + col;
+            const crossesRiver = ['~', 'B'].includes(symbol);
+            if (crossesRiver && (fields[id]?.riverId === null || fields[id]?.riverId === undefined ||
+                Number(fields[id]?.riverPathInfluence) < 0.35)) continue;
+            const riverCells = current.riverCells + Number(crossesRiver);
+            if (riverCells > maximumRiverCells) continue;
+            const nextStateKey = `${cellKey}|${riverCells}`;
+            if (previous.has(nextStateKey)) continue;
+            previous.set(nextStateKey, stateKey);
+            stateByKey.set(nextStateKey, {
+                col,
+                row,
+                distance: current.distance + 1,
+                riverCells
+            });
+            queue.push(nextStateKey);
+        }
+    }
+    if (!goalStateKey) return null;
+    const path = [];
+    let cursor = goalStateKey;
+    while (cursor) {
+        const state = stateByKey.get(cursor);
+        path.push({ col: state.col, row: state.row });
+        cursor = previous.get(cursor);
+    }
+    return path.reverse();
+}
+
 function compareElevationCellKeys(left, right) {
     const [leftCol, leftRow] = left.split(',').map(Number);
     const [rightCol, rightRow] = right.split(',').map(Number);
@@ -2852,7 +3271,7 @@ function stabilizeWorldInfrastructureElevations({
 }) {
     const offsetX = Math.floor(width / 2);
     const offsetY = Math.floor(height / 2);
-    const roadSymbols = new Set(['R', ':', ';', '=']);
+    const roadSymbols = WORLD_ROAD_SYMBOLS;
     const footprintKeys = new Set();
     const footprintCellsByBuilding = new Map();
     for (const building of buildings || []) {
@@ -3410,7 +3829,9 @@ function stampSettlementEnvelope({
                 });
             wallCells++;
         } else if (fixed.kind === 'gate' || fixed.kind === 'road') {
-            mutable[fixed.row][fixed.col] = fixed.kind === 'gate' ? ';' : 'R';
+            mutable[fixed.row][fixed.col] = fixed.kind === 'gate'
+                ? ';'
+                : resolveBakedStreetWorldSymbol(fixed);
             paletteRows[fixed.row][fixed.col] = 'path';
             elevationRows[fixed.row][fixed.col] = fixedElevation ??
                 deriveSettlementTerraceElevation({
@@ -3423,6 +3844,16 @@ function stampSettlementEnvelope({
         } else if (fixed.kind === 'castle-plot') {
             mutable[fixed.row][fixed.col] = '.';
             paletteRows[fixed.row][fixed.col] = 'path';
+            elevationRows[fixed.row][fixed.col] = fixedElevation ??
+                deriveSettlementTerraceElevation({
+                    col: fixed.col,
+                    row: fixed.row,
+                    currentElevation: elevationRows[fixed.row][fixed.col],
+                    plateau,
+                    settlement
+                });
+        } else if (fixed.kind === 'building-plot') {
+            mutable[fixed.row][fixed.col] = '.';
             elevationRows[fixed.row][fixed.col] = fixedElevation ??
                 deriveSettlementTerraceElevation({
                     col: fixed.col,
@@ -3477,7 +3908,7 @@ function stampSettlementEnvelope({
         for (let col = bounds.minCol + 1; col < bounds.maxCol; col++) {
             if (bounds.insideCellKeys instanceof Set && !isInsideWallBounds(col, row, bounds)) continue;
             if (!isBuildableSymbol(mutable[row]?.[col])) continue;
-            if (nearestSymbolDistance(mutable, col, row, new Set(['R', ';']), 2) <= 2) developableUrbanCells++;
+            if (nearestSymbolDistance(mutable, col, row, WORLD_ROAD_SYMBOLS, 2) <= 2) developableUrbanCells++;
         }
     }
     return {
@@ -3487,6 +3918,20 @@ function stampSettlementEnvelope({
         urbanCells: Math.max(1, developableUrbanCells),
         constrainedInteriorCells: urbanCells
     };
+}
+
+function resolveBakedStreetWorldSymbol(fixed) {
+    if (fixed?.source !== 'baked-street-wfc') return 'R';
+    if (fixed.transition === true && fixed.transitionPatternSymbol === 'S') {
+        return STAIR_SYMBOL_BY_DIRECTION[fixed.transitionDirection] || ':';
+    }
+    const pattern = String(fixed.patternSymbol || 'R');
+    if (pattern === ':') return ':';
+    if (['P', 'M', 'F', 'G'].includes(pattern)) return ';';
+    if (pattern === 'S') return ':';
+    // Boulevard, bridge-deck and dock semantic symbols remain path surfaces. Their distinct
+    // geometry and props are driven by preserved module metadata, not by colliding map glyphs.
+    return 'R';
 }
 
 function stampForeignSettlementConstraint({ mutable, paletteRows, elevationRows, fixed, plateau }) {
@@ -3500,12 +3945,18 @@ function stampForeignSettlementConstraint({ mutable, paletteRows, elevationRows,
         mutable[fixed.row][fixed.col] = ';';
         paletteRows[fixed.row][fixed.col] = 'path';
     } else if (fixed.kind === 'road' || fixed.kind === 'dock' || fixed.kind === 'bridge') {
-        mutable[fixed.row][fixed.col] = 'R';
+        mutable[fixed.row][fixed.col] = fixed.kind === 'road'
+            ? resolveBakedStreetWorldSymbol(fixed)
+            : 'R';
         paletteRows[fixed.row][fixed.col] = 'path';
     } else if (fixed.kind === 'castle-plot') {
         // Keep the foreign burg's reserved landmark plot out of this settlement's parcel wave.
         mutable[fixed.row][fixed.col] = ';';
         paletteRows[fixed.row][fixed.col] = 'path';
+    } else if (fixed.kind === 'building-plot') {
+        // Keep a neighboring vector building foundation as buildable ground, but never turn it
+        // into a foreign road that can cut through the reserved footprint.
+        mutable[fixed.row][fixed.col] = '.';
     } else if (fixed.kind === 'ford' || fixed.kind === 'waterfall') {
         mutable[fixed.row][fixed.col] = '~';
         paletteRows[fixed.row][fixed.col] = 'coast';
@@ -3552,7 +4003,7 @@ function createSettlementDistrictRows({ mutable, settlement, width, height }) {
             if (isWaterSymbol(mutable[row]?.[col]) || mutable[row]?.[col] === 'T') continue;
             const ward = getSettlementWardAt(settlement, col, row);
             const compiledDistrict = ward?.district || 'residential';
-            const roadDistance = nearestSymbolDistance(mutable, col, row, new Set(['R', ';', '=']), 3);
+            const roadDistance = nearestSymbolDistance(mutable, col, row, WORLD_ROAD_SYMBOLS, 3);
             const waterDistance = nearestSymbolDistance(mutable, col, row, new Set(['W', '~', 'B']), 7);
             if (compiledDistrict === 'harbor' && waterDistance > 6) rows[row][col] = 'artisan';
             else if (compiledDistrict === 'market' && roadDistance > 2) rows[row][col] = 'residential';
@@ -3570,7 +4021,7 @@ function createPlacementInhibitorRows({ mutable, elevationRows, settlement, plat
         if (!isInsideWallBounds(col, row, settlement.wallBounds)) {
             return clamp01(0.22 + (constraint?.inhibitor || 0) * 0.42);
         }
-        const local = ['R', ';', ':'].includes(symbol)
+        const local = WORLD_ROAD_SYMBOLS.has(symbol)
             ? 0.42
             : clamp01(0.1 + Math.abs((Number(elevationRows[row]?.[col]) || 0) - plateau) * 0.12);
         // High FMG confidence is an inhibitor, but urbanization makes already-safe town ground
@@ -4437,17 +4888,25 @@ function getLegalParcelDoorEdges({ rect, mutable, elevationRows, occupied, const
             const constraint = constraintField?.cells?.[approach.row * width + approach.col];
             if (!symbol || constraint?.hardWater || symbol === 'T' || isWaterSymbol(symbol)) return null;
             if (occupied?.has?.(`${approach.col},${approach.row}`)) return null;
-            if (!['G', 'F', 'H', 'S', 'P', 'R', '.', ':', ';', ','].includes(symbol)) return null;
-            const roadDistance = nearestSymbolDistance(mutable, approach.col, approach.row, new Set(['R', ';']), 4);
-            if (roadDistance > 5) return null;
+            if (!isLandSymbol(symbol)) return null;
+            const roadDistance = nearestReachableSymbolDistance({
+                rows: mutable,
+                startCol: approach.col,
+                startRow: approach.row,
+                symbols: WORLD_ROAD_SYMBOLS,
+                maximumDistance: 8,
+                occupied,
+                blockedRect: rect
+            });
+            if (roadDistance > 8) return null;
             const approachElevation = Number(elevationRows?.[approach.row]?.[approach.col]);
             const thresholdElevation = Number(elevationRows?.[threshold.row]?.[threshold.col]);
             if (Number.isFinite(approachElevation) && Number.isFinite(thresholdElevation) &&
                 Math.abs(approachElevation - thresholdElevation) > 1) return null;
             return {
                 edge,
-                score: (['R', ';'].includes(symbol) ? 6 : 0)
-                    + Math.max(0, 4 - roadDistance)
+                score: (WORLD_ROAD_SYMBOLS.has(symbol) ? 6 : 0)
+                    + Math.max(0, 8 - roadDistance) * 0.5
                     + (Number.isFinite(approachElevation) && approachElevation === thresholdElevation ? 1.5 : 0)
                     + keyedUnit(`${seed}:${edge}`) * 0.2
             };
@@ -4525,7 +4984,7 @@ function createContextualParcelSites({
                 if (!allowedDoorEdges.length) continue;
                 const centerCol = Math.round(rect.col + (rect.width - 1) / 2);
                 const centerRow = Math.round(rect.row + (rect.height - 1) / 2);
-                const roadDistance = nearestSymbolDistance(mutable, centerCol, centerRow, new Set(['R', ';']), 6);
+                const roadDistance = nearestSymbolDistance(mutable, centerCol, centerRow, WORLD_ROAD_SYMBOLS, 6);
                 if (roadDistance > 6) continue;
                 candidates.push({
                     rect,
@@ -4607,7 +5066,10 @@ function createContextualParcelSites({
                 inhibitor: settlement.walled ? Math.max(0.82, constraint.inhibitor || 0) : Math.max(0.58, constraint.inhibitor || 0)
             }
         });
-        reserveRect(reserved, candidate.rect, 0);
+        // Keep a one-cell alley around generated parcels. The source vector may intentionally
+        // contain attached rowhouses, but residual WFC buildings must not turn those authored
+        // blocks into an unbroken roof carpet or seal their own door landings.
+        reserveRect(reserved, candidate.rect, 1);
         reserved.add(`${exteriorApproach.col},${exteriorApproach.row}`);
     }
     return sites;
@@ -4857,6 +5319,18 @@ function synthesizeDecorations({ rows, paletteRows, fields, buildings, settlemen
         }
     }
 
+    appendBakedStreetUtilityDecorations({
+        decorations,
+        blocked,
+        rows,
+        skeleton,
+        seed,
+        offsetX,
+        offsetY,
+        width,
+        height
+    });
+
     const waterfallTops = [...(skeleton?.cells?.values?.() || [])]
         .filter((cell) => cell.kind === 'waterfall' && cell.tier === 0)
         .sort((left, right) => left.id - right.id);
@@ -4906,6 +5380,73 @@ function synthesizeDecorations({ rows, paletteRows, fields, buildings, settlemen
         }
     }
     return decorations;
+}
+
+function appendBakedStreetUtilityDecorations({
+    decorations,
+    blocked,
+    rows,
+    skeleton,
+    seed,
+    offsetX,
+    offsetY,
+    width,
+    height
+}) {
+    const placements = new Map();
+    for (const cell of skeleton?.cells?.values?.() || []) {
+        if (cell.source !== 'baked-street-wfc' || !cell.moduleId || !cell.featureKind ||
+            !Number.isFinite(Number(cell.moduleLocalCol)) || !Number.isFinite(Number(cell.moduleLocalRow))) continue;
+        const originCol = cell.col - Number(cell.moduleLocalCol);
+        const originRow = cell.row - Number(cell.moduleLocalRow);
+        const key = `${cell.townId}:${originCol},${originRow}`;
+        if (!placements.has(key)) placements.set(key, {
+            key,
+            townId: cell.townId,
+            moduleId: cell.moduleId,
+            featureKind: cell.featureKind,
+            architectureThemeId: cell.architectureThemeId || null,
+            originCol,
+            originRow
+        });
+    }
+    const decorationByFeature = Object.freeze({
+        market: { type: 'stall', local: [1, 1], district: 'market' },
+        fountain: { type: 'fountain', local: [2, 2], district: 'civic' },
+        'rest-court': { type: 'well', local: [2, 2], district: 'residential' },
+        'neighborhood-plaza': { type: 'lantern_cluster', local: [1, 1], district: 'civic' },
+        'gate-approach': { type: 'banner', local: [1, 1], district: 'civic' },
+        'dock-approach': { type: 'cart', local: [1, 1], district: 'harbor' },
+        'bridge-approach': { type: 'lantern_cluster', local: [1, 1], district: 'harbor' }
+    });
+    for (const placement of [...placements.values()].sort((left, right) =>
+        left.originRow - right.originRow || left.originCol - right.originCol ||
+        left.moduleId.localeCompare(right.moduleId))) {
+        if (decorations.length >= MAX_DECORATIONS) break;
+        const spec = decorationByFeature[placement.featureKind];
+        if (!spec) continue;
+        const col = placement.originCol + spec.local[0];
+        const row = placement.originRow + spec.local[1];
+        const key = elevationCellKey(col, row);
+        if (col < 1 || row < 1 || col >= width - 1 || row >= height - 1 ||
+            blocked.has(key) || !WORLD_ROAD_SYMBOLS.has(rows[row]?.[col]) ||
+            decorations.some((item) => Math.hypot(
+                item.x - (col - offsetX),
+                item.y - (row - offsetY)
+            ) < 1.5)) continue;
+        decorations.push({
+            type: spec.type,
+            x: col - offsetX,
+            y: row - offsetY,
+            rotation: (hashWaveSeed(`${seed}:street-utility:${placement.key}`) % 4) * Math.PI / 2,
+            district: spec.district,
+            architectureThemeId: placement.architectureThemeId,
+            moduleId: placement.moduleId,
+            featureKind: placement.featureKind,
+            moduleUtility: true,
+            blueprintFixed: true
+        });
+    }
 }
 
 function findWardDecorationCell({ rows, blocked, settlement, district, width, height, salt = 0, near = null }) {
@@ -5071,7 +5612,7 @@ function dominantFootprintElevation(lot, cells, elevationRows) {
 function smoothRoadElevations(mutable, elevationRows, protectedCells = new Set()) {
     const height = mutable.length;
     const width = mutable[0]?.length || 0;
-    const roadSymbols = new Set(['R', ':', ';', '=']);
+    const roadSymbols = WORLD_ROAD_SYMBOLS;
     for (let pass = 0; pass < 12; pass++) {
         let changes = 0;
         for (let row = 0; row < height; row++) {
@@ -5257,6 +5798,41 @@ function nearestSymbolDistance(rows, centerCol, centerRow, symbols, radius) {
     return best;
 }
 
+function nearestReachableSymbolDistance({
+    rows,
+    startCol,
+    startRow,
+    symbols,
+    maximumDistance,
+    occupied = null,
+    blockedRect = null
+}) {
+    if (!rows[startRow]?.[startCol]) return maximumDistance + 1;
+    const startKey = elevationCellKey(startCol, startRow);
+    const queue = [{ col: startCol, row: startRow, distance: 0 }];
+    const visited = new Set([startKey]);
+    const isInsideBlockedRect = (col, row) => blockedRect &&
+        col >= blockedRect.col && row >= blockedRect.row &&
+        col < blockedRect.col + blockedRect.width && row < blockedRect.row + blockedRect.height;
+    for (let index = 0; index < queue.length; index++) {
+        const current = queue[index];
+        if (symbols.has(rows[current.row]?.[current.col])) return current.distance;
+        if (current.distance >= maximumDistance) continue;
+        for (const { x, y } of CARDINALS) {
+            const col = current.col + x;
+            const row = current.row + y;
+            const key = elevationCellKey(col, row);
+            const symbol = rows[row]?.[col];
+            if (!symbol || visited.has(key) || occupied?.has?.(key) ||
+                isInsideBlockedRect(col, row) || symbol === 'T' || isWaterSymbol(symbol) ||
+                !isLandSymbol(symbol)) continue;
+            visited.add(key);
+            queue.push({ col, row, distance: current.distance + 1 });
+        }
+    }
+    return maximumDistance + 1;
+}
+
 function weightedVote(weighted, key) {
     const totals = new Map();
     for (const entry of weighted) {
@@ -5309,7 +5885,8 @@ function lerp(a, b, amount) {
 }
 
 function isLandSymbol(symbol) {
-    return ['G', 'F', 'H', 'M', 'S', 'P', 'R', '.', ':', ';', ','].includes(symbol);
+    return ['G', 'F', 'H', 'M', 'S', 'P', 'R', '.', ':', ';', ',', '=', '1', '2', '3', '4']
+        .includes(symbol);
 }
 
 function isBuildableSymbol(symbol) {

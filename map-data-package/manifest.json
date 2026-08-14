@@ -5,6 +5,18 @@
   "exported_at": "2026-07-23T02:13:06.818Z",
   "map_name": "Masia",
   "seed": "424242",
+  "active_burg_ids": [
+    2,
+    5,
+    7,
+    10,
+    15,
+    23,
+    39,
+    45,
+    51,
+    57
+  ],
   "burg_theme_catalog": [
     {
       "id": "asian",

@@ -20,6 +20,10 @@ import {
     serializeBurgThemeCatalog,
     validateManifestBurgThemes
 } from '../client/src/data/BurgThemeCatalog.js';
+import {
+    resolveActiveBurgIds,
+    selectActiveBurgRecords
+} from '../client/src/data/ActiveBurgSelection.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -46,11 +50,15 @@ async function main(argv = process.argv.slice(2)) {
         throw new Error(`Invalid burg theme manifest:\n${themeValidation.errors.map((error) => `- ${error}`).join('\n')}`);
     }
     const burgThemeById = themeValidation.themeByBurgId;
+    const activeBurgIds = resolveActiveBurgIds(manifest);
+    const activeBurgIdSet = new Set(activeBurgIds);
+    const sourceBurgs = selectActiveBurgRecords(source.entities?.burgs || [], activeBurgIds);
 
-    const cells = (source.world.cells || []).map(compactCell);
+    const cells = (source.world.cells || []).map((cell) => compactCell(cell, activeBurgIdSet));
     const geography = {
         schema: 'vibe-game-active-geography',
         schemaVersion: 2,
+        activeBurgIds,
         themeCatalog: serializeBurgThemeCatalog(),
         biomes: [...(source.legacy_fmg_refs?.biomes || [])],
         cells,
@@ -60,12 +68,16 @@ async function main(argv = process.argv.slice(2)) {
         states: compactColorEntities(source.entities?.states),
         cultures: compactColorEntities(source.entities?.cultures),
         provinces: compactColorEntities(source.entities?.provinces),
-        burgs: (source.entities?.burgs || []).map((burg) => compactBurg(burg, cells, burgThemeById))
+        burgs: sourceBurgs.map((burg) => compactBurg(burg, cells, burgThemeById))
     };
     const settlementBlueprints = compileWorldBlueprints(source, {
         generationVersion: GENERATION_VERSION,
-        burgThemeById
+        burgThemeById,
+        activeBurgIds
     });
+    const settlementBlueprintByBurgId = new Map(
+        settlementBlueprints.blueprints.map((blueprint) => [Number(blueprint.burgId), blueprint])
+    );
 
     const contentHash = createHash('sha256')
         .update(JSON.stringify({ generationVersion: GENERATION_VERSION, geography, settlementBlueprints }))
@@ -83,6 +95,8 @@ async function main(argv = process.argv.slice(2)) {
         height: Number(source.world.height || source.metadata?.height || image.height || 360),
         source: source.metadata?.source || manifest.source || 'Azgaar Fantasy Map Generator',
         exportedAt: source.metadata?.exported_at || manifest.exported_at || null,
+        activeBurgIds,
+        activeBurgCount: activeBurgIds.length,
         image: {
             src: ASSET_PUBLIC_PATH,
             width: Number(image.width || source.world.width || 640),
@@ -90,7 +104,11 @@ async function main(argv = process.argv.slice(2)) {
             coordinateSpace: image.coordinate_space || 'fmg-svg-pixels',
             sourceFile: path.basename(imageFile)
         },
-        locations: geography.burgs.map(toWorldLocation),
+        // Navigate to the same stable inland anchor used by runtime projection. Retain the raw
+        // FMG burg coordinate separately for map attribution; centering a view on that raw point
+        // could otherwise clip an inland-shifted port settlement out of its own LOD.
+        locations: geography.burgs.map((burg) =>
+            toWorldLocation(burg, settlementBlueprintByBurgId.get(Number(burg.id)))),
         routes: geography.routes
     };
 
@@ -112,7 +130,7 @@ async function main(argv = process.argv.slice(2)) {
         burgAnchors: geography.burgs.length,
         settlementBlueprints: settlementBlueprints.blueprints.length,
         settlementClusters: settlementBlueprints.clusters.length,
-        burgThemes: burgThemeById.size,
+        activeBurgThemes: geography.burgs.length,
         settlementBlueprintBytes: settlementBlueprints.coverage.blueprintBytes,
         settlementCoverageUnexplained: settlementBlueprints.coverage.unexplainedFields.length,
         excludedTownPayloads: true
@@ -131,7 +149,7 @@ function validateSource(source, manifest) {
     if (schemaVersion < 2) throw new Error(`Unsupported FMG map schema version ${schemaVersion}.`);
 }
 
-function compactCell(cell = {}) {
+function compactCell(cell = {}, activeBurgIds = new Set()) {
     const coordinate = Array.isArray(cell.coordinate) ? cell.coordinate : [0, 0];
     return {
         id: Number(cell.id),
@@ -145,7 +163,7 @@ function compactCell(cell = {}) {
         province: finiteInteger(cell.province),
         river: finiteInteger(cell.river),
         flux: round(cell.flux, 2),
-        burg: finiteInteger(cell.burg),
+        burg: activeBurgIds.has(finiteInteger(cell.burg)) ? finiteInteger(cell.burg) : 0,
         neighbors: Array.isArray(cell.neighbors)
             ? cell.neighbors.map(finiteInteger).filter(Number.isFinite)
             : []
@@ -227,14 +245,16 @@ function compactBurg(burg = {}, cells = [], burgThemeById = new Map()) {
     };
 }
 
-function toWorldLocation(burg) {
+function toWorldLocation(burg, blueprint = null) {
     return {
         id: `burg-${burg.id}`,
         burgId: burg.id,
         name: burg.name,
         type: burg.flags.capital ? 'capital' : burg.flags.citadel ? 'fortress' : burg.group || 'town',
-        x: burg.x,
-        y: burg.y,
+        x: Number(blueprint?.anchorX ?? burg.x),
+        y: Number(blueprint?.anchorY ?? burg.y),
+        fmgX: burg.x,
+        fmgY: burg.y,
         population: burg.population,
         state: burg.state,
         culture: burg.culture,

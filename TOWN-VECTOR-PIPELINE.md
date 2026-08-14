@@ -20,8 +20,11 @@ and derives:
 - a per-burg SHA-256 vector hash and one package content hash.
 
 The five canonical theme IDs are `asian`, `middle-eastern`, `northern-european`,
-`southern-european`, and `egyptian`. Every one of the 60 burgs has exactly one manifest assignment;
-culture, biome, seed, and town name never infer or replace it at runtime.
+`southern-european`, and `egyptian`. The source archive keeps theme assignments for all 60 FMG
+burgs, but `manifest.active_burg_ids` is the runtime boundary: exactly 10 curated burgs are compiled
+for play, with 2 active burgs from each canonical theme. The current active selection contains 6
+seats and 4 fiefs. Culture, biome, seed, and town name never infer or replace a manifest theme at
+runtime.
 
 Street elevations use the same tier equation as live terrain:
 
@@ -29,20 +32,20 @@ Street elevations use the same tier equation as live terrain:
 tier = clamp(floor((FMG elevation * 100 - 19) / 11), 0, 6)
 ```
 
-This is a data formula, not a per-town parser. All burg files go through the same run compiler,
-and the resulting segment tuples are validated by rasterizing them back to the source street
-cells.
+This is a data formula, not a per-town parser. Every burg selected by
+`manifest.active_burg_ids` goes through the same run compiler, and the resulting segment tuples
+are validated by rasterizing them back to the source street cells. The other 50 FMG burgs remain
+archived source material and are not emitted into the active runtime package.
 
 The compiler writes:
 
 - `client/src/data/ActiveTownVectorData.js` for deterministic runtime generation;
 - `client/public/assets/maps/towns/manifest.json`;
-- one inspectable `burg-N.vector.json` and `burg-N.svg` per town.
+- one inspectable `burg-N.vector.json` and `burg-N.svg` per active town.
 
-The current archive contains 60 burgs, 5,015 wall cells, 30,756 graded street cells represented by
-12,165 vector runs, and 512 building footprints. Its contours and street runs rasterize exactly to
-their source cells. The 468,550-byte runtime vector payload is about 0.49% of the 95,991,448-byte
-authoring package.
+The FMG source archive still contains 60 burgs; it is retained for future curation and regeneration.
+Only the 10 manifest-selected burgs belong to the active vector/runtime package. This keeps the
+runtime and validation surface bounded without deleting the remaining 50 source burgs.
 
 ## Runtime generation
 

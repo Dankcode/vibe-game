@@ -8,11 +8,14 @@ import { getActiveTownVector, projectTownVector } from './TownVectorData.js';
 import { createBakedStreetPlan } from './BakedStreetLibrary.js';
 import { normalizeBurgThemeId } from './BurgThemeCatalog.js';
 
-const FIXED_LAND_KINDS = new Set(['wall', 'gate', 'road', 'castle-plot', 'bridge', 'dock']);
+const FIXED_LAND_KINDS = new Set([
+    'wall', 'gate', 'road', 'building-plot', 'castle-plot', 'bridge', 'dock'
+]);
 const FIXED_WATER_KINDS = new Set(['waterfall', 'plunge-pool', 'ford']);
 const SKELETON_PRIORITY = Object.freeze({
     road: 1,
     dock: 2,
+    'building-plot': 3,
     'castle-plot': 3,
     wall: 4,
     gate: 5,
@@ -27,10 +30,17 @@ const SKELETON_PRIORITY = Object.freeze({
 // them below walls and gates and above every generated road or reserved castle plot.
 const TOWN_VECTOR_STREET_PRIORITY = 3.5;
 const BAKED_STREET_WFC_PRIORITY = 1.5;
+const GATE_LANE_PRIORITY = 4.5;
+const STREET_CONNECTION_DIRECTIONS = Object.freeze([
+    Object.freeze({ x: 0, y: -1, bit: 1 }),
+    Object.freeze({ x: 1, y: 0, bit: 2 }),
+    Object.freeze({ x: 0, y: 1, bit: 4 }),
+    Object.freeze({ x: -1, y: 0, bit: 8 })
+]);
 
 // Keep this identifier in diagnostics and saved generation metadata. Changing any coefficient
 // below intentionally changes deterministic town terraces and therefore requires a new version.
-export const FMG_BURG_RELIEF_FORMULA_VERSION = 'fmg-burg-relief-v1';
+export const FMG_BURG_RELIEF_FORMULA_VERSION = 'fmg-burg-relief-v2';
 
 /**
  * Derive one deterministic settlement relief profile from the geography data already loaded for
@@ -96,8 +106,12 @@ export function deriveFmgBurgReliefProfile({
     const climateScore = clamp01(coldExposure * 0.62 + biomeExposure * 0.38);
     const reliefScore = clamp01(topographyScore * 0.64 + vectorScore * 0.29 + climateScore * 0.07);
     const authoredSpanFloor = vectorRange > 0 ? vectorRange : 1;
+    // Moderate/high relief burgs receive one additional macro tier of breathing room. This is a
+    // whole-block range allowance (never cell noise), so elevated FMG towns can form the broad
+    // stacked platforms seen in the concept without making lowland settlements equally jagged.
+    const macroReliefBonus = reliefScore >= 0.45 ? 1 : 0;
     const targetTierSpan = clampInteger(
-        Math.max(authoredSpanFloor, Math.round(1 + reliefScore * 5)),
+        Math.max(authoredSpanFloor, Math.round(1 + reliefScore * 5) + macroReliefBonus),
         1,
         6
     );
@@ -323,6 +337,7 @@ export function createBlueprintSkeleton({
 } = {}) {
     const cells = new Map();
     const streetMapModules = {};
+    const streetMapAnchorKinds = {};
     const settlementByBurgId = new Map(settlements.map((entry) => [Number(entry.burg?.id), entry]));
     const reliefByBurgId = new Map(settlements.map((entry) => [
         Number(entry.burg?.id),
@@ -392,6 +407,18 @@ export function createBlueprintSkeleton({
                     widthTiles: gate.widthTiles,
                     vectorHash: settlement.townVector.vectorHash
                 });
+                const inward = inwardDirectionForEdge(gate.edge);
+                for (const laneOffset of [-1, 1]) {
+                    put(gate.col + inward.x * laneOffset, gate.row + inward.y * laneOffset, {
+                        kind: 'road',
+                        townId,
+                        source: 'gate-lane',
+                        roadKind: laneOffset > 0 ? 'gate-lane-inside' : 'gate-lane-outside',
+                        gateId: gate.id,
+                        gateEdge: gate.edge,
+                        vectorHash: settlement.townVector.vectorHash
+                    });
+                }
             }
         } else {
             for (const ring of settlement.wallRings || []) {
@@ -428,6 +455,29 @@ export function createBlueprintSkeleton({
             }
         }
 
+        // Reserve FMG building footprints before the terrain wave. These nodes do not render a
+        // building yet; they force a stable land/foundation domain so water or decorative relief
+        // cannot collapse beneath a later vector building. Authored streets retain higher
+        // priority and may still touch a door edge exactly where the source data says they do.
+        const vectorBuildingCellKeys = new Set();
+        for (const building of settlement.townVector?.buildings || []) {
+            for (const localCell of building.footprintCells || []) {
+                const col = Number(building.minCol) + Number(localCell.x);
+                const row = Number(building.minRow) + Number(localCell.y);
+                vectorBuildingCellKeys.add(gridKey(col, row));
+                put(col, row, {
+                    kind: 'building-plot',
+                    townId,
+                    source: 'town-vector-building',
+                    buildingId: building.id,
+                    buildingType: building.type || null,
+                    doorPlot: Number(building.door?.x) === Number(localCell.x) &&
+                        Number(building.door?.y) === Number(localCell.y),
+                    vectorHash: settlement.townVector.vectorHash
+                });
+            }
+        }
+
         // The compact vector package supplies the burg's authored street lattice. Stamp it
         // before generated gate avenues, blueprint links, and ward grids; the explicit priority
         // above guarantees those later formula roads can fill gaps but cannot replace source
@@ -452,26 +502,40 @@ export function createBlueprintSkeleton({
             });
         }
 
-        let streetMapPlan = null;
-        const streetCoverageArea = Math.max(
-            1,
-            Number(settlement.wallBounds?.width || 0) * Number(settlement.wallBounds?.height || 0)
+        // Water crossings and building entrances are structural inputs to the street wave, not
+        // decorations applied after it. Project them now so bridge, dock, gate-approach, alley,
+        // and door-landing modules are selected in response to FMG geometry.
+        projectWaterSkeleton(settlement, width, height, sampleScale, put);
+        const buildingDoorAnchors = createVectorBuildingDoorAnchors(
+            settlement.townVector?.buildings || [],
+            width,
+            height
         );
-        const sourceStreetCoverage = sourceStreetCells.length / streetCoverageArea;
-        const vectorBuildingCellKeys = new Set();
-        for (const building of settlement.townVector?.buildings || []) {
-            for (const cell of building.footprintCells || []) {
-                vectorBuildingCellKeys.add(gridKey(
-                    Number(building.minCol) + Number(cell.x),
-                    Number(building.minRow) + Number(cell.y)
-                ));
-            }
+        for (const anchor of buildingDoorAnchors) {
+            put(anchor.col, anchor.row, {
+                kind: 'road',
+                townId,
+                source: 'town-vector-building-access',
+                roadKind: 'building-door-landing',
+                buildingId: anchor.buildingId,
+                doorEdge: anchor.edge,
+                roadConnections: anchor.roadConnections
+            });
         }
-        // The source archive often already contains a complete block lattice. Running another
-        // full map WFC over a dense source plan consumes the last legal cabin parcels in small,
-        // heavily fortified burgs. Only sparse plans receive baked street infill; dense plans are
-        // already the higher-quality authored answer and remain untouched.
-        const needsStreetMapInfill = sourceStreetCells.length > 0 && sourceStreetCoverage < 0.16;
+        const streetPlanAnchors = collectStreetPlanAnchors({
+            sourceStreetCells,
+            skeletonCells: cells,
+            townId,
+            buildingDoorAnchors
+        });
+
+        let streetMapPlan = null;
+        // Every burg receives a residual utility wave after authored streets are fixed. Dense FMG
+        // lattices still need useful plazas, bridge approaches, alleys and stair landings in their
+        // remaining parcels; sparse/roadless vectors use the exact same wave to form the network.
+        // Source streets have higher priority and vector buildings are reserved, so this can only
+        // complete the open space rather than replace the reference geometry.
+        const needsStreetMapInfill = Boolean(settlement.wallBounds);
         if (needsStreetMapInfill) {
             streetMapPlan = createBakedStreetPlan({
                 bounds: settlement.wallBounds,
@@ -480,8 +544,8 @@ export function createBlueprintSkeleton({
                     ? settlement.wallBounds.insideCellKeys
                     : null,
                 reservedCellKeys: vectorBuildingCellKeys,
-                sourceStreetCells,
-                seed: `${settlement.townVector.vectorHash}:burg-${townId}:street-map`,
+                sourceStreetCells: streetPlanAnchors,
+                seed: `${settlement.townVector?.vectorHash || `formula-burg-${townId}`}:burg-${townId}:street-map`,
                 district: settlement.wards?.[0]?.district || 'residential',
                 walled: settlement.walled,
                 architectureThemeId: settlement.architectureThemeId,
@@ -495,6 +559,11 @@ export function createBlueprintSkeleton({
             for (const [moduleId, count] of Object.entries(streetMapPlan.diagnostics.modules || {})) {
                 streetMapModules[moduleId] = (streetMapModules[moduleId] || 0) + count;
             }
+            for (const [anchorKind, count] of Object.entries(
+                streetMapPlan.diagnostics.sourceKindHistogram || {}
+            )) {
+                streetMapAnchorKinds[anchorKind] = (streetMapAnchorKinds[anchorKind] || 0) + count;
+            }
             for (const street of streetMapPlan.cells) {
                 put(street.col, street.row, {
                     kind: 'road',
@@ -506,6 +575,10 @@ export function createBlueprintSkeleton({
                     moduleLocalCol: street.moduleLocalCol,
                     moduleLocalRow: street.moduleLocalRow,
                     patternSymbol: street.patternSymbol,
+                    featureKind: street.featureKind ?? 'street',
+                    patternStyle: street.patternStyle ?? 'standard',
+                    utilityTags: Object.freeze([...(street.utilityTags || ['road'])]),
+                    fmgAnchorKinds: Object.freeze([...(street.fmgAnchorKinds || [])]),
                     elevationMode: street.elevationMode,
                     portal: street.portal === true,
                     portalDirection: street.portalDirection ?? null,
@@ -518,6 +591,9 @@ export function createBlueprintSkeleton({
                     transitionLocalCol: street.transitionLocalCol ?? null,
                     transitionLocalRow: street.transitionLocalRow ?? null,
                     transitionPatternSymbol: street.transitionPatternSymbol ?? null,
+                    transitionAxis: street.transitionAxis ?? null,
+                    transitionDirection: street.transitionDirection ?? null,
+                    transitionCenterline: street.transitionCenterline === true,
                     reliefScore: reliefProfile?.reliefScore ?? 0,
                     reliefFormulaVersion: reliefProfile?.formulaVersion ?? FMG_BURG_RELIEF_FORMULA_VERSION,
                     ...(Number.isFinite(Number(street.elevationTier))
@@ -566,7 +642,7 @@ export function createBlueprintSkeleton({
         // Source-vector towns use the source-seeded street-map WFC above for infill. The older
         // formula lattice remains a deterministic fallback for settlements without vector road
         // coverage, including same-cluster satellites.
-        if (!sourceStreetCells.length || !streetMapPlan?.cells?.length) {
+        if (!streetMapPlan?.cells?.length) {
             stampWardStreetGrid(settlement, width, height, (col, row, ward) => {
                 if (hasVectorWalls && !isInsideWallBounds(col, row, settlement.wallBounds)) return;
                 put(col, row, {
@@ -600,7 +676,6 @@ export function createBlueprintSkeleton({
             }
         }
 
-        projectWaterSkeleton(settlement, width, height, sampleScale, put);
     }
 
     const stableCells = [...cells.values()]
@@ -627,6 +702,11 @@ export function createBlueprintSkeleton({
             vectorWalls: stableCells.filter((cell) => cell.kind === 'wall' && cell.ring === 'vector').length,
             gates: stableCells.filter((cell) => cell.kind === 'gate').length,
             vectorGates: stableCells.filter((cell) => cell.kind === 'gate' && cell.ring === 'vector').length,
+            buildingPlotCells: stableCells.filter((cell) => cell.kind === 'building-plot').length,
+            vectorBuildingPlots: new Set(stableCells
+                .filter((cell) => cell.kind === 'building-plot')
+                .map((cell) => cell.buildingId)
+                .filter(Boolean)).size,
             vectorTowns: new Set(stableCells.map((cell) => cell.vectorHash).filter(Boolean)).size,
             roads: stableCells.filter((cell) => cell.kind === 'road').length,
             vectorStreetCells: vectorStreetCells.length,
@@ -634,9 +714,25 @@ export function createBlueprintSkeleton({
             vectorStreetElevationTiers: Object.freeze(vectorStreetElevationTiers),
             streetMapCells: streetMapCells.length,
             streetMapModules: Object.freeze({ ...streetMapModules }),
+            streetMapAnchorKinds: Object.freeze({ ...streetMapAnchorKinds }),
             streetMapPortalCells: streetMapCells.filter((cell) => cell.portal).length,
             streetMapTransitionCells: streetMapCells.filter((cell) => cell.transition).length,
             streetMapSteppedCells: streetMapCells.filter((cell) => cell.elevationMode === 'steps').length,
+            streetMapUtilityCells: streetMapCells.filter((cell) =>
+                Array.isArray(cell.utilityTags) && cell.utilityTags.length > 1).length,
+            streetMapUtilityModules: Object.freeze(Object.fromEntries(
+                [...new Set(streetMapCells
+                    .map((cell) => cell.featureKind)
+                    .filter(Boolean))]
+                    .sort()
+                    .map((featureKind) => [
+                        featureKind,
+                        new Set(streetMapCells
+                            .filter((cell) => cell.featureKind === featureKind)
+                            .map((cell) => cell.moduleId)
+                            .filter(Boolean)).size
+                    ])
+            )),
             streetMapElevationRange: streetMapElevationTiers.length
                 ? Math.max(...streetMapElevationTiers) - Math.min(...streetMapElevationTiers)
                 : 0,
@@ -712,7 +808,11 @@ export function createWorldConstraintField({
             const river = Math.max(clamp01(field.riverInfluence), clamp01(field.riverPathInfluence));
             const route = clamp01(field.routeInfluence);
             const macroWater = land <= 0.18 || (river >= 0.82 && land < 0.72);
-            const fixedLand = fixed && FIXED_LAND_KINDS.has(fixed.kind);
+            // A projected building parcel is a reservation only while FMG hydrology permits it.
+            // River centerlines remain authoritative, causing the later building materializer to
+            // reject or relocate that footprint rather than deleting the river under a roof.
+            const waterDominatedBuildingPlot = fixed?.kind === 'building-plot' && river >= 0.55;
+            const fixedLand = fixed && FIXED_LAND_KINDS.has(fixed.kind) && !waterDominatedBuildingPlot;
             const fixedWater = fixed && FIXED_WATER_KINDS.has(fixed.kind);
             const touchesFixedWater = Boolean(fixedLand) && [
                 id - 1,
@@ -730,7 +830,10 @@ export function createWorldConstraintField({
             // (waterfalls, plunge pools and fords) remains hard everywhere, as do all fixed land
             // nodes. This is the confinement rule: walls favor buildings over terrain churn
             // without allowing a variant to erase authored hydrology.
-            const hardWaterConstraint = fixedWater || (!fixedLand && macroWater && !insideWall);
+            const hardWaterConstraint = fixedWater || (!fixedLand && (
+                river >= 0.55 || (macroWater && !insideWall)
+            ));
+            const blueprintFixed = Boolean(fixed) && !waterDominatedBuildingPlot;
             const fixedLandTerrain = touchesFixedWater || land <= 0.5 || river >= 0.55
                 ? 'sand'
                 : Number(field.height || 0) >= 70
@@ -739,10 +842,10 @@ export function createWorldConstraintField({
             const macroConfidence = clamp01(0.4 + Math.abs(land - 0.5) * 0.34 + Math.max(route, river) * 0.16);
             const inhibitor = clamp01(Math.max(
                 macroConfidence,
-                fixed ? 1 : insideWall ? 0.94 : 0.42 + urbanization * 0.44
+                blueprintFixed ? 1 : insideWall ? 0.94 : 0.42 + urbanization * 0.44
             ));
             const requestedVariance = clamp01(ward?.wfcPriors?.elevationVariance ?? 1);
-            const terrainVariance = fixed ? 0 : clamp01((1 - urbanization * 0.82) * requestedVariance);
+            const terrainVariance = blueprintFixed ? 0 : clamp01((1 - urbanization * 0.82) * requestedVariance);
             const reliefProfile = reliefByBurgId.get(Number(owner?.burg?.id ?? fixed?.townId));
             const fixedElevation = Number.isFinite(Number(fixed?.elevationTier))
                 ? clampInteger(fixed.elevationTier, 0, 6)
@@ -779,7 +882,7 @@ export function createWorldConstraintField({
                     ? null
                     : fixed?.elevationSource || fixed?.source || null,
                 sourceStreetKind: fixed?.streetKind || fixed?.sourceStreetKind || null,
-                blueprintFixed: Boolean(fixed)
+                blueprintFixed
             });
             cells[id] = cell;
             if (inhibitor >= 0.72) inhibited++;
@@ -1212,6 +1315,7 @@ function hashShapeSeed(value) {
 }
 
 function skeletonCellPriority(cell) {
+    if (cell?.source === 'gate-lane') return GATE_LANE_PRIORITY;
     if (isTownVectorStreet(cell)) return TOWN_VECTOR_STREET_PRIORITY;
     if (isBakedStreetWfcCell(cell)) return BAKED_STREET_WFC_PRIORITY;
     return SKELETON_PRIORITY[cell?.kind] || 0;
@@ -1231,6 +1335,109 @@ function normalizeTownVectorStreetKind(value) {
     if (kind === 'dock') return 'dock';
     if (kind === 'main') return 'main';
     return 'dirt';
+}
+
+function createVectorBuildingDoorAnchors(buildings, width, height) {
+    const anchors = [];
+    for (const building of buildings || []) {
+        const door = building?.door;
+        if (!door || !Number.isFinite(Number(building.minCol)) ||
+            !Number.isFinite(Number(building.minRow))) continue;
+        const edge = ['north', 'east', 'south', 'west'].includes(door.edge)
+            ? door.edge
+            : 'south';
+        const direction = directionForEdge(edge);
+        const col = Math.floor(Number(building.minCol) + Number(door.x || 0) + direction.x);
+        const row = Math.floor(Number(building.minRow) + Number(door.y || 0) + direction.y);
+        if (col < 0 || row < 0 || col >= width || row >= height) continue;
+        anchors.push(Object.freeze({
+            col,
+            row,
+            kind: 'door',
+            buildingId: building.id,
+            edge,
+            roadConnections: edge === 'north' || edge === 'south' ? 5 : 10
+        }));
+    }
+    return anchors;
+}
+
+function collectStreetPlanAnchors({
+    sourceStreetCells = [],
+    skeletonCells = new Map(),
+    townId,
+    buildingDoorAnchors = []
+}) {
+    const byKey = new Map();
+    const kindPriority = Object.freeze({
+        bridge: 8,
+        ford: 8,
+        dock: 7,
+        gate: 6,
+        door: 5,
+        main: 4,
+        market: 3,
+        center: 3,
+        dirt: 2,
+        road: 1
+    });
+    const add = (cell) => {
+        const col = Math.floor(Number(cell?.col));
+        const row = Math.floor(Number(cell?.row));
+        if (!Number.isFinite(col) || !Number.isFinite(row)) return;
+        const kind = normalizeStreetPlanAnchorKind(cell);
+        const key = gridKey(col, row);
+        const current = byKey.get(key);
+        const roadConnections = clampInteger(cell?.roadConnections ?? 0, 0, 15);
+        const elevationTier = Number.isFinite(Number(cell?.elevationTier))
+            ? clampInteger(cell.elevationTier, 0, 6)
+            : current?.elevationTier ?? null;
+        const candidate = {
+            col,
+            row,
+            kind,
+            roadConnections: roadConnections | (current?.roadConnections || 0),
+            elevationTier
+        };
+        if (!current || (kindPriority[kind] || 0) >= (kindPriority[current.kind] || 0)) {
+            byKey.set(key, candidate);
+        } else {
+            byKey.set(key, { ...current, roadConnections: candidate.roadConnections, elevationTier });
+        }
+    };
+
+    for (const street of sourceStreetCells || []) add(street);
+    for (const cell of skeletonCells?.values?.() || []) {
+        if (Number(cell?.townId) !== Number(townId)) continue;
+        if (!['gate', 'bridge', 'ford', 'dock'].includes(cell.kind)) continue;
+        add(cell);
+    }
+    for (const anchor of buildingDoorAnchors) add(anchor);
+
+    // Recover the local FMG bearing even when a compact source cell omitted its bit mask. These
+    // cardinal bits become connector requirements, so the chosen module continues an authored
+    // line instead of merely landing near it.
+    for (const [key, cell] of byKey) {
+        let roadConnections = cell.roadConnections || 0;
+        for (const direction of STREET_CONNECTION_DIRECTIONS) {
+            if (byKey.has(gridKey(cell.col + direction.x, cell.row + direction.y))) {
+                roadConnections |= direction.bit;
+            }
+        }
+        byKey.set(key, { ...cell, roadConnections: roadConnections & 15 });
+    }
+    return [...byKey.values()].sort((left, right) => left.row - right.row || left.col - right.col);
+}
+
+function normalizeStreetPlanAnchorKind(cell) {
+    if (['gate', 'bridge', 'ford', 'dock', 'door'].includes(cell?.kind)) return cell.kind;
+    const value = String(cell?.streetKind || cell?.roadKind || cell?.kind || 'road').toLowerCase();
+    if (value.includes('main')) return 'main';
+    if (value.includes('market')) return 'market';
+    if (value.includes('center')) return 'center';
+    if (value.includes('dirt')) return 'dirt';
+    if (value.includes('door')) return 'door';
+    return 'road';
 }
 
 function blueprintWorldX(blueprint) {

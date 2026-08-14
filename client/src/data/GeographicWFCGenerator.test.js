@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { ACTIVE_GEOGRAPHY, ACTIVE_SETTLEMENT_BLUEPRINTS, ACTIVE_TOWNS } from './ActiveWorldData.js';
+import { ACTIVE_BURG_COUNT, ACTIVE_BURG_IDS } from './ActiveBurgSelection.js';
 import { createFantasyWorldPlanAt, getDefaultWorldLocation, getWorldMapLocations } from './FantasyWorldData.js';
 import {
     WORLD_SAMPLE_SCALE,
@@ -26,7 +27,8 @@ test('active FMG reference is geography-only', () => {
     assert.equal(ACTIVE_GEOGRAPHY.cells.length, 7302);
     assert.equal(ACTIVE_GEOGRAPHY.routes.length, 84);
     assert.equal(ACTIVE_GEOGRAPHY.rivers.length, 223);
-    assert.equal(ACTIVE_GEOGRAPHY.burgs.length, 60);
+    assert.equal(ACTIVE_GEOGRAPHY.burgs.length, ACTIVE_BURG_COUNT);
+    assert.deepEqual(ACTIVE_GEOGRAPHY.burgs.map((burg) => burg.id), ACTIVE_BURG_IDS);
     assert.ok(ACTIVE_GEOGRAPHY.burgs.every((burg) => !('townFile' in burg) && !('buildings' in burg)));
 });
 
@@ -42,7 +44,7 @@ test('geographic fields interpolate deterministically from FMG cells', () => {
 
 test('FMG height data produces genuinely high stacked WFC towns', () => {
     const locations = getWorldMapLocations();
-    const lowLocation = locations.find((location) => location.id === 'burg-11');
+    const lowLocation = locations.find((location) => location.id === 'burg-15');
     const highLocation = locations.find((location) => location.id === 'burg-45');
     assert.ok(lowLocation && highLocation);
     assert.ok(
@@ -58,9 +60,12 @@ test('FMG height data produces genuinely high stacked WFC towns', () => {
         highPlan.generation.elevation.terrainTierRange >=
         lowPlan.generation.elevation.terrainTierRange + 2
     );
+    // Roadless lowland burgs may contain more total street cells than compact highland towns, so
+    // compare the achieved tier span rather than a raw count of modules whose style happens to be
+    // tagged as steps.
     assert.ok(
-        highPlan.generation.elevation.steppedStreetCells >
-        lowPlan.generation.elevation.steppedStreetCells
+        highPlan.generation.elevation.generatedStreetElevationRange >=
+        lowPlan.generation.elevation.generatedStreetElevationRange + 2
     );
     assert.ok(
         highPlan.generation.elevation.buildingBaseElevationMaximum >
@@ -70,7 +75,8 @@ test('FMG height data produces genuinely high stacked WFC towns', () => {
 });
 
 test('terrain WFC resolves valid chunks with compact burg vectors and formula infill', () => {
-    const location = getDefaultWorldLocation();
+    const location = getWorldMapLocations().find((candidate) => candidate.id === 'burg-2');
+    assert.ok(location, 'the active set must retain burg-2 as a vector and formula-infill fixture');
     const plan = createFantasyWorldPlanAt(location.x, location.y, { variant: 0 });
     const variation = createFantasyWorldPlanAt(location.x, location.y, { variant: 1 });
     assert.equal(plan.generation.mode, 'blueprint-first-geographic-wfc');

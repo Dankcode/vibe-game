@@ -26,6 +26,166 @@ test('the baked street catalog covers every connector mask plus civic and steppe
         module.pattern.every((row) => row.length === BAKED_STREET_MODULE_SIZE)));
 });
 
+test('every pre-baked module exposes useful connector metadata and a contiguous authored pattern', () => {
+    const requiredUtilities = new Set([
+        'road',
+        'market',
+        'bridge',
+        'river-crossing',
+        'gate-approach',
+        'door-landing',
+        'stairs',
+        'elevation-transition',
+        'intersection',
+        'alley',
+        'civic-space'
+    ]);
+    const catalogUtilities = new Set(BAKED_STREET_MODULES.flatMap((module) => module.utilityTags));
+    for (const utility of requiredUtilities) {
+        assert.ok(catalogUtilities.has(utility), `the catalog must provide ${utility} utility`);
+    }
+    assert.ok(new Set(BAKED_STREET_MODULES.map((module) => module.featureKind)).size >= 12);
+    assert.ok(new Set(BAKED_STREET_MODULES.map((module) => module.pattern.join('/'))).size >= 12);
+    const authoredSymbols = new Set(BAKED_STREET_MODULES.flatMap((module) =>
+        module.pattern.flatMap((row) => [...row].filter((symbol) => symbol !== ' '))));
+    for (const symbol of ['R', 'P', 'M', 'F', 'G', 'D', 'S', 'A', ':', 'B']) {
+        assert.ok(authoredSymbols.has(symbol), `the authored catalog must retain ${symbol} utility cells`);
+    }
+
+    for (const module of BAKED_STREET_MODULES) {
+        assert.deepEqual(
+            module.edgeConnectors.map((connector) => connector.direction),
+            module.connectors,
+            `${module.id} edge metadata must match its WFC connector mask`
+        );
+        assert.ok(module.edgeConnectors.every((connector) =>
+            connector.network === 'road' && connector.pathable === true && connector.width === 1));
+        assert.ok(module.utilityTags.length > 0, `${module.id} must declare actual open-world utility`);
+        assert.ok(module.fmgAnchorKinds.length > 0, `${module.id} must declare compatible FMG anchors`);
+
+        const occupied = new Set();
+        for (let row = 0; row < module.pattern.length; row++) {
+            for (let col = 0; col < module.pattern[row].length; col++) {
+                if (module.pattern[row][col] !== ' ') occupied.add(`${col},${row}`);
+            }
+        }
+        assert.ok(occupied.has('2,2'), `${module.id} must occupy its logical center`);
+        const reachable = floodPattern(module.pattern, 2, 2);
+        assert.deepEqual(reachable, occupied, `${module.id} cannot contain decorative disconnected cells`);
+        for (const direction of module.connectors) {
+            const portal = {
+                north: '2,0', east: '4,2', south: '2,4', west: '0,2'
+            }[direction];
+            assert.ok(reachable.has(portal), `${module.id} ${direction} must reach its center`);
+        }
+        if (module.mask === 0) {
+            assert.ok(module.utilityTags.includes('civic-space'));
+            assert.ok(occupied.size >= 9, 'an isolated component receives a usable court, not a decorative dot');
+        } else {
+            assert.ok(module.utilityTags.includes('road'), `${module.id} must contribute a pathable road`);
+        }
+    }
+});
+
+test('street WFC completes one connected road network per available lattice component', () => {
+    const insideCellKeys = new Set();
+    for (let row = 0; row < 40; row++) {
+        for (let col = 0; col < 45; col++) insideCellKeys.add(`${col},${row}`);
+    }
+    const plan = createBakedStreetPlan({
+        bounds: { minCol: 0, minRow: 0, maxCol: 44, maxRow: 39 },
+        insideCellKeys,
+        sourceStreetCells: [
+            ...Array.from({ length: 31 }, (_, index) => ({
+                col: 7 + index,
+                row: 17,
+                kind: 'main',
+                roadConnections: 10,
+                elevationTier: 2
+            })),
+            ...Array.from({ length: 21 }, (_, index) => ({
+                col: 22,
+                row: 7 + index,
+                kind: 'dirt',
+                roadConnections: 5,
+                elevationTier: 2 + Math.floor(index / 8)
+            }))
+        ],
+        seed: 'utility-bearing-connected-grid',
+        district: 'market',
+        gridOriginCol: 2,
+        gridOriginRow: 2,
+        reliefProfile: {
+            reliefScore: 0.72,
+            reliefClass: 'high',
+            targetTierSpan: 4,
+            baseElevationTier: 3,
+            gradientAxis: 'north-south',
+            gradientSign: 1
+        }
+    });
+    const nodeById = new Map(plan.nodes.map((node) => [node.id, node]));
+    const remaining = new Set(nodeById.keys());
+    let connectedComponents = 0;
+    while (remaining.size) {
+        connectedComponents++;
+        const first = [...remaining][0];
+        const queue = [first];
+        remaining.delete(first);
+        while (queue.length) {
+            const node = nodeById.get(queue.shift());
+            const module = BAKED_STREET_MODULE_BY_ID.get(plan.assignment.get(node.id));
+            assert.ok(module.connectors.length > 0, `${node.id} cannot collapse to roadless filler`);
+            for (const neighbor of node.neighbors) {
+                if (!module.connectors.includes(neighbor.direction) || !remaining.delete(neighbor.id)) continue;
+                queue.push(neighbor.id);
+            }
+        }
+    }
+
+    assert.equal(connectedComponents, plan.diagnostics.topologyComponents);
+    assert.equal(plan.diagnostics.networkComponents, plan.diagnostics.topologyComponents);
+    assert.equal(plan.diagnostics.networkReachableNodes, plan.nodes.length);
+    assert.equal(plan.diagnostics.roadBearingCoverage, 1);
+    assert.ok(plan.diagnostics.requiredConnectorEdges >= plan.nodes.length - connectedComponents);
+    assert.ok(plan.diagnostics.sourceConnectorAnchors > 0);
+    assert.ok(plan.cells.some((cell) => cell.portal && cell.connectorNetwork === 'road'));
+    assert.ok(plan.cells.filter((cell) => cell.portal).every((cell) =>
+        cell.connectorPathable === true && cell.connectorWidth === 1));
+});
+
+test('FMG direction masks are hard priorities before WFC fills the remaining street graph', () => {
+    const insideCellKeys = new Set();
+    for (let row = 0; row < 20; row++) {
+        for (let col = 0; col < 25; col++) insideCellKeys.add(`${col},${row}`);
+    }
+    const plan = createBakedStreetPlan({
+        bounds: { minCol: 0, minRow: 0, maxCol: 24, maxRow: 19 },
+        insideCellKeys,
+        sourceStreetCells: [{
+            col: 12,
+            row: 2,
+            kind: 'main',
+            roadConnections: 10,
+            elevationTier: 2
+        }],
+        seed: 'east-west-fmg-priority',
+        gridOriginCol: 2,
+        gridOriginRow: 2
+    });
+    const sourceNode = plan.nodes.find((node) => node.col === 12 && node.row === 2);
+    assert.ok(sourceNode);
+    const sourceModule = BAKED_STREET_MODULE_BY_ID.get(plan.assignment.get(sourceNode.id));
+    assert.ok(sourceModule.connectors.includes('east'));
+    assert.ok(sourceModule.connectors.includes('west'));
+    for (const direction of ['east', 'west']) {
+        const neighbor = sourceNode.neighbors.find((candidate) => candidate.direction === direction);
+        assert.ok(neighbor);
+        assert.equal(streetModulesCompatible(sourceModule.id, plan.assignment.get(neighbor.id), direction), true);
+    }
+    assert.ok(plan.diagnostics.sourceConnectorAnchors >= 1);
+});
+
 test('the solved assignment rasterizes exact 5x5 masks with adjacent reciprocal portals', () => {
     const insideCellKeys = new Set();
     for (let row = 0; row < 35; row++) {
@@ -122,7 +282,9 @@ test('the solved assignment rasterizes exact 5x5 masks with adjacent reciprocal 
     assert.ok(transitions.length > 0, 'high-relief reciprocal portals should encode transition tiles');
     assert.ok(transitions.every((cell) =>
         cell.transitionSize === BAKED_STREET_TRANSITION_SIZE &&
-        cell.transitionPatternSymbol === 'R' &&
+        cell.transitionPatternSymbol === 'S' &&
+        ['east-west', 'north-south'].includes(cell.transitionAxis) &&
+        ['north', 'east', 'south', 'west'].includes(cell.transitionDirection) &&
         cell.transitionLocalCol >= 0 && cell.transitionLocalCol < BAKED_STREET_TRANSITION_SIZE &&
         cell.transitionLocalRow >= 0 && cell.transitionLocalRow < BAKED_STREET_TRANSITION_SIZE));
     const transitionGroups = new Map();
@@ -370,3 +532,16 @@ test('high FMG relief creates a larger stepped street tier range than low relief
     assert.ok(high.diagnostics.steppedCells >= low.diagnostics.steppedCells);
     assert.equal(high.diagnostics.targetTierSpan, 5);
 });
+
+function floodPattern(pattern, startCol, startRow) {
+    const reachable = new Set();
+    const queue = [[startCol, startRow]];
+    while (queue.length) {
+        const [col, row] = queue.shift();
+        const key = `${col},${row}`;
+        if (reachable.has(key) || pattern[row]?.[col] === undefined || pattern[row][col] === ' ') continue;
+        reachable.add(key);
+        queue.push([col + 1, row], [col - 1, row], [col, row + 1], [col, row - 1]);
+    }
+    return reachable;
+}

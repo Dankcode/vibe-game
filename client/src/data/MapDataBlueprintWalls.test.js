@@ -3,7 +3,8 @@ import test from 'node:test';
 
 import {
     applyArchitectureThemeRowsToTileRows,
-    applyBlueprintWallHeightsToTileRows
+    applyBlueprintWallHeightsToTileRows,
+    applyTownElevationsToTileRows
 } from './MapData.js';
 import {
     createTileCellFromSymbol,
@@ -25,6 +26,16 @@ test('compiled wall tiers extrude from terrain elevation by their blueprint voxe
     assert.deepEqual(column.slice(0, 2).map((block) => block.element), [ELEMENTS.GEO, ELEMENTS.GEO]);
     assert.equal(column.filter((block) => block.element === ELEMENTS.STRUCTURE).length, 5);
     assert.equal(column.at(-1).z, 6);
+});
+
+test('elevated FMG channels retain their tier while deep ocean stays at the zero datum', () => {
+    const tileRows = symbolRowsToTileCells(['W~B']);
+
+    applyTownElevationsToTileRows(tileRows, [[5, 4, 3]], []);
+
+    assert.equal(tileRows[0][0].height, 0, 'deep ocean remains the world water datum');
+    assert.equal(tileRows[0][1].height, 4, 'shallow river channels retain macro elevation');
+    assert.equal(tileRows[0][2].height, 3, 'marsh and plunge-pool water retains macro elevation');
 });
 
 test('burg ownership rows theme town surfaces and building footprints take precedence', () => {

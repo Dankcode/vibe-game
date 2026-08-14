@@ -15,12 +15,13 @@ import {
     isBurgThemeId,
     validateManifestBurgThemes
 } from '../client/src/data/BurgThemeCatalog.js';
+import { resolveActiveBurgIds } from '../client/src/data/ActiveBurgSelection.js';
 
 export const SETTLEMENT_BLUEPRINT_SCHEMA_VERSION = 2;
-export const SETTLEMENT_BLUEPRINT_GENERATION_VERSION = 'fmg-blueprint-wfc-v9';
-// Sixty settlements at the intentionally compact ~3 KB/blueprint envelope fit beneath this cap.
-// Keep the budget explicit so a future FMG export cannot grow runtime data without validation.
-export const SETTLEMENT_BLUEPRINT_SIZE_LIMIT = 192 * 1024;
+export const SETTLEMENT_BLUEPRINT_GENERATION_VERSION = 'fmg-blueprint-wfc-v11';
+// Ten active settlements fit comfortably beneath this budget. Keeping the cap tight prevents a
+// future FMG import from silently restoring the previous sixty-burg runtime payload.
+export const SETTLEMENT_BLUEPRINT_SIZE_LIMIT = 48 * 1024;
 
 const DEFAULT_SOURCE = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
@@ -77,8 +78,14 @@ const CONSUMED_FIELD_PATTERNS = Object.freeze([
  */
 export function compileWorldBlueprints(source, options = {}) {
     validateSource(source);
-    const burgs = sortByNumericId(source.entities.burgs);
-    const burgThemeById = normalizeBurgThemeById(options.burgThemeById, burgs);
+    const sourceBurgs = sortByNumericId(source.entities.burgs);
+    const activeBurgIds = normalizeActiveBurgIds(options.activeBurgIds, sourceBurgs);
+    const burgs = activeBurgIds
+        ? sourceBurgs.filter((burg) => activeBurgIds.has(number(burg.id)))
+        : sourceBurgs;
+    const burgThemeById = normalizeBurgThemeById(options.burgThemeById, burgs, {
+        allowExtraAssignments: Boolean(activeBurgIds)
+    });
     const cells = sortByNumericId(source.world.cells);
     const states = sortByNumericId(source.entities.states || []);
     const cultures = sortByNumericId(source.entities.cultures || []);
@@ -981,8 +988,10 @@ async function main(argv = process.argv.slice(2)) {
     if (!themeValidation.valid) {
         throw new Error(`Invalid burg theme manifest:\n${themeValidation.errors.map((error) => `- ${error}`).join('\n')}`);
     }
+    const activeBurgIds = resolveActiveBurgIds(manifest);
     const compiled = compileWorldBlueprints(source, {
-        burgThemeById: themeValidation.themeByBurgId
+        burgThemeById: themeValidation.themeByBurgId,
+        activeBurgIds
     });
     console.log(JSON.stringify({
         ok: compiled.coverage.unexplainedFields.length === 0 && compiled.coverage.withinByteLimit,
@@ -1000,7 +1009,22 @@ async function main(argv = process.argv.slice(2)) {
     if (!compiled.coverage.withinByteLimit || compiled.coverage.unexplainedFields.length) process.exitCode = 1;
 }
 
-function normalizeBurgThemeById(value, burgs) {
+function normalizeActiveBurgIds(value, burgs) {
+    if (value === undefined || value === null) return null;
+    if (!Array.isArray(value) && !(value instanceof Set)) {
+        throw new Error('activeBurgIds must be an array or Set.');
+    }
+    const result = new Set([...value].map(Number));
+    if (!result.size) throw new Error('activeBurgIds cannot be empty.');
+    const sourceIds = new Set(burgs.map((burg) => number(burg.id)));
+    const missing = [...result].filter((burgId) => !sourceIds.has(burgId));
+    if (missing.length) {
+        throw new Error(`activeBurgIds references unknown burgs: ${missing.join(', ')}.`);
+    }
+    return result;
+}
+
+function normalizeBurgThemeById(value, burgs, { allowExtraAssignments = false } = {}) {
     const source = value instanceof Map
         ? value
         : value && typeof value === 'object' && !Array.isArray(value)
@@ -1019,7 +1043,9 @@ function normalizeBurgThemeById(value, burgs) {
     }
     const burgIds = new Set(burgs.map((burg) => number(burg.id)));
     for (const burgId of source.keys()) {
-        if (!burgIds.has(Number(burgId))) errors.push(`theme mapping contains unknown burg ${String(burgId)}.`);
+        if (!allowExtraAssignments && !burgIds.has(Number(burgId))) {
+            errors.push(`theme mapping contains unknown burg ${String(burgId)}.`);
+        }
     }
     if (errors.length) throw new Error(`Invalid burg theme mapping:\n${errors.map((error) => `- ${error}`).join('\n')}`);
     return result;

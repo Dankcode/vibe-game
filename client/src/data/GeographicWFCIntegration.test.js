@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import { stampBuildingsOnRows } from './BuildingData.js';
 import { ACTIVE_GEOGRAPHY } from './ActiveWorldData.js';
+import { ACTIVE_BURG_COUNT } from './ActiveBurgSelection.js';
 import { BURG_THEME_IDS, normalizeBurgThemeId } from './BurgThemeCatalog.js';
 import {
     createFantasyWorldPlanAt,
@@ -18,12 +19,20 @@ import {
 } from './TerrainMacroTileLibrary.js';
 import { WORLD_PATH_CONNECTIVITY_VERSION } from './WorldPathConnectivity.js';
 
-const EXPECTED_WORLD_LOCATIONS = 60;
+const EXPECTED_WORLD_LOCATIONS = ACTIVE_BURG_COUNT;
 // Physical footprints deliberately leave room for the fixed gates, roads, plazas and keep
 // approaches. Parcel WFC occupancy is checked separately; 43% keeps the town visually dense
 // without treating its required public circulation as failed building coverage.
 const MINIMUM_URBAN_FOOTPRINT_RATIO = 0.43;
 const HARD_WATER_SYMBOLS = new Set(['W', 'I']);
+const WALKABLE_APPROACH_PARTS = new Set([
+    BUILDING_PARTS.NONE,
+    BUILDING_PARTS.STAIRS,
+    BUILDING_PARTS.STAIRS_NORTH,
+    BUILDING_PARTS.STAIRS_SOUTH,
+    BUILDING_PARTS.STAIRS_WEST,
+    BUILDING_PARTS.STAIRS_EAST
+]);
 const DIRECTIONS = Object.freeze([
     Object.freeze({ edge: 'north', x: 0, y: -1 }),
     Object.freeze({ edge: 'east', x: 1, y: 0 }),
@@ -34,7 +43,7 @@ const DIRECTIONS = Object.freeze([
 let cachedLocationResults;
 const cachedRuntimePlans = new Map();
 
-test('all 60 FMG locations generate without terrain or building WFC contradictions', () => {
+test('all ten active FMG locations generate without terrain or building WFC contradictions', () => {
     const results = getLocationResults();
     assert.equal(results.length, EXPECTED_WORLD_LOCATIONS);
 
@@ -381,7 +390,7 @@ function isWalkableUnoccupiedSymbol(symbol) {
     const tile = TILE_SYMBOL_LIBRARY[symbol];
     return Boolean(
         tile &&
-        tile.building === BUILDING_PARTS.NONE &&
+        WALKABLE_APPROACH_PARTS.has(tile.building) &&
         isBlockWalkable(tile.element, tile.texture, tile.building)
     );
 }

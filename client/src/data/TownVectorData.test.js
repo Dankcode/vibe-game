@@ -18,11 +18,18 @@ import {
     BURG_THEME_IDS,
     validateManifestBurgThemes
 } from './BurgThemeCatalog.js';
+import {
+    ACTIVE_BURG_COUNT,
+    ACTIVE_BURG_IDS,
+    resolveActiveBurgIds
+} from './ActiveBurgSelection.js';
 
 const PACKAGE_ROOT = new URL('../../../map-data-package/', import.meta.url);
 const manifest = JSON.parse(await readFile(new URL('manifest.json', PACKAGE_ROOT), 'utf8'));
 const manifestThemes = validateManifestBurgThemes(manifest);
 assert.equal(manifestThemes.valid, true, manifestThemes.errors.join('\n'));
+const activeBurgIds = resolveActiveBurgIds(manifest);
+const activeBurgIdSet = new Set(activeBurgIds);
 const burgIdByFile = new Map((manifest.burgs || []).map((burg) => [
     String(burg.town_file || '').replaceAll('\\', '/'),
     {
@@ -30,7 +37,11 @@ const burgIdByFile = new Map((manifest.burgs || []).map((burg) => [
         themeId: manifestThemes.themeByBurgId.get(Number(burg.id))
     }
 ]));
-const townEntries = (await Promise.all((manifest.files?.towns || []).map(async (sourceFile) => {
+const activeTownFiles = (manifest.files?.towns || []).filter((sourceFile) => {
+    const normalizedFile = String(sourceFile).replaceAll('\\', '/');
+    return activeBurgIdSet.has(burgIdByFile.get(normalizedFile)?.burgId);
+});
+const townEntries = (await Promise.all(activeTownFiles.map(async (sourceFile) => {
     const normalizedFile = String(sourceFile).replaceAll('\\', '/');
     const manifestBurg = burgIdByFile.get(normalizedFile);
     return {
@@ -100,17 +111,28 @@ function assertMinimumInterior(building, context) {
     );
 }
 
-test('town vector compiler aggregates all FMG burg payloads deterministically', () => {
-    assert.equal(townEntries.length, 60);
-    assert.equal(new Set(townEntries.map((entry) => entry.burgId)).size, 60);
-    assert.equal(townEntries.reduce((total, entry) => total + entry.town.buildings.length, 0), 512);
-    assert.equal(townEntries.reduce((total, entry) => total + sourceWallCells(entry.town).size, 0), 5015);
-    assert.equal(townEntries.reduce((total, entry) => total + sourceStreetCells(entry.town).length, 0), 30756);
+const EXPECTED_BUILDINGS = townEntries.reduce(
+    (total, entry) => total + entry.town.buildings.length,
+    0
+);
+const EXPECTED_WALL_CELLS = townEntries.reduce(
+    (total, entry) => total + sourceWallCells(entry.town).size,
+    0
+);
+const EXPECTED_STREET_CELLS = townEntries.reduce(
+    (total, entry) => total + sourceStreetCells(entry.town).length,
+    0
+);
 
-    assert.equal(compiled.coverage.towns, 60);
-    assert.equal(compiled.coverage.buildings, 512);
-    assert.equal(compiled.coverage.walls, 5015);
-    assert.equal(compiled.coverage.streetCells, 30756);
+test('town vector compiler reads only the ten active FMG burg payloads deterministically', () => {
+    assert.equal(townEntries.length, ACTIVE_BURG_COUNT);
+    assert.equal(new Set(townEntries.map((entry) => entry.burgId)).size, ACTIVE_BURG_COUNT);
+    assert.deepEqual(townEntries.map((entry) => entry.burgId), ACTIVE_BURG_IDS);
+
+    assert.equal(compiled.coverage.towns, ACTIVE_BURG_COUNT);
+    assert.equal(compiled.coverage.buildings, EXPECTED_BUILDINGS);
+    assert.equal(compiled.coverage.walls, EXPECTED_WALL_CELLS);
+    assert.equal(compiled.coverage.streetCells, EXPECTED_STREET_CELLS);
     assert.ok(compiled.coverage.streetSegments > 0);
     assert.ok(compiled.coverage.streetSegments < compiled.coverage.streetCells);
     assert.deepEqual(compileTownVectorSet(townEntries), compiled);
@@ -176,8 +198,8 @@ test('every compiled wall contour rasterizes exactly to its source wall cells', 
         sourceCellCount += sourceCells.size;
         rasterCellCount += rasterCells.size;
     }
-    assert.equal(sourceCellCount, 5015);
-    assert.equal(rasterCellCount, 5015);
+    assert.equal(sourceCellCount, EXPECTED_WALL_CELLS);
+    assert.equal(rasterCellCount, EXPECTED_WALL_CELLS);
 });
 
 test('street vectors round-trip every FMG street cell and project exactly at full scale', () => {
@@ -226,7 +248,7 @@ test('street vectors round-trip every FMG street cell and project exactly at ful
         sourceCellCount += sourceCells.length;
         segmentCellCount += town.streetVectors.segments.length;
     }
-    assert.equal(sourceCellCount, 30756);
+    assert.equal(sourceCellCount, EXPECTED_STREET_CELLS);
     assert.equal(sourceCellCount, compiled.coverage.streetCells);
     assert.equal(segmentCellCount, compiled.coverage.streetSegments);
 });
@@ -331,6 +353,6 @@ test('all projected enterable buildings retain a minimum 2x3 interior', () => {
             }
         }
     }
-    assert.equal(fullScaleBuildingCount, 512);
+    assert.equal(fullScaleBuildingCount, EXPECTED_BUILDINGS);
     assert.ok(compactScaleBuildingCount > 0);
 });

@@ -7,7 +7,7 @@ import {
     tileCellToSymbol
 } from './TileLibrary.js';
 
-export const WORLD_PATH_CONNECTIVITY_VERSION = 'logical-world-connectivity-v1';
+export const WORLD_PATH_CONNECTIVITY_VERSION = 'logical-world-connectivity-v2';
 
 const CARDINALS = Object.freeze([
     Object.freeze({ x: 0, y: -1, edge: 'north' }),
@@ -24,7 +24,7 @@ const DIAGONALS = Object.freeze([
 const EDGE_DIRECTIONS = Object.freeze(Object.fromEntries(CARDINALS.map((entry) => [entry.edge, entry])));
 // Generic village ground (.) is deliberately not a road. It remains player-walkable, but cannot
 // satisfy an authored door, gate, or required-route road connection by itself.
-const DEFAULT_ROAD_SYMBOLS = Object.freeze(['R', ':', ';', '=']);
+const DEFAULT_ROAD_SYMBOLS = Object.freeze(['R', ':', ';', '=', '1', '2', '3', '4']);
 const DEFAULT_WATER_SYMBOLS = Object.freeze(['W', '~', 'B']);
 const DEFAULT_DOOR_SYMBOLS = Object.freeze(['D']);
 
@@ -208,15 +208,45 @@ function createLogicalGrid(plan, settings) {
         col: finiteInteger(plan.center?.x ?? plan.center?.col, Math.floor(width / 2)),
         row: finiteInteger(plan.center?.y ?? plan.center?.row, Math.floor(height / 2))
     };
+    const buildingMasks = collectBuildingMasks(plan.buildings, center, settings);
     return {
         width,
         height,
         rows,
         elevationRows,
         center,
+        buildingFootprintKeys: buildingMasks.footprintKeys,
+        buildingPortalKeys: buildingMasks.portalKeys,
         settings,
         issues
     };
+}
+
+function collectBuildingMasks(rawBuildings, center, settings) {
+    const footprintKeys = new Set();
+    const portalKeys = new Set();
+    const maskGrid = { center };
+    for (const [index, rawBuilding] of asArray(rawBuildings).entries()) {
+        const building = normalizeBuilding(rawBuilding, index, maskGrid, settings);
+        for (const cell of building.footprint) footprintKeys.add(cellKey(cell.world));
+        if (!building.door?.world) continue;
+        portalKeys.add(cellKey(building.door.world));
+        const boundaryDirections = CARDINALS.filter((direction) =>
+            !building.footprintLocalKeys.has(localCellKey({
+                x: building.door.local.x + direction.x,
+                y: building.door.local.y + direction.y
+            })));
+        const outsideDirection = EDGE_DIRECTIONS[building.door.edge] || boundaryDirections[0];
+        if (!outsideDirection) continue;
+        // The threshold and its first authored interior landing remain traversable portals. Every
+        // other footprint cell is treated as occupied world geometry, so roads hidden below a
+        // building cannot connect components or become a player shortcut.
+        portalKeys.add(cellKey({
+            col: building.door.world.col - outsideDirection.x,
+            row: building.door.world.row - outsideDirection.y
+        }));
+    }
+    return { footprintKeys, portalKeys };
 }
 
 function emptyGrid(issues) {
@@ -226,6 +256,8 @@ function emptyGrid(issues) {
         rows: [],
         elevationRows: [],
         center: { col: 0, row: 0 },
+        buildingFootprintKeys: new Set(),
+        buildingPortalKeys: new Set(),
         issues
     };
 }
@@ -1079,10 +1111,10 @@ function analyzeRoadNetwork(grid, movementContext, settings, issue) {
         right.size - left.size || left.id.localeCompare(right.id))[0] || null;
     const boundaryMargin = grid.width >= 20 && grid.height >= 20 ? 3 : 0;
     const disconnectedInternal = nontrivial.filter((component) =>
-        component !== primaryComponent && !component.cells.some((cell) =>
+        component !== primaryComponent && !(boundaryMargin > 0 && component.cells.some((cell) =>
             cell.col <= boundaryMargin || cell.row <= boundaryMargin ||
             cell.col >= grid.width - 1 - boundaryMargin ||
-            cell.row >= grid.height - 1 - boundaryMargin));
+            cell.row >= grid.height - 1 - boundaryMargin)));
     if (settings.requireConnectedRoadNetwork && disconnectedInternal.length > 0) {
         issue(
             'road-components-disconnected',
@@ -1398,6 +1430,8 @@ function createGenerationMetadata({
 }
 
 function isWalkableCell(grid, cell) {
+    const key = cellKey(cell);
+    if (grid.buildingFootprintKeys?.has(key) && !grid.buildingPortalKeys?.has(key)) return false;
     const raw = getRawCell(grid, cell);
     if (raw === undefined) return false;
     if (typeof raw === 'string' && raw === '=') return true;
@@ -1407,6 +1441,7 @@ function isWalkableCell(grid, cell) {
 
 function isRoadCell(grid, cell, settings) {
     if (!inBounds(grid, cell)) return false;
+    if (grid.buildingFootprintKeys?.has(cellKey(cell))) return false;
     const raw = getRawCell(grid, cell);
     const symbol = getCellSymbol(raw);
     if (settings.roadSymbols.has(symbol)) return true;

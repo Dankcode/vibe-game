@@ -102,6 +102,7 @@ export const TILE_SYMBOL_LIBRARY = {
     I: { element: ELEMENTS.CRYO, texture: TEXTURE_IDS.ICE, effect: TILE_EFFECTS.ICE, building: BUILDING_PARTS.NONE, height: 0 },
     L: { element: ELEMENTS.PYRO, texture: TEXTURE_IDS.DEFAULT, effect: TILE_EFFECTS.FIRE, building: BUILDING_PARTS.NONE, height: 2 },
     R: { element: ELEMENTS.GEO, texture: TEXTURE_IDS.ROAD, effect: TILE_EFFECTS.EARTH, building: BUILDING_PARTS.NONE, height: 0 },
+    '=': { element: ELEMENTS.GEO, texture: TEXTURE_IDS.CITY_COBBLE, effect: TILE_EFFECTS.EARTH, building: BUILDING_PARTS.NONE, height: 0 },
     T: { element: ELEMENTS.STRUCTURE, texture: TEXTURE_IDS.TOWN_WALL, effect: TILE_EFFECTS.STRUCTURE, building: BUILDING_PARTS.WALL, height: 2 },
     X: { element: ELEMENTS.STRUCTURE, texture: TEXTURE_IDS.DEFAULT, effect: TILE_EFFECTS.STRUCTURE, building: BUILDING_PARTS.WALL, height: 1 },
     A: { element: ELEMENTS.STRUCTURE, texture: TEXTURE_IDS.STONE_BUILDING_WALL, effect: TILE_EFFECTS.STRUCTURE, building: BUILDING_PARTS.WALL, height: 2 },

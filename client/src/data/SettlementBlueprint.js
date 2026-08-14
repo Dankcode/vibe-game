@@ -1,7 +1,7 @@
 import { isBurgThemeId } from './BurgThemeCatalog.js';
 
 export const SETTLEMENT_BLUEPRINT_SCHEMA_VERSION = 2;
-export const SETTLEMENT_BLUEPRINT_MAX_BYTES = 192 * 1024;
+export const SETTLEMENT_BLUEPRINT_MAX_BYTES = 48 * 1024;
 export const SETTLEMENT_HIERARCHIES = Object.freeze(['seat', 'fief']);
 export const SETTLEMENT_DISTRICTS = Object.freeze([
     'castle',

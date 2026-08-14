@@ -271,15 +271,23 @@ function assignBuildingObstructionTags(buildings, townTag) {
     });
 }
 
-function applyTownElevationsToTileRows(tileRows, elevationRows = [], buildings = []) {
+export function applyTownElevationsToTileRows(tileRows, elevationRows = [], buildings = []) {
     if (!Array.isArray(tileRows) || tileRows.length === 0 || !Array.isArray(elevationRows)) return tileRows;
 
     for (let y = 0; y < tileRows.length; y++) {
         for (let x = 0; x < (tileRows[y]?.length || 0); x++) {
             const baseElevation = clampElevation(elevationRows[y]?.[x]);
             const cell = tileRows[y][x];
-            if (!cell || cell.element === ELEMENTS.HYDRO || cell.element === ELEMENTS.PYRO) {
-                if (cell) cell.height = 0;
+            if (!cell) continue;
+            if (cell.element === ELEMENTS.HYDRO) {
+                // Deep ocean remains the zero datum. FMG rivers, marshes, falls and shallow
+                // channels retain their collapsed macro tier so water can cross elevated towns
+                // without turning into a sea-level trench at materialization time.
+                cell.height = cell.texture === TEXTURE_IDS.DEEP_WATER ? 0 : baseElevation;
+                continue;
+            }
+            if (cell.element === ELEMENTS.PYRO) {
+                cell.height = 0;
                 continue;
             }
             cell.height = isCityWallStairCell(cell)

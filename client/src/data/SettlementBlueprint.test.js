@@ -21,6 +21,11 @@ import {
     ACTIVE_TOWNS,
     ACTIVE_WORLD
 } from './ActiveWorldData.js';
+import {
+    ACTIVE_BURG_COUNT,
+    ACTIVE_BURG_IDS,
+    resolveActiveBurgIds
+} from './ActiveBurgSelection.js';
 
 const SOURCE_URL = new URL('../../../map-data-package/map-data.json', import.meta.url);
 const MANIFEST_URL = new URL('../../../map-data-package/manifest.json', import.meta.url);
@@ -28,15 +33,17 @@ const source = JSON.parse(await readFile(SOURCE_URL, 'utf8'));
 const manifest = JSON.parse(await readFile(MANIFEST_URL, 'utf8'));
 const manifestThemes = validateManifestBurgThemes(manifest);
 assert.equal(manifestThemes.valid, true, manifestThemes.errors.join('\n'));
-const compilerOptions = { burgThemeById: manifestThemes.themeByBurgId };
+const activeBurgIds = resolveActiveBurgIds(manifest);
+const compilerOptions = { burgThemeById: manifestThemes.themeByBurgId, activeBurgIds };
 const compiled = compileWorldBlueprints(source, compilerOptions);
-const EXPECTED_BLUEPRINTS = 60;
+const EXPECTED_BLUEPRINTS = ACTIVE_BURG_COUNT;
 
-test('offline compiler deterministically emits all 60 strict settlement blueprints under 192 KB', () => {
+test('offline compiler deterministically emits the ten active settlement blueprints under 48 KB', () => {
     const repeated = compileWorldBlueprints(source, compilerOptions);
     assert.deepEqual(repeated, compiled);
     assert.equal(compiled.blueprints.length, EXPECTED_BLUEPRINTS);
     assert.equal(compiled.coverage.blueprintCount, EXPECTED_BLUEPRINTS);
+    assert.deepEqual(compiled.blueprints.map((blueprint) => blueprint.burgId), ACTIVE_BURG_IDS);
     assert.equal(compiled.coverage.unexplainedFields.length, 0);
     assert.equal(compiled.coverage.withinByteLimit, true);
     assert.ok(Buffer.byteLength(JSON.stringify(compiled.blueprints)) <= SETTLEMENT_BLUEPRINT_SIZE_LIMIT);
@@ -45,7 +52,7 @@ test('offline compiler deterministically emits all 60 strict settlement blueprin
 });
 
 test('manifest theme IDs propagate exactly into every strict settlement blueprint', () => {
-    assert.equal(manifestThemes.themeByBurgId.size, EXPECTED_BLUEPRINTS);
+    assert.ok(manifestThemes.themeByBurgId.size >= EXPECTED_BLUEPRINTS);
     assert.deepEqual(
         new Set(compiled.blueprints.map((blueprint) => blueprint.burg.themeId)),
         new Set(BURG_THEME_IDS)

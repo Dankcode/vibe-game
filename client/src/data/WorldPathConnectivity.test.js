@@ -187,6 +187,37 @@ test('generic village ground no longer satisfies authored road connections', () 
     assert.equal(codes.has('gate-lane-not-road'), true);
 });
 
+test('building footprints mask buried roads while keeping the door threshold usable', () => {
+    const baseline = createConnectedPlan();
+    const plan = createConnectedPlan();
+    plan.rows[6] = 'G~GGTGRRRG';
+
+    const baselineResult = validateWorldPathConnectivity(baseline, { requireStampedDoorSymbols: true });
+    const result = validateWorldPathConnectivity(plan, { requireStampedDoorSymbols: true });
+
+    assert.equal(result.valid, true, result.issues.map((issue) => issue.message).join('\n'));
+    assert.equal(result.generationMetadata.roads.cells, baselineResult.generationMetadata.roads.cells,
+        'road symbols underneath an occupied footprint must not enter the logical road graph');
+    assert.equal(result.generationMetadata.buildings.connectedDoors, 1,
+        'the door and first interior landing remain an explicit portal through the footprint mask');
+});
+
+test('logical pathfinding cannot shortcut through an occupied building footprint', () => {
+    const plan = {
+        rows: ['GGGGGGG'],
+        elevationRows: [[0, 0, 0, 0, 0, 0, 0]],
+        center: { x: 0, y: 0 },
+        buildings: [{
+            id: 'solid-block',
+            originGrid: [2, 0],
+            width: 3,
+            height: 1
+        }]
+    };
+
+    assert.equal(findLogicalWorldPath(plan, [0, 0], [6, 0], { buildingCoordinates: 'absolute' }), null);
+});
+
 test('gate lanes must be distinct, opposite, adjacent authored road cells', () => {
     const sameLane = validateWorldPathConnectivity({
         rows: ['RRR'],

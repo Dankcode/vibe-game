@@ -174,7 +174,7 @@ const RAW_BLUEPRINTS = Object.freeze([
         .map(blueprint)
 ]);
 const MAX_BLUEPRINT_SHORTLIST = 16;
-const DEFAULT_RELIEF_FORMULA_VERSION = 'fmg-burg-relief-v1';
+const DEFAULT_RELIEF_FORMULA_VERSION = 'fmg-burg-relief-v2';
 
 export const BAKED_BUILDING_BLUEPRINTS = Object.freeze(Object.fromEntries(
     RAW_BLUEPRINTS.map((entry) => [entry.id, entry])

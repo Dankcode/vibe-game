@@ -250,7 +250,20 @@ test('FMG vector streets keep priority and elevation before street-map WFC infil
                 { col: 11, row: 9, kind: 'main', elevationTier: 4, source: 'town-vector' },
                 { col: 12, row: 9, kind: 'main', elevationTier: 5, source: 'town-vector' },
                 { col: 13, row: 9, kind: 'dirt', elevationTier: 5, source: 'town-vector' }
-            ]
+            ],
+            buildings: [{
+                id: 'vector-house',
+                type: 'HOUSE_LARGE',
+                minCol: 7,
+                minRow: 5,
+                width: 4,
+                height: 4,
+                door: { x: 2, y: 3, edge: 'south' },
+                footprintCells: Array.from({ length: 16 }, (_, index) => ({
+                    x: index % 4,
+                    y: Math.floor(index / 4)
+                }))
+            }]
         }
     };
     const skeleton = createBlueprintSkeleton({ settlements: [settlement], width, height });
@@ -258,6 +271,7 @@ test('FMG vector streets keep priority and elevation before street-map WFC infil
     const sourceGate = skeleton.cells.get(9 * width + 2);
     const sourceWall = skeleton.cells.get(8 * width + 2);
     const sourceFord = skeleton.cells.get(14 * width + 12);
+    const sourceBuildingPlot = skeleton.cells.get(6 * width + 8);
     assert.equal(sourceRoad.kind, 'road');
     assert.equal(sourceRoad.source, 'town-vector');
     assert.equal(sourceRoad.roadKind, 'town-vector-main');
@@ -269,11 +283,21 @@ test('FMG vector streets keep priority and elevation before street-map WFC infil
     assert.equal(sourceGate.architectureThemeId, 'egyptian');
     assert.equal(sourceWall.kind, 'wall', 'baked street masks cannot overwrite an FMG vector wall');
     assert.equal(sourceFord.kind, 'ford', 'hard authored water keeps authority over baked street masks');
+    assert.equal(sourceBuildingPlot.kind, 'building-plot');
+    assert.equal(sourceBuildingPlot.source, 'town-vector-building');
+    assert.equal(sourceBuildingPlot.buildingId, 'vector-house');
     assert.ok([...skeleton.cells.values()].every((cell) => cell.architectureThemeId === 'egyptian'));
     assert.ok(skeleton.diagnostics.vectorStreetCells >= 3);
+    assert.ok(skeleton.diagnostics.buildingPlotCells >= 12);
+    assert.equal(skeleton.diagnostics.vectorBuildingPlots, 1);
     assert.ok(skeleton.diagnostics.streetMapCells > 0);
     assert.ok(Object.keys(skeleton.diagnostics.streetMapModules).length > 0);
     assert.ok(skeleton.diagnostics.streetMapPortalCells > 0);
+    assert.ok(skeleton.diagnostics.streetMapUtilityCells > 0);
+    assert.ok(Object.keys(skeleton.diagnostics.streetMapUtilityModules).length > 0);
+    assert.ok((skeleton.diagnostics.streetMapAnchorKinds.gate || 0) > 0);
+    assert.ok((skeleton.diagnostics.streetMapAnchorKinds.ford || 0) > 0);
+    assert.ok((skeleton.diagnostics.streetMapAnchorKinds.door || 0) > 0);
     assert.equal(skeleton.diagnostics.reliefFormulaVersion, FMG_BURG_RELIEF_FORMULA_VERSION);
     assert.equal(skeleton.diagnostics.reliefProfiles.length, 1);
 
@@ -287,6 +311,13 @@ test('FMG vector streets keep priority and elevation before street-map WFC infil
 
     const portalCells = [...skeleton.cells.values()].filter((cell) =>
         cell.source === 'baked-street-wfc' && cell.portal && cell.portalId);
+    const semanticStreetCells = [...skeleton.cells.values()].filter((cell) =>
+        cell.source === 'baked-street-wfc' && cell.featureKind && Array.isArray(cell.utilityTags));
+    assert.ok(semanticStreetCells.length > 0, 'utility metadata must survive the street plan → skeleton boundary');
+    const transitionCells = semanticStreetCells.filter((cell) => cell.transition);
+    assert.ok(transitionCells.every((cell) =>
+        ['east-west', 'north-south'].includes(cell.transitionAxis) &&
+        ['north', 'east', 'south', 'west'].includes(cell.transitionDirection)));
     const portalsById = new Map();
     for (const cell of portalCells) {
         if (!portalsById.has(cell.portalId)) portalsById.set(cell.portalId, []);
@@ -318,4 +349,75 @@ test('FMG vector streets keep priority and elevation before street-map WFC infil
     assert.equal(sourceRoadConstraint.fixedElevationSource, 'town-vector');
     assert.equal(sourceRoadConstraint.sourceStreetKind, 'main');
     assert.ok(constraints.diagnostics.fixedElevationCells >= 4);
+});
+
+test('roadless FMG burg vectors receive connected utility street modules before terrain fill', () => {
+    const width = 26;
+    const height = 20;
+    const settlement = {
+        burg: { id: 902, name: 'Roadless Test Burg', population: 42, themeId: 'asian' },
+        architectureThemeId: 'asian',
+        blueprint: {
+            anchorX: 0,
+            anchorY: 0,
+            hierarchy: 'fief',
+            roads: [],
+            water: {},
+            climate: { latitude: 24, snowline: 100 }
+        },
+        col: 13,
+        row: 10,
+        radius: 9,
+        walled: false,
+        wallBounds: {
+            minCol: 2,
+            minRow: 2,
+            maxCol: 23,
+            maxRow: 17,
+            width: 22,
+            height: 16
+        },
+        wallRings: [],
+        wards: [{ ring: 0, district: 'residential' }],
+        townVector: {
+            vectorHash: 'roadless-vector',
+            wallCells: [],
+            gateCells: [],
+            streetCells: [],
+            buildings: []
+        }
+    };
+
+    const skeleton = createBlueprintSkeleton({ settlements: [settlement], width, height });
+    const generatedRoads = [...skeleton.cells.values()].filter((cell) => cell.kind === 'road');
+
+    assert.ok(generatedRoads.length > 20);
+    assert.ok(generatedRoads.every((cell) => cell.source === 'baked-street-wfc'),
+        'roadless vectors should use utility modules instead of the legacy ward formula');
+    assert.ok(skeleton.diagnostics.streetMapPortalCells > 0);
+    assert.ok(skeleton.diagnostics.streetMapUtilityCells > 0);
+});
+
+test('FMG river centerlines inhibit overlapping building reservations before terrain collapse', () => {
+    const skeleton = {
+        cells: new Map([[0, {
+            id: 0,
+            col: 0,
+            row: 0,
+            kind: 'building-plot',
+            townId: 903,
+            buildingId: 'river-overlap-house'
+        }]])
+    };
+    const result = createWorldConstraintField({
+        width: 1,
+        height: 1,
+        fields: [{ land: 0.74, riverInfluence: 0.72, riverPathInfluence: 0.9 }],
+        skeleton
+    });
+
+    assert.equal(result.cells[0].skeletonKind, 'building-plot');
+    assert.equal(result.cells[0].hardWater, true);
+    assert.equal(result.cells[0].blueprintFixed, false);
+    assert.equal(result.cells[0].fixedTerrain, null);
 });
